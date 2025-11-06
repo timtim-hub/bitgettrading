@@ -233,6 +233,8 @@ class LiveTrader:
 
     async def execute_trades(self, allocations: list[dict[str, Any]]) -> None:
         """Execute trades based on allocations."""
+        logger.info(f"💼 Execute trades called with {len(allocations)} allocations")
+        
         # Close positions not in new allocations
         allocated_symbols = {alloc["symbol"] for alloc in allocations}
         for symbol in list(self.positions.keys()):
@@ -241,34 +243,48 @@ class LiveTrader:
                 await self.close_position(symbol)
 
         # Open new positions
+        trades_attempted = 0
+        trades_successful = 0
+        
         for alloc in allocations:
             symbol = alloc["symbol"]
-            signal_side = alloc["predicted_side"]
+            signal_side = alloc.get("predicted_side", "long")
 
             # Skip if already have position
             if symbol in self.positions:
+                logger.debug(f"⏭️  {symbol}: Already have position")
                 continue
 
             # Skip if max positions reached
             if len(self.positions) >= self.max_positions:
+                logger.info(f"🛑 Max positions ({self.max_positions}) reached")
                 break
 
             # Calculate position size
             state = self.state_manager.get_symbol_state(symbol)
             if not state:
+                logger.warning(f"⚠️ {symbol}: No state data available")
                 continue
 
             price = state.get("last_price", 0)
             if price == 0:
+                logger.warning(f"⚠️ {symbol}: Invalid price (0)")
                 continue
 
             position_value = self.equity * self.position_size_pct
             size = (position_value * self.leverage) / price
 
+            logger.info(
+                f"📈 Attempting {signal_side.upper()} order: {symbol} | "
+                f"Price: ${price:.4f} | Size: {size:.4f} | Value: ${position_value:.2f}"
+            )
+
             # Place order
+            trades_attempted += 1
             success = await self.place_order(symbol, signal_side, size, price)
 
             if success:
+                trades_successful += 1
                 self.positions[symbol] = {
                     "symbol": symbol,
                     "side": signal_side,
@@ -286,6 +302,12 @@ class LiveTrader:
                         "price": price,
                     }
                 )
+                
+                logger.info(f"✅ Trade #{len(self.trades)}: {signal_side.upper()} {symbol} @ ${price:.4f}")
+            else:
+                logger.error(f"❌ Failed to place order for {symbol}")
+        
+        logger.info(f"📊 Trade execution complete: {trades_successful}/{trades_attempted} successful")
 
     async def trading_loop(self) -> None:
         """Main trading loop with real-time data updates."""
@@ -313,17 +335,53 @@ class LiveTrader:
                     self.running = False
                     break
 
-                # Rank symbols
-                allocations = self.ranker.rank_symbols(
-                    self.state_manager, top_k=self.max_positions
+                # Rank symbols (NO FILTERS - just like paper trading!)
+                ranked_tuples = self.ranker.rank_symbols(
+                    self.state_manager, 
+                    top_k=self.max_positions,
+                    min_spread_bps=10000.0,  # Effectively no filter (100%)
+                    min_depth=0.1,  # Effectively no filter
                 )
+
+                # Convert to format execute_trades expects
+                allocations = []
+                for symbol, score in ranked_tuples:
+                    # Get features to determine side
+                    features = self.state_manager.get_all_features().get(symbol, {})
+                    momentum = features.get("momentum_1m", 0)
+                    imbalance = features.get("imbalance", 0)
+                    
+                    # Determine side based on momentum and imbalance
+                    signal_score = momentum + imbalance
+                    predicted_side = "long" if signal_score > 0 else "short"
+                    
+                    allocations.append({
+                        "symbol": symbol,
+                        "score": score,
+                        "predicted_side": predicted_side,
+                    })
+
+                # Log allocations for debugging
+                logger.info(f"📊 Ranked {len(allocations)} symbols for potential trades")
+                if allocations:
+                    top_3 = allocations[:3]
+                    for i, alloc in enumerate(top_3, 1):
+                        logger.info(
+                            f"  {i}. {alloc['symbol']}: score={alloc.get('score', 0):.3f}, "
+                            f"side={alloc.get('predicted_side', 'N/A')}"
+                        )
+                else:
+                    logger.warning("⚠️ No allocations found - strategy is waiting for signals")
 
                 # Manage existing positions (stop-loss, take-profit)
                 await self.manage_positions()
 
                 # Execute trades
                 if allocations:
+                    logger.info(f"🎯 Attempting to execute trades for {len(allocations)} symbols...")
                     await self.execute_trades(allocations)
+                else:
+                    logger.info("⏸️ No trades to execute - waiting for better signals")
 
                 # Update equity
                 total_unrealized_pnl = sum(
