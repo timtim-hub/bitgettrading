@@ -175,6 +175,82 @@ class BitgetRestClient:
         
         return []
 
+    async def set_leverage(
+        self,
+        symbol: str,
+        leverage: int,
+        product_type: str = "USDT-FUTURES",
+        hold_side: str = "long",
+    ) -> dict[str, Any]:
+        """
+        Set leverage for a symbol.
+        
+        Args:
+            symbol: Trading pair
+            leverage: Leverage value
+            product_type: Product type
+            hold_side: "long" or "short" for one-way mode
+        
+        Returns:
+            API response
+        """
+        endpoint = "/api/v2/mix/account/set-leverage"
+        
+        data = {
+            "symbol": symbol,
+            "productType": product_type,
+            "marginCoin": "USDT",
+            "leverage": str(leverage),
+            "holdSide": hold_side,  # For one-way mode
+        }
+        
+        response = await self._request("POST", endpoint, data=data)
+        
+        logger.info(
+            "leverage_set",
+            symbol=symbol,
+            leverage=leverage,
+            hold_side=hold_side,
+        )
+        
+        return response
+
+    async def set_margin_mode(
+        self,
+        symbol: str,
+        margin_mode: str,  # "isolated" or "crossed"
+        product_type: str = "USDT-FUTURES",
+    ) -> dict[str, Any]:
+        """
+        Set margin mode for a symbol.
+        
+        Args:
+            symbol: Trading pair
+            margin_mode: "isolated" or "crossed"
+            product_type: Product type
+        
+        Returns:
+            API response
+        """
+        endpoint = "/api/v2/mix/account/set-margin-mode"
+        
+        data = {
+            "symbol": symbol,
+            "productType": product_type,
+            "marginCoin": "USDT",
+            "marginMode": margin_mode,
+        }
+        
+        response = await self._request("POST", endpoint, data=data)
+        
+        logger.info(
+            "margin_mode_set",
+            symbol=symbol,
+            margin_mode=margin_mode,
+        )
+        
+        return response
+
     async def place_order(
         self,
         symbol: str,
@@ -186,7 +262,7 @@ class BitgetRestClient:
         product_type: str = "USDT-FUTURES",
     ) -> dict[str, Any]:
         """
-        Place order.
+        Place order - SIMPLIFIED for isolated margin.
         
         Args:
             symbol: Trading pair (e.g., "BTCUSDT")
@@ -202,10 +278,11 @@ class BitgetRestClient:
         """
         endpoint = "/api/v2/mix/order/place-order"
         
+        # SIMPLIFIED: Just basic parameters for isolated margin
         data = {
             "symbol": symbol,
             "productType": product_type,
-            "marginMode": "crossed",
+            "marginMode": "isolated",
             "marginCoin": "USDT",
             "side": side,
             "orderType": order_type,
@@ -229,32 +306,6 @@ class BitgetRestClient:
             response=response,
         )
         
-        return response
-
-    async def set_leverage(
-        self,
-        symbol: str,
-        leverage: int,
-        product_type: str = "USDT-FUTURES",
-    ) -> dict[str, Any]:
-        """Set leverage for symbol."""
-        endpoint = "/api/v2/mix/account/set-leverage"
-        
-        data = {
-            "symbol": symbol,
-            "productType": product_type,
-            "marginCoin": "USDT",
-            "leverage": str(leverage),
-            "holdSide": "long",  # Set for both sides
-        }
-        
-        response = await self._request("POST", endpoint, data=data)
-        
-        # Also set for short side
-        data["holdSide"] = "short"
-        await self._request("POST", endpoint, data=data)
-        
-        logger.info("leverage_set", symbol=symbol, leverage=leverage)
         return response
 
     async def get_ticker(
@@ -282,4 +333,3 @@ class BitgetRestClient:
         
         response = await self._request("GET", endpoint, params=params)
         return response
-

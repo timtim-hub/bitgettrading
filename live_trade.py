@@ -137,13 +137,33 @@ class LiveTrader:
         else:
             # Real trading
             try:
+                # Set isolated margin mode first
+                try:
+                    await self.rest_client.set_margin_mode(
+                        symbol=symbol,
+                        margin_mode="isolated",
+                    )
+                except Exception:
+                    pass  # May already be set, ignore error
+                
+                # Set leverage for both sides
+                for hold_side in ["long", "short"]:
+                    try:
+                        await self.rest_client.set_leverage(
+                            symbol=symbol,
+                            leverage=self.leverage,
+                            hold_side=hold_side,
+                        )
+                    except Exception:
+                        pass  # May already be set
+                
+                # Now place order
                 order_side = "buy" if side == "long" else "sell"
                 order = await self.rest_client.place_order(
                     symbol=symbol,
                     side=order_side,
                     order_type="market",
                     size=size,
-                    leverage=self.leverage,
                 )
 
                 if order:
@@ -178,7 +198,6 @@ class LiveTrader:
                     side=side,
                     order_type="market",
                     size=pos["size"],
-                    leverage=self.leverage,
                     reduce_only=True,
                 )
 
@@ -199,11 +218,11 @@ class LiveTrader:
             pos = self.positions[symbol]
 
             # Get current price
-            state = self.state_manager.get_symbol_state(symbol)
+            state = self.state_manager.get_state(symbol)
             if not state:
                 continue
 
-            current_price = state.get("last_price", 0)
+            current_price = state.last_price
             if current_price == 0:
                 continue
 
@@ -261,12 +280,12 @@ class LiveTrader:
                 break
 
             # Calculate position size
-            state = self.state_manager.get_symbol_state(symbol)
+            state = self.state_manager.get_state(symbol)
             if not state:
                 logger.warning(f"⚠️ {symbol}: No state data available")
                 continue
 
-            price = state.get("last_price", 0)
+            price = state.last_price
             if price == 0:
                 logger.warning(f"⚠️ {symbol}: Invalid price (0)")
                 continue
@@ -325,6 +344,15 @@ class LiveTrader:
                         continue
                     
                     self.state_manager.update_ticker(symbol, ticker)
+                    
+                    # Simulate order book (same as paper trading)
+                    mid = ticker.get("last_price", 0)
+                    if mid > 0:
+                        spread = mid * 0.0005  # 5 bps estimate
+                        self.state_manager.update_orderbook(symbol, {
+                            "bids": [[mid - spread/2, 1000], [mid - spread, 500]],
+                            "asks": [[mid + spread/2, 1000], [mid + spread, 500]],
+                        })
 
                 # Check daily loss limit
                 daily_pnl_pct = ((self.equity - self.initial_equity) / self.initial_equity)
@@ -452,6 +480,15 @@ class LiveTrader:
             self.state_manager.add_symbol(symbol)
             
             self.state_manager.update_ticker(symbol, ticker)
+            
+            # Simulate order book (same as paper trading)
+            mid = ticker.get("last_price", 0)
+            if mid > 0:
+                spread = mid * 0.0005  # 5 bps estimate
+                self.state_manager.update_orderbook(symbol, {
+                    "bids": [[mid - spread/2, 1000], [mid - spread, 500]],
+                    "asks": [[mid + spread/2, 1000], [mid + spread, 500]],
+                })
 
         logger.info("✅ Starting trading loop...\n")
 

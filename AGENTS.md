@@ -1,6 +1,6 @@
 THE HIGHEST PRIORITY IS MAXIMUM PROFIT!
 
-Always run tests after changes. If they fail, fix them autonomously.
+Always run tests after changes. If they fail, fix them autonomously. If you have errors you didnt fix with 2 attemps, use web search!
 
 
 
