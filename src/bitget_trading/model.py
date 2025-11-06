@@ -1,157 +1,288 @@
-"""CNN-LSTM-GRU hybrid neural network model for trading signals."""
+"""LightGBM model for ultra-short-term trading signals."""
 
 from pathlib import Path
-from typing import Tuple
 
-import torch
-import torch.nn as nn
+import lightgbm as lgb
+import numpy as np
+import pandas as pd
+from sklearn.metrics import classification_report
+from sklearn.model_selection import train_test_split
 
+from bitget_trading.config import TradingConfig
 from bitget_trading.logger import get_logger
 
 logger = get_logger()
 
 
-class CNN_LSTM_GRU(nn.Module):
+def create_labels(
+    df: pd.DataFrame,
+    horizon_sec: int = 10,
+    threshold_bps: float = 1.0,
+) -> np.ndarray:
     """
-    Hybrid CNN-LSTM-GRU model for time series prediction.
-
-    Architecture:
-        1. 2x Conv1D layers for feature extraction
-        2. 2-layer LSTM for temporal dependencies
-        3. GRU layer for final sequence processing
-        4. Fully connected layers for classification
-
+    Create trading labels based on future price movement.
+    
     Args:
-        n_features: Number of input features per timestep
-        lstm_hidden: LSTM hidden layer size
-        gru_hidden: GRU hidden layer size
-        dropout: Dropout rate for regularization
-    """
-
-    def __init__(
-        self,
-        n_features: int = 68,
-        lstm_hidden: int = 178,
-        gru_hidden: int = 92,
-        dropout: float = 0.31,
-    ) -> None:
-        """Initialize model layers."""
-        super().__init__()
-
-        # Convolutional layers for local pattern detection
-        self.conv1 = nn.Conv1d(n_features, 64, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm1d(64)
-        self.conv2 = nn.Conv1d(64, 32, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm1d(32)
-
-        # LSTM for long-term dependencies
-        self.lstm = nn.LSTM(
-            input_size=32,
-            hidden_size=lstm_hidden,
-            num_layers=2,
-            batch_first=True,
-            dropout=dropout,
-        )
-
-        # GRU for additional temporal processing
-        self.gru = nn.GRU(
-            input_size=lstm_hidden,
-            hidden_size=gru_hidden,
-            batch_first=True,
-        )
-
-        # Fully connected classification layers
-        self.fc1 = nn.Linear(gru_hidden, 32)
-        self.dropout = nn.Dropout(dropout)
-        self.fc2 = nn.Linear(32, 3)  # 3 classes: long, short, flat
-
-        # Activation
-        self.relu = nn.ReLU()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass through the network.
-
-        Args:
-            x: Input tensor of shape (batch_size, seq_len, n_features)
-
-        Returns:
-            Output logits of shape (batch_size, 3)
-        """
-        # CNN expects (batch, channels, length)
-        x = x.permute(0, 2, 1)
-
-        # Convolutional layers with batch norm
-        x = self.relu(self.bn1(self.conv1(x)))
-        x = self.relu(self.bn2(self.conv2(x)))
-
-        # Back to (batch, seq_len, features) for LSTM/GRU
-        x = x.permute(0, 2, 1)
-
-        # LSTM layer
-        x, _ = self.lstm(x)
-
-        # GRU layer
-        x, _ = self.gru(x)
-
-        # Take last timestep output
-        x = x[:, -1, :]
-
-        # Fully connected layers with dropout
-        x = self.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = self.fc2(x)
-
-        return x
-
-
-def load_model(
-    model_path: str | Path,
-    n_features: int = 68,
-    lstm_hidden: int = 178,
-    gru_hidden: int = 92,
-    dropout: float = 0.31,
-    device: str | None = None,
-) -> CNN_LSTM_GRU:
-    """
-    Load trained model from disk.
-
-    Args:
-        model_path: Path to saved model weights
-        n_features: Number of input features
-        lstm_hidden: LSTM hidden size
-        gru_hidden: GRU hidden size
-        dropout: Dropout rate
-        device: Device to load model on (cuda/cpu)
-
+        df: DataFrame with 'mid_price' column
+        horizon_sec: Prediction horizon in seconds
+        threshold_bps: Minimum price change threshold in basis points
+    
     Returns:
-        Loaded model in evaluation mode
-
-    Raises:
-        FileNotFoundError: If model file doesn't exist
+        Array of labels: 0=flat, 1=long, 2=short
     """
-    path = Path(model_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Model file not found: {model_path}")
+    mid_prices = df["mid_price"].values
+    labels = np.zeros(len(mid_prices), dtype=np.int32)
+    
+    for i in range(len(mid_prices) - horizon_sec):
+        current_price = mid_prices[i]
+        future_price = mid_prices[i + horizon_sec]
+        
+        # Calculate percentage change
+        pct_change = (future_price - current_price) / current_price
+        pct_change_bps = pct_change * 10000  # Convert to basis points
+        
+        if pct_change_bps > threshold_bps:
+            labels[i] = 1  # Long
+        elif pct_change_bps < -threshold_bps:
+            labels[i] = 2  # Short
+        else:
+            labels[i] = 0  # Flat
+    
+    # Pad remaining with flat
+    labels[-horizon_sec:] = 0
+    
+    return labels
 
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    model = CNN_LSTM_GRU(
-        n_features=n_features,
-        lstm_hidden=lstm_hidden,
-        gru_hidden=gru_hidden,
-        dropout=dropout,
-    )
+class TradingModel:
+    """
+    LightGBM-based trading signal model.
+    
+    Predicts: 0=flat, 1=long, 2=short
+    """
 
-    model.load_state_dict(
-        torch.load(model_path, map_location=device, weights_only=True)
-    )
-    model.to(device)
-    model.eval()
+    def __init__(self, config: TradingConfig) -> None:
+        """
+        Initialize model.
+        
+        Args:
+            config: Trading configuration
+        """
+        self.config = config
+        self.model: lgb.Booster | None = None
+        self.feature_names: list[str] = []
+        self.is_trained: bool = False
 
-    logger.info("model_loaded", path=str(model_path), device=device)
-    return model
+    def train(
+        self,
+        df: pd.DataFrame,
+        feature_cols: list[str],
+        test_size: float = 0.2,
+    ) -> dict[str, float]:
+        """
+        Train LightGBM model.
+        
+        Args:
+            df: DataFrame with features and mid_price
+            feature_cols: List of feature column names
+            test_size: Test set size
+        
+        Returns:
+            Training metrics
+        """
+        logger.info("training_started", n_samples=len(df), n_features=len(feature_cols))
+        
+        # Create labels
+        labels = create_labels(
+            df,
+            horizon_sec=self.config.prediction_horizon_sec,
+            threshold_bps=self.config.label_threshold_bps,
+        )
+        
+        # Remove samples where label couldn't be computed
+        valid_idx = labels >= 0
+        X = df[feature_cols].iloc[valid_idx].values
+        y = labels[valid_idx]
+        
+        # Class distribution
+        unique, counts = np.unique(y, return_counts=True)
+        class_dist = dict(zip(unique, counts))
+        logger.info("class_distribution", distribution=class_dist)
+        
+        # Train/test split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=test_size, random_state=42, stratify=y
+        )
+        
+        # Create LightGBM datasets
+        train_data = lgb.Dataset(X_train, label=y_train)
+        test_data = lgb.Dataset(X_test, label=y_test, reference=train_data)
+        
+        # LightGBM parameters
+        params = {
+            "objective": "multiclass",
+            "num_class": 3,
+            "metric": "multi_logloss",
+            "boosting_type": "gbdt",
+            "num_leaves": 31,
+            "learning_rate": self.config.lgbm_learning_rate,
+            "max_depth": self.config.lgbm_max_depth,
+            "feature_fraction": 0.8,
+            "bagging_fraction": 0.8,
+            "bagging_freq": 5,
+            "verbose": -1,
+            "num_threads": 4,  # M1 optimized
+        }
+        
+        # Train model
+        callbacks = [
+            lgb.early_stopping(stopping_rounds=20),
+            lgb.log_evaluation(period=10),
+        ]
+        
+        self.model = lgb.train(
+            params,
+            train_data,
+            num_boost_round=self.config.lgbm_n_estimators,
+            valid_sets=[train_data, test_data],
+            valid_names=["train", "test"],
+            callbacks=callbacks,
+        )
+        
+        self.feature_names = feature_cols
+        self.is_trained = True
+        
+        # Evaluate on test set
+        y_pred = self.model.predict(X_test)
+        y_pred_class = np.argmax(y_pred, axis=1)
+        
+        # Calculate metrics
+        report = classification_report(y_test, y_pred_class, output_dict=True)
+        
+        metrics = {
+            "accuracy": report["accuracy"],
+            "flat_f1": report.get("0", {}).get("f1-score", 0),
+            "long_f1": report.get("1", {}).get("f1-score", 0),
+            "short_f1": report.get("2", {}).get("f1-score", 0),
+        }
+        
+        logger.info(
+            "training_completed",
+            accuracy=f"{metrics['accuracy']:.4f}",
+            long_f1=f"{metrics['long_f1']:.4f}",
+            short_f1=f"{metrics['short_f1']:.4f}",
+        )
+        
+        return metrics
 
+    def predict(self, features: pd.DataFrame) -> tuple[int, np.ndarray]:
+        """
+        Predict trading signal.
+        
+        Args:
+            features: DataFrame with features
+        
+        Returns:
+            Tuple of (predicted_class, probabilities)
+        """
+        if not self.is_trained or self.model is None:
+            raise ValueError("Model not trained")
+        
+        # Ensure features are in correct order
+        X = features[self.feature_names].values
+        
+        # Predict probabilities
+        probs = self.model.predict(X)
+        
+        # Get predicted class
+        if len(probs.shape) == 2:  # Multiple samples
+            pred_class = np.argmax(probs, axis=1)[0]
+            probs = probs[0]
+        else:  # Single sample
+            pred_class = int(np.argmax(probs))
+        
+        return pred_class, probs
 
+    def predict_signal(
+        self, features: pd.DataFrame
+    ) -> tuple[str, float, np.ndarray]:
+        """
+        Predict trading signal with thresholds.
+        
+        Args:
+            features: DataFrame with features
+        
+        Returns:
+            Tuple of (signal, confidence, probabilities)
+            signal: "long", "short", or "flat"
+        """
+        pred_class, probs = self.predict(features)
+        
+        prob_flat = probs[0]
+        prob_long = probs[1]
+        prob_short = probs[2]
+        
+        # Apply thresholds
+        if (
+            prob_long > self.config.signal_long_threshold
+            and prob_long - prob_short > self.config.signal_margin
+        ):
+            return "long", prob_long, probs
+        elif (
+            prob_short > self.config.signal_short_threshold
+            and prob_short - prob_long > self.config.signal_margin
+        ):
+            return "short", prob_short, probs
+        else:
+            return "flat", prob_flat, probs
+
+    def save(self, path: str | Path) -> None:
+        """Save model to disk."""
+        if not self.is_trained or self.model is None:
+            raise ValueError("No trained model to save")
+        
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        
+        self.model.save_model(str(path))
+        
+        # Save feature names
+        feature_path = path.parent / f"{path.stem}_features.txt"
+        with open(feature_path, "w") as f:
+            f.write("\n".join(self.feature_names))
+        
+        logger.info("model_saved", path=str(path))
+
+    def load(self, path: str | Path) -> None:
+        """Load model from disk."""
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"Model not found: {path}")
+        
+        self.model = lgb.Booster(model_file=str(path))
+        
+        # Load feature names
+        feature_path = path.parent / f"{path.stem}_features.txt"
+        if feature_path.exists():
+            with open(feature_path) as f:
+                self.feature_names = [line.strip() for line in f]
+        
+        self.is_trained = True
+        logger.info("model_loaded", path=str(path), n_features=len(self.feature_names))
+
+    def get_feature_importance(self, top_n: int = 20) -> pd.DataFrame:
+        """Get feature importance."""
+        if not self.is_trained or self.model is None:
+            raise ValueError("Model not trained")
+        
+        importance = self.model.feature_importance(importance_type="gain")
+        
+        df = pd.DataFrame({
+            "feature": self.feature_names,
+            "importance": importance,
+        })
+        
+        df = df.sort_values("importance", ascending=False).head(top_n)
+        
+        return df
 

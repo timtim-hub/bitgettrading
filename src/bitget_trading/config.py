@@ -1,4 +1,4 @@
-"""Configuration management using pydantic-settings."""
+"""Configuration for Bitget trading system."""
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,35 +11,52 @@ class TradingConfig(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    # API Credentials
+    # Bitget API Credentials
     bitget_api_key: str = Field(default="", alias="BITGET_API_KEY")
     bitget_api_secret: str = Field(default="", alias="BITGET_API_SECRET")
     bitget_passphrase: str = Field(default="", alias="BITGET_PASSPHRASE")
 
     # Trading Parameters
-    symbol: str = Field(default="SOL/USDT:USDT", alias="SYMBOL")
-    timeframe: str = Field(default="1m", alias="TIMEFRAME")
-    leverage: int = Field(default=50, ge=1, le=125, alias="LEVERAGE")
-    risk_per_trade: float = Field(default=0.008, gt=0, lt=1, alias="RISK_PER_TRADE")
-    max_position_pct: float = Field(default=0.5, gt=0, le=1, alias="MAX_POSITION_PCT")
-    daily_loss_limit: float = Field(default=0.10, gt=0, lt=1, alias="DAILY_LOSS_LIMIT")
-
+    symbol: str = Field(default="BTCUSDT", alias="SYMBOL")
+    product_type: str = Field(default="USDT-FUTURES")
+    leverage: int = Field(default=5, ge=1, le=125, alias="LEVERAGE")
+    max_position_usd: float = Field(default=1000.0, gt=0)
+    
+    # Risk Management
+    daily_loss_limit: float = Field(default=0.10, gt=0, lt=1)
+    max_drawdown_pct: float = Field(default=0.15, gt=0, lt=1)
+    kill_switch_spread_bps: float = Field(default=20.0, gt=0)
+    kill_switch_depth_usd: float = Field(default=5000.0, gt=0)
+    
     # Model Parameters
-    seq_len: int = Field(default=60, ge=10)
-    batch_size: int = Field(default=64, ge=1)
-    n_features: int = Field(default=47)
-    lstm_hidden: int = Field(default=178)
-    gru_hidden: int = Field(default=92)
-    dropout: float = Field(default=0.31, ge=0, le=1)
-
+    prediction_horizon_sec: int = Field(default=10, ge=5, le=60)
+    label_threshold_bps: float = Field(default=1.0, gt=0)  # 0.01% = 1bp
+    feature_window_sec: int = Field(default=30, ge=10)
+    
+    # LightGBM
+    lgbm_n_estimators: int = Field(default=100, ge=10)
+    lgbm_max_depth: int = Field(default=5, ge=3, le=10)
+    lgbm_learning_rate: float = Field(default=0.1, gt=0, le=1)
+    
+    # Signal Thresholds
+    signal_long_threshold: float = Field(default=0.6, gt=0.5, lt=1.0)
+    signal_short_threshold: float = Field(default=0.6, gt=0.5, lt=1.0)
+    signal_margin: float = Field(default=0.1, ge=0, lt=0.5)
+    
+    # Data Collection
+    orderbook_levels: int = Field(default=5, ge=1, le=20)
+    feature_interval_ms: int = Field(default=1000, ge=100, le=5000)
+    
     # Exchange Parameters
-    fee: float = Field(default=0.0006, ge=0)
-    slippage: float = Field(default=0.0005, ge=0)
-    sandbox: bool = Field(default=True, alias="SANDBOX")
-
+    taker_fee: float = Field(default=0.0006)  # 0.06% Bitget taker
+    maker_fee: float = Field(default=0.0002)  # 0.02% Bitget maker
+    slippage_bps: float = Field(default=2.0)  # 2 basis points
+    
     # System
+    sandbox: bool = Field(default=True, alias="SANDBOX")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
-    model_path: str = Field(default="models/sol_model_2025.pth")
+    model_path: str = Field(default="models/lgbm_model.txt")
+    data_path: str = Field(default="data/market_data.csv")
 
     def validate_credentials(self) -> bool:
         """Check if API credentials are set."""

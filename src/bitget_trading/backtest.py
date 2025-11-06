@@ -1,23 +1,16 @@
-"""Backtesting engine with comprehensive performance metrics."""
+"""Realistic backtesting engine with Bitget-specific costs."""
 
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import List, Literal
 
 import numpy as np
 import pandas as pd
-import torch
-from torch.utils.data import DataLoader, TensorDataset
 
 from bitget_trading.config import TradingConfig
-from bitget_trading.features import create_sequences
 from bitget_trading.logger import get_logger
-from bitget_trading.model import CNN_LSTM_GRU, load_model
+from bitget_trading.model import TradingModel
 
 logger = get_logger()
-
-PositionType = Literal["long", "short", "flat"]
 
 
 @dataclass
@@ -25,14 +18,16 @@ class Trade:
     """Individual trade record."""
 
     entry_time: datetime
-    exit_time: datetime
-    position_type: PositionType
+    exit_time: datetime | None
+    side: str  # "long" or "short"
     entry_price: float
-    exit_price: float
+    exit_price: float | None
     size: float
     pnl: float
     pnl_pct: float
-    leverage: int
+    fees_paid: float
+    slippage_cost: float
+    funding_paid: float
 
 
 @dataclass
@@ -54,49 +49,66 @@ class BacktestMetrics:
     avg_loss: float
     largest_win: float
     largest_loss: float
-    avg_trade_duration: float
     total_fees: float
+    total_slippage: float
+    total_funding: float
     net_pnl: float
     final_balance: float
     roi: float
+    avg_trade_duration_sec: float
 
 
 class Backtester:
     """
-    Backtesting engine for trading strategies.
-
-    Args:
-        config: Trading configuration
-        model: Trained neural network model
+    Realistic backtesting engine for ultra-short-term strategies.
+    
+    Includes:
+    - Taker/maker fees
+    - Slippage
+    - Funding costs (if holding across funding times)
+    - Spread costs
     """
 
-    def __init__(self, config: TradingConfig, model: CNN_LSTM_GRU) -> None:
-        """Initialize backtester."""
+    def __init__(
+        self,
+        config: TradingConfig,
+        model: TradingModel,
+    ) -> None:
+        """
+        Initialize backtester.
+        
+        Args:
+            config: Trading configuration
+            model: Trained trading model
+        """
         self.config = config
         self.model = model
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model.to(self.device)
-        self.model.eval()
-
-        self.trades: List[Trade] = []
-        self.equity_curve: List[float] = []
-        self.balance_history: List[float] = []
-        self.position: PositionType = "flat"
-        self.entry_price: float = 0.0
+        
+        # State
+        self.trades: list[Trade] = []
+        self.position: str = "flat"  # "flat", "long", "short"
         self.position_size: float = 0.0
+        self.entry_price: float = 0.0
+        self.entry_time: datetime | None = None
+        
+        # Equity tracking
+        self.equity_curve: list[float] = []
+        self.timestamps: list[datetime] = []
 
     def run(
         self,
         df: pd.DataFrame,
+        feature_cols: list[str],
         initial_balance: float = 10000.0,
     ) -> tuple[BacktestMetrics, pd.DataFrame]:
         """
         Run backtest on historical data.
-
+        
         Args:
-            df: DataFrame with OHLCV data
+            df: DataFrame with features and mid_price
+            feature_cols: List of feature column names
             initial_balance: Starting capital in USDT
-
+        
         Returns:
             Tuple of (metrics, trades_df)
         """
@@ -106,202 +118,233 @@ class Backtester:
             leverage=self.config.leverage,
             data_points=len(df),
         )
-
-        # Create sequences
-        sequences, feature_cols = create_sequences(df, self.config.seq_len)
-
-        if len(sequences) == 0:
-            raise ValueError("Insufficient data for backtesting")
-
-        # Prepare data
-        dataset = TensorDataset(torch.tensor(sequences, dtype=torch.float32))
-        dataloader = DataLoader(
-            dataset, batch_size=self.config.batch_size, shuffle=False
-        )
-
-        # Generate predictions
-        predictions = []
-        with torch.no_grad():
-            for batch in dataloader:
-                batch_data = batch[0].to(self.device)
-                outputs = self.model(batch_data)
-                probs = torch.softmax(outputs, dim=1)
-                predictions.extend(probs.cpu().numpy())
-
-        predictions = np.array(predictions)
-        signals = np.argmax(predictions, axis=1)  # 0=long, 1=short, 2=flat
-
-        # Align predictions with price data
-        price_data = df.iloc[self.config.seq_len - 1 :].reset_index(drop=True)
-
-        # Run backtest
+        
         balance = initial_balance
         peak_balance = initial_balance
-        self.balance_history = [balance]
-
-        for i in range(len(signals)):
-            current_price = price_data.iloc[i]["close"]
-            current_time = (
-                price_data.iloc[i]["timestamp"]
-                if "timestamp" in price_data.columns
-                else price_data.iloc[i].name
-            )
-            signal = signals[i]
-
+        
+        for idx in range(len(df)):
+            row = df.iloc[idx]
+            
+            # Get features for prediction
+            features_df = pd.DataFrame([row[feature_cols]])
+            
+            # Get trading signal
+            signal, confidence, probs = self.model.predict_signal(features_df)
+            
+            current_price = row["mid_price"]
+            current_time = row.get("timestamp", idx)
+            
+            if isinstance(current_time, (int, float)):
+                current_time = pd.to_datetime(current_time, unit="ms")
+            
+            spread_bps = row.get("spread_bps", 5.0)  # Default 5bps if missing
+            
             # Calculate position size based on risk
-            risk_amount = balance * self.config.risk_per_trade
+            risk_amount = min(
+                balance * self.config.daily_loss_limit / 10,  # Conservative
+                self.config.max_position_usd,
+            )
             position_value = risk_amount * self.config.leverage
             size = position_value / current_price
-
-            # Execute trades based on signals
-            if signal == 0 and self.position != "long":  # Go long
-                # Close existing position
+            
+            # Trading logic
+            if signal == "long" and self.position != "long":
+                # Close short if exists
                 if self.position == "short":
-                    self._close_position(current_price, current_time, balance)
-
+                    pnl = self._close_position(current_price, current_time, spread_bps)
+                    balance += pnl
+                
                 # Open long
                 self.position = "long"
-                self.entry_price = current_price
+                self.entry_price = current_price * (1 + spread_bps / 20000)  # Pay half spread
+                self.entry_time = current_time
                 self.position_size = size
-                balance -= self._calculate_fees(position_value)
-
-            elif signal == 1 and self.position != "short":  # Go short
-                # Close existing position
+                
+                # Pay entry fee
+                entry_fee = position_value * self.config.taker_fee
+                balance -= entry_fee
+                
+                logger.debug(
+                    "position_opened",
+                    side="long",
+                    price=self.entry_price,
+                    size=size,
+                )
+            
+            elif signal == "short" and self.position != "short":
+                # Close long if exists
                 if self.position == "long":
-                    self._close_position(current_price, current_time, balance)
-
+                    pnl = self._close_position(current_price, current_time, spread_bps)
+                    balance += pnl
+                
                 # Open short
                 self.position = "short"
-                self.entry_price = current_price
+                self.entry_price = current_price * (1 - spread_bps / 20000)  # Pay half spread
+                self.entry_time = current_time
                 self.position_size = size
-                balance -= self._calculate_fees(position_value)
-
-            elif signal == 2 and self.position != "flat":  # Close position
-                pnl = self._close_position(current_price, current_time, balance)
+                
+                # Pay entry fee
+                entry_fee = position_value * self.config.taker_fee
+                balance -= entry_fee
+                
+                logger.debug(
+                    "position_opened",
+                    side="short",
+                    price=self.entry_price,
+                    size=size,
+                )
+            
+            elif signal == "flat" and self.position != "flat":
+                # Close position
+                pnl = self._close_position(current_price, current_time, spread_bps)
                 balance += pnl
-
-            # Update balance with unrealized PnL
+            
+            # Calculate current equity (including unrealized PnL)
+            current_equity = balance
             if self.position != "flat":
                 unrealized_pnl = self._calculate_pnl(current_price)
-                current_balance = balance + unrealized_pnl
-            else:
-                current_balance = balance
-
-            # Track equity curve
-            self.balance_history.append(current_balance)
-            peak_balance = max(peak_balance, current_balance)
-
-            # Check daily loss limit (simplified)
-            drawdown_pct = (peak_balance - current_balance) / peak_balance
-            if drawdown_pct >= self.config.daily_loss_limit:
+                current_equity += unrealized_pnl
+            
+            # Track equity
+            self.equity_curve.append(current_equity)
+            self.timestamps.append(current_time)
+            
+            # Update peak
+            peak_balance = max(peak_balance, current_equity)
+            
+            # Check drawdown limit
+            drawdown_pct = (peak_balance - current_equity) / peak_balance
+            if drawdown_pct >= self.config.max_drawdown_pct:
                 logger.warning(
-                    "daily_loss_limit_hit",
+                    "max_drawdown_hit",
                     drawdown_pct=drawdown_pct,
-                    step=i,
+                    step=idx,
                 )
-                # Close position and stop trading for this simulation
+                # Force close position
                 if self.position != "flat":
-                    pnl = self._close_position(current_price, current_time, balance)
+                    pnl = self._close_position(current_price, current_time, spread_bps)
                     balance += pnl
                 break
-
+        
         # Close any remaining position
         if self.position != "flat":
-            final_price = price_data.iloc[-1]["close"]
-            final_time = (
-                price_data.iloc[-1]["timestamp"]
-                if "timestamp" in price_data.columns
-                else price_data.iloc[-1].name
-            )
-            pnl = self._close_position(final_price, final_time, balance)
+            final_price = df.iloc[-1]["mid_price"]
+            final_time = df.iloc[-1].get("timestamp", len(df) - 1)
+            final_spread = df.iloc[-1].get("spread_bps", 5.0)
+            pnl = self._close_position(final_price, final_time, final_spread)
             balance += pnl
-
+        
         # Calculate metrics
         metrics = self._calculate_metrics(initial_balance, balance)
-
+        
         # Create trades DataFrame
         trades_df = pd.DataFrame(
             [
                 {
                     "entry_time": t.entry_time,
                     "exit_time": t.exit_time,
-                    "position": t.position_type,
+                    "side": t.side,
                     "entry_price": t.entry_price,
                     "exit_price": t.exit_price,
                     "size": t.size,
                     "pnl": t.pnl,
                     "pnl_pct": t.pnl_pct,
-                    "leverage": t.leverage,
+                    "fees": t.fees_paid,
+                    "slippage": t.slippage_cost,
+                    "funding": t.funding_paid,
                 }
                 for t in self.trades
             ]
         )
-
+        
         logger.info(
             "backtest_completed",
             total_trades=metrics.total_trades,
-            win_rate=metrics.win_rate,
-            total_pnl=metrics.total_pnl,
-            roi=metrics.roi,
+            win_rate=f"{metrics.win_rate:.2%}",
+            total_pnl=f"${metrics.total_pnl:.2f}",
+            roi=f"{metrics.roi:.2f}%",
         )
-
+        
         return metrics, trades_df
 
     def _calculate_pnl(self, current_price: float) -> float:
-        """Calculate PnL for current position."""
+        """Calculate unrealized PnL for current position."""
         if self.position == "flat":
             return 0.0
-
+        
         price_change = current_price - self.entry_price
-
+        
         if self.position == "short":
             price_change = -price_change
-
+        
         pnl = price_change * self.position_size * self.config.leverage
         return pnl
 
     def _close_position(
-        self, exit_price: float, exit_time: datetime, balance: float
+        self,
+        exit_price: float,
+        exit_time: datetime,
+        spread_bps: float,
     ) -> float:
         """Close current position and record trade."""
         if self.position == "flat":
             return 0.0
-
-        pnl = self._calculate_pnl(exit_price)
-
-        # Calculate fees
-        position_value = self.position_size * exit_price
-        fees = self._calculate_fees(position_value)
-        net_pnl = pnl - fees
-
-        # Calculate slippage
-        slippage_cost = position_value * self.config.slippage
-        net_pnl -= slippage_cost
-
+        
+        # Adjust exit price for spread (pay other half)
+        if self.position == "long":
+            actual_exit_price = exit_price * (1 - spread_bps / 20000)
+        else:  # short
+            actual_exit_price = exit_price * (1 + spread_bps / 20000)
+        
+        # Calculate PnL
+        gross_pnl = self._calculate_pnl(actual_exit_price)
+        
+        # Calculate costs
+        position_value = self.position_size * actual_exit_price
+        
+        # Exit fee
+        exit_fee = position_value * self.config.taker_fee
+        
+        # Slippage
+        slippage_cost = position_value * (self.config.slippage_bps / 10000)
+        
+        # Funding (simplified - assume 0 for ultra-short-term)
+        funding_cost = 0.0
+        
+        # Net PnL
+        net_pnl = gross_pnl - exit_fee - slippage_cost - funding_cost
+        
         # Record trade
         trade = Trade(
-            entry_time=datetime.now(),  # Would need to track entry time properly
+            entry_time=self.entry_time or exit_time,
             exit_time=exit_time,
-            position_type=self.position,
+            side=self.position,
             entry_price=self.entry_price,
-            exit_price=exit_price,
+            exit_price=actual_exit_price,
             size=self.position_size,
             pnl=net_pnl,
-            pnl_pct=(net_pnl / balance) * 100,
-            leverage=self.config.leverage,
+            pnl_pct=(net_pnl / (position_value / self.config.leverage)) * 100,
+            fees_paid=exit_fee,
+            slippage_cost=slippage_cost,
+            funding_paid=funding_cost,
         )
         self.trades.append(trade)
-
+        
+        logger.debug(
+            "position_closed",
+            side=self.position,
+            entry=self.entry_price,
+            exit=actual_exit_price,
+            pnl=net_pnl,
+        )
+        
         # Reset position
         self.position = "flat"
         self.entry_price = 0.0
         self.position_size = 0.0
-
+        self.entry_time = None
+        
         return net_pnl
-
-    def _calculate_fees(self, position_value: float) -> float:
-        """Calculate trading fees."""
-        return position_value * self.config.fee
 
     def _calculate_metrics(
         self, initial_balance: float, final_balance: float
@@ -324,44 +367,54 @@ class Backtester:
                 avg_loss=0.0,
                 largest_win=0.0,
                 largest_loss=0.0,
-                avg_trade_duration=0.0,
                 total_fees=0.0,
+                total_slippage=0.0,
+                total_funding=0.0,
                 net_pnl=0.0,
                 final_balance=final_balance,
                 roi=0.0,
+                avg_trade_duration_sec=0.0,
             )
-
+        
         trade_pnls = [t.pnl for t in self.trades]
         winning_trades = [pnl for pnl in trade_pnls if pnl > 0]
         losing_trades = [pnl for pnl in trade_pnls if pnl < 0]
-
+        
         total_pnl = sum(trade_pnls)
-        win_rate = len(winning_trades) / len(self.trades) if self.trades else 0.0
-
-        # Drawdown calculation
-        balance_series = np.array(self.balance_history)
-        peak = np.maximum.accumulate(balance_series)
-        drawdown = peak - balance_series
+        win_rate = len(winning_trades) / len(self.trades)
+        
+        # Drawdown
+        equity_array = np.array(self.equity_curve)
+        peak = np.maximum.accumulate(equity_array)
+        drawdown = peak - equity_array
         max_drawdown = np.max(drawdown)
         max_drawdown_pct = (max_drawdown / initial_balance) * 100
-
-        # Sharpe & Sortino ratios
-        returns = np.diff(balance_series) / balance_series[:-1]
+        
+        # Sharpe & Sortino
+        returns = np.diff(equity_array) / equity_array[:-1]
         sharpe_ratio = (
-            (np.mean(returns) / np.std(returns)) * np.sqrt(252 * 24 * 60)
+            (np.mean(returns) / np.std(returns)) * np.sqrt(252 * 24 * 3600)
             if np.std(returns) > 0
             else 0.0
         )
-
+        
         negative_returns = returns[returns < 0]
         downside_std = np.std(negative_returns) if len(negative_returns) > 0 else 1e-8
-        sortino_ratio = (np.mean(returns) / downside_std) * np.sqrt(252 * 24 * 60)
-
+        sortino_ratio = (np.mean(returns) / downside_std) * np.sqrt(252 * 24 * 3600)
+        
         # Profit factor
         gross_profit = sum(winning_trades) if winning_trades else 0.0
         gross_loss = abs(sum(losing_trades)) if losing_trades else 1e-8
         profit_factor = gross_profit / gross_loss
-
+        
+        # Trade duration
+        durations = []
+        for t in self.trades:
+            if t.entry_time and t.exit_time:
+                duration = (t.exit_time - t.entry_time).total_seconds()
+                durations.append(duration)
+        avg_duration = np.mean(durations) if durations else 0.0
+        
         return BacktestMetrics(
             total_trades=len(self.trades),
             winning_trades=len(winning_trades),
@@ -378,65 +431,12 @@ class Backtester:
             avg_loss=np.mean(losing_trades) if losing_trades else 0.0,
             largest_win=max(winning_trades) if winning_trades else 0.0,
             largest_loss=min(losing_trades) if losing_trades else 0.0,
-            avg_trade_duration=0.0,  # Would need proper time tracking
-            total_fees=sum(
-                self._calculate_fees(t.size * t.entry_price) * 2 for t in self.trades
-            ),
+            total_fees=sum(t.fees_paid for t in self.trades),
+            total_slippage=sum(t.slippage_cost for t in self.trades),
+            total_funding=sum(t.funding_paid for t in self.trades),
             net_pnl=total_pnl,
             final_balance=final_balance,
             roi=((final_balance - initial_balance) / initial_balance) * 100,
+            avg_trade_duration_sec=avg_duration,
         )
-
-
-def run_backtest(
-    data_path: str | Path,
-    config: TradingConfig,
-    initial_balance: float = 10000.0,
-    save_results: bool = True,
-) -> tuple[BacktestMetrics, pd.DataFrame]:
-    """
-    Run backtest from CSV data file.
-
-    Args:
-        data_path: Path to CSV file with OHLCV data
-        config: Trading configuration
-        initial_balance: Starting capital
-        save_results: Whether to save results to disk
-
-    Returns:
-        Tuple of (metrics, trades_df)
-    """
-    # Load data
-    df = pd.read_csv(data_path)
-    if "timestamp" in df.columns:
-        df["timestamp"] = pd.to_datetime(df["timestamp"])
-
-    # Load model
-    model = load_model(
-        config.model_path,
-        n_features=config.n_features,
-        lstm_hidden=config.lstm_hidden,
-        gru_hidden=config.gru_hidden,
-        dropout=config.dropout,
-    )
-
-    # Run backtest
-    backtester = Backtester(config, model)
-    metrics, trades_df = backtester.run(df, initial_balance)
-
-    # Save results
-    if save_results:
-        results_dir = Path("backtest_results")
-        results_dir.mkdir(exist_ok=True)
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        trades_df.to_csv(results_dir / f"trades_{timestamp}.csv", index=False)
-
-        # Save metrics
-        metrics_df = pd.DataFrame([metrics.__dict__])
-        metrics_df.to_csv(results_dir / f"metrics_{timestamp}.csv", index=False)
-
-        logger.info("backtest_results_saved", directory=str(results_dir))
-
-    return metrics, trades_df
 

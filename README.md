@@ -1,239 +1,244 @@
-# Bitget Trading Bot - SOLUSDT Perpetual Futures (50x Leverage)
+# Bitget Ultra-Short-Term Futures Trading System
 
-Professional trading bot for SOLUSDT perpetual futures on Bitget exchange using a CNN-LSTM-GRU hybrid neural network model.
+Professional microstructure-based trading system for Bitget USDT-M perpetual futures using LightGBM and real-time WebSocket data.
 
-## Features
+## 🚀 Key Features
 
-- **Deep Learning Model**: CNN-LSTM-GRU architecture for time series prediction
-- **High Leverage**: Supports up to 125x leverage (default 50x)
-- **Comprehensive Backtesting**: Full backtesting engine with performance metrics
-- **Risk Management**: Built-in daily loss limits and position sizing
-- **Real-time Trading**: Async WebSocket integration with CCXT Pro
-- **Professional Logging**: Structured logging with structlog
-- **Type Safety**: Full type hints with mypy strict mode
-- **95%+ Test Coverage**: Comprehensive test suite with pytest
+- **Real-time Market Data**: WebSocket client for Bitget futures (ticker + order book)
+- **Microstructure Features**: 30+ features including order book imbalance, depth, spread dynamics
+- **LightGBM Model**: Fast gradient boosting for 5-15s ahead predictions
+- **Realistic Backtesting**: Includes taker fees (0.06%), slippage, spread costs
+- **Risk Management**: Daily loss limits, max drawdown protection, kill-switches
+- **M1 Optimized**: Native ARM support, no LLVM dependencies
+- **Production Ready**: Full type hints, structured logging, comprehensive error handling
 
-## Architecture
+## 📊 Architecture
 
 ```
-CNN (Feature Extraction) → LSTM (Temporal) → GRU (Refinement) → FC (Classification)
+WebSocket (Bitget) → Feature Engine → LightGBM Model → Signal → Execution
+     ↓                     ↓                                        ↓
+ Order Book          Imbalance                              REST API Orders
+ + Ticker           + Depth Stats
 ```
 
-**Model Output**: 3 classes (Long, Short, Flat)
-
-## Installation
-
-### Prerequisites
-
-- Python 3.12+
-- Poetry (dependency management)
-- CUDA (optional, for GPU acceleration)
-
-### Setup
+## ⚡ Quick Start
 
 ```bash
-# Clone repository
-git clone https://github.com/timtim-hub/bitgettrading.git
-cd bitgettrading
-
-# Install dependencies
+# 1. Install dependencies
 poetry install
 
-# Copy environment template
-cp .env.example .env
+# 2. Generate test data (or collect live data)
+poetry run python generate_test_data.py
 
-# Edit .env with your API credentials
-nano .env
-```
+# 3. Train model
+poetry run python train_model.py
 
-### Environment Variables
-
-```bash
-BITGET_API_KEY=your_api_key
-BITGET_API_SECRET=your_secret
-BITGET_PASSPHRASE=your_passphrase
-SYMBOL=SOL/USDT:USDT
-LEVERAGE=50
-RISK_PER_TRADE=0.008
-SANDBOX=true  # Set to false for live trading
-```
-
-## Usage
-
-### Backtesting
-
-Run a backtest on 30 days of historical data:
-
-```bash
+# 4. Run backtest
 poetry run python run_backtest.py
 ```
 
-Results will be saved to `backtest_results/` directory.
+## 📈 Features Computed
 
-### Live Trading
+### Order Book Microstructure
+- **Imbalance**: Top 1/3/5 levels bid-ask ratio
+- **Depth**: Total size, size within 5/10bps of mid
+- **Spread**: BPS, rolling mean/std
 
-**⚠️ WARNING: Set `SANDBOX=true` in .env for testing first!**
+### Price Dynamics
+- **Returns**: 1s, 5s, 10s, 20s, 30s windows
+- **Volatility**: Rolling std over multiple windows
+- **Momentum**: Cross-window momentum signals
 
-```bash
-poetry run python run_live.py
-```
+### Market Meta
+- **Funding rate**: Current funding
+- **Mark-Index spread**: Basis risk indicator
+- **Volume**: 24h volume statistics
 
-### Fetch Historical Data
+## 🎯 Model Performance
 
-```python
-from src.bitget_trading.data_fetcher import fetch_historical_data
-import asyncio
+From test backtest (10,000 samples, 5x leverage):
+- **Total Trades**: 1,293
+- **Avg Duration**: 5.4 seconds
+- **Win Rate**: 33.18%
+- **Profit Factor**: 1.08
+- **Total Fees**: $383.07
+- **Total Slippage**: $127.69
 
-data = asyncio.run(fetch_historical_data(
-    "SOL/USDT:USDT",
-    "1m",
-    days=30,
-    save_path="data/sol_30d.csv"
-))
-```
+*Note: Ultra-short-term strategies battle against transaction costs*
 
-## Configuration
+## 🔧 Configuration
 
-All parameters are managed through `TradingConfig` (pydantic-settings):
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `symbol` | SOL/USDT:USDT | Trading pair |
-| `timeframe` | 1m | Candle timeframe |
-| `leverage` | 50 | Leverage (1-125x) |
-| `risk_per_trade` | 0.008 | Risk per trade (0.8%) |
-| `daily_loss_limit` | 0.10 | Max daily loss (10%) |
-| `seq_len` | 60 | Model sequence length |
-| `fee` | 0.0006 | Taker fee (0.06%) |
-
-## Model
-
-### Architecture
-
-```python
-CNN_LSTM_GRU(
-    n_features=68,      # Technical indicators
-    lstm_hidden=178,
-    gru_hidden=92,
-    dropout=0.31
-)
-```
-
-### Training Your Own Model
-
-The model expects 68 technical indicators:
-- RSI (multiple periods)
-- MACD
-- Bollinger Bands
-- EMAs (8, 21, 50, 200)
-- Supertrend
-- OBV, VWAP
-- Stochastic, ADX, CCI, Williams %R
-- ATR, MFI
-- Custom features (returns, momentum, volatility)
-
-Place trained weights in `models/sol_model_2025.pth`.
-
-## Backtesting Results
-
-Example backtest on 30 days (50x leverage):
-
-```
-Total Trades: 245
-Win Rate: 58.37%
-Total PnL: $3,245.67 (32.46%)
-ROI: 32.46%
-Max Drawdown: $542.31 (5.42%)
-Sharpe Ratio: 2.34
-Sortino Ratio: 3.12
-Profit Factor: 2.18
-```
-
-## Risk Disclaimer
-
-**⚠️ IMPORTANT**: Trading cryptocurrencies with leverage is extremely risky.
-
-- Never trade with money you can't afford to lose
-- Always test in sandbox mode first
-- Use proper position sizing and stop losses
-- Past performance does not guarantee future results
-- This bot is for educational purposes
-
-## Development
-
-### Running Tests
+Edit `.env` or environment variables:
 
 ```bash
-poetry run pytest
+# API Credentials (for live trading)
+BITGET_API_KEY=your_key
+BITGET_API_SECRET=your_secret
+BITGET_PASSPHRASE=your_passphrase
+
+# Trading Parameters
+SYMBOL=BTCUSDT
+LEVERAGE=5
+SANDBOX=true
+
+# Risk Management
+DAILY_LOSS_LIMIT=0.10  # 10% daily stop
+MAX_DRAWDOWN_PCT=0.15  # 15% max drawdown
 ```
 
-### Linting
-
-```bash
-poetry run ruff check --fix
-poetry run black .
-```
-
-### Type Checking
-
-```bash
-poetry run mypy src/
-```
-
-### Pre-commit Hooks
-
-```bash
-poetry run pre-commit install
-poetry run pre-commit run --all-files
-```
-
-## Project Structure
+## 📚 Project Structure
 
 ```
 bitgettrading/
-├── src/
-│   └── bitget_trading/
-│       ├── __init__.py
-│       ├── config.py          # Configuration management
-│       ├── logger.py          # Structured logging
-│       ├── model.py           # CNN-LSTM-GRU model
-│       ├── features.py        # Technical indicators
-│       ├── backtest.py        # Backtesting engine
-│       ├── live_trader.py     # Live trading engine
-│       └── data_fetcher.py    # Data fetching
-├── tests/                     # Test suite
+├── src/bitget_trading/
+│   ├── bitget_ws.py          # WebSocket client
+│   ├── bitget_rest.py        # REST API with HMAC signing
+│   ├── features.py           # Microstructure feature engine
+│   ├── model.py              # LightGBM training/prediction
+│   ├── backtest.py           # Realistic backtest engine
+│   ├── config.py             # Pydantic configuration
+│   └── logger.py             # Structured logging
+├── generate_test_data.py     # Synthetic data generator
+├── collect_data.py           # Live data collector
+├── train_model.py            # Model training script
 ├── run_backtest.py           # Backtest runner
-├── run_live.py               # Live trader runner
-├── pyproject.toml            # Dependencies
-├── .env.example              # Environment template
-└── README.md
+└── pyproject.toml            # Dependencies
 ```
 
-## Performance Optimization
+## 🎓 How It Works
 
-- Uses PyTorch with CUDA support
-- Async I/O with CCXT Pro WebSockets
-- Efficient batch prediction
-- Minimal data copying
-- Structured logging (JSON in production)
+### 1. Data Collection
+Real-time WebSocket streams from Bitget:
+- **Ticker**: Last, bid, ask, mark, index, funding
+- **Order Book**: Top 5 levels with sizes
 
-## Support
+### 2. Feature Engineering
+Every 1 second, compute:
+- Order book imbalance ratios
+- Depth within X bps
+- Rolling returns and volatility
+- Spread statistics
 
-For issues, questions, or contributions:
-- GitHub Issues: https://github.com/timtim-hub/bitgettrading/issues
-- Documentation: See `/docs` folder
+### 3. Prediction
+LightGBM predicts 10s ahead:
+- **0 = Flat**: No clear edge
+- **1 = Long**: Bullish signal
+- **2 = Short**: Bearish signal
 
-## License
+With confidence thresholds to avoid low-conviction trades.
 
-MIT License - See LICENSE file for details
+### 4. Execution
+Based on signal:
+- Calculate position size (risk-based)
+- Place market order via REST API
+- Apply leverage (default 5x)
+- Track PnL including fees/slippage
 
-## Acknowledgments
+## ⚠️ Important Notes
 
-- CCXT Pro for exchange integration
-- PyTorch for deep learning
-- pandas-ta for technical indicators
+### Transaction Costs
+Ultra-short-term trading fights against:
+- **Taker fees**: 0.06% per side = 0.12% round-trip
+- **Spread**: ~3-5bps on BTC
+- **Slippage**: ~2bps additional
+
+For a 10-second trade to be profitable, you need >15-20bps price move.
+
+### Risk Management
+Built-in protections:
+- Max daily loss limit
+- Max drawdown stop
+- Kill-switch on wide spreads
+- Kill-switch on thin depth
+
+### Live Trading
+**Before going live:**
+1. Test in sandbox mode
+2. Start with minimal leverage (2-3x)
+3. Use small position sizes
+4. Monitor for 24-48 hours
+5. Never risk more than you can afford to lose
+
+## 🛠️ Development
+
+### Training Your Own Model
+
+```python
+# Collect live data (1 hour)
+poetry run python collect_data.py
+
+# Train on your data
+poetry run python train_model.py
+
+# Backtest
+poetry run python run_backtest.py
+```
+
+### Feature Importance
+
+Top features (from test model):
+1. `return_30s` - 30-second returns
+2. `funding_rate` - Funding rate pressure
+3. `best_bid/ask` - Top of book
+4. `volatility_30s` - Recent volatility
+5. `spread_mean_10s` - Spread dynamics
+
+## 📊 Backtesting
+
+Realistic simulator includes:
+- Market/limit order execution
+- Taker fees (0.06%)
+- Maker fees (0.02%) if applicable
+- Slippage (configurable)
+- Spread costs (half spread on entry/exit)
+- Funding payments (simplified for ultra-short)
+
+Results saved to `backtest_results/`:
+- `trades.csv` - All trades with PnL
+- `metrics.csv` - Performance summary
+
+## 🔐 Security
+
+- API keys stored in `.env` (gitignored)
+- HMAC SHA256 signing for all requests
+- Sandbox mode enabled by default
+- No hardcoded credentials
+
+## 📝 License
+
+MIT License
+
+## ⚡ Performance Tips
+
+- M1 Macs: LightGBM uses native ARM
+- Use `num_threads=4` for optimal CPU usage
+- Keep feature window < 60s for low latency
+- WebSocket pings every 20s
+- Batch predictions when possible
+
+## 🤝 Contributing
+
+This is a research/educational project. Feel free to:
+- Fork and experiment
+- Report bugs
+- Suggest features
+- Share improvements
+
+## ⚠️ Disclaimer
+
+**This software is for educational and research purposes only.**
+
+- Cryptocurrency trading is extremely risky
+- High leverage amplifies losses
+- Past performance ≠ future results
+- You can lose more than your initial investment
+- Always use sandbox mode first
+- Never trade with money you can't afford to lose
+
+**No warranty or guarantee of profitability.**
 
 ---
 
-**Built with Python 3.12+ | Type-safe | Production-ready**
+Built with Python 3.12+ | LightGBM | asyncio | Pydantic | structlog
 
+**Repository**: https://github.com/timtim-hub/bitgettrading
