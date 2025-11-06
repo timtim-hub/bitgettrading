@@ -120,13 +120,25 @@ class UniverseManager:
                     for ticker in tickers:
                         symbol = ticker.get("symbol")
                         if symbol:
+                            # Handle None values properly
+                            last_price = ticker.get("lastPr") or 0
+                            bid_price = ticker.get("bidPr") or 0
+                            ask_price = ticker.get("askPr") or 0
+                            volume_24h = ticker.get("baseVolume") or 0
+                            quote_volume = ticker.get("quoteVolume") or 0
+                            open_interest = ticker.get("openInterest") or 0
+                            
+                            # Skip symbols with no valid price data
+                            if last_price == 0 or bid_price == 0 or ask_price == 0:
+                                continue
+                            
                             ticker_map[symbol] = {
-                                "last_price": float(ticker.get("lastPr", 0)),
-                                "bid_price": float(ticker.get("bidPr", 0)),
-                                "ask_price": float(ticker.get("askPr", 0)),
-                                "volume_24h": float(ticker.get("baseVolume", 0)),
-                                "quote_volume_24h": float(ticker.get("quoteVolume", 0)),
-                                "open_interest": float(ticker.get("openInterest", 0)),
+                                "last_price": float(last_price),
+                                "bid_price": float(bid_price),
+                                "ask_price": float(ask_price),
+                                "volume_24h": float(volume_24h),
+                                "quote_volume_24h": float(quote_volume),
+                                "open_interest": float(open_interest),
                             }
 
                     return ticker_map
