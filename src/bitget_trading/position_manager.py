@@ -130,6 +130,8 @@ class PositionManager:
         """
         Check if position should be closed.
         
+        Accounts for LEVERAGE: with 50x leverage, only need 0.2% price move for 10% return!
+        
         Returns:
             (should_close, reason)
         """
@@ -138,32 +140,45 @@ class PositionManager:
         
         position = self.positions[symbol]
         
-        # Calculate current PnL %
+        # Calculate current price change % (currency move)
         if position.side == "long":
-            pnl_pct = ((current_price - position.entry_price) / position.entry_price)
+            price_change_pct = ((current_price - position.entry_price) / position.entry_price)
         else:
-            pnl_pct = ((position.entry_price - current_price) / position.entry_price)
+            price_change_pct = ((position.entry_price - current_price) / position.entry_price)
         
-        # 1. Hard stop-loss
-        if pnl_pct < -position.stop_loss_pct:
-            return True, f"STOP-LOSS ({pnl_pct*100:.2f}%)"
+        # Apply leverage to get return on CAPITAL
+        return_on_capital_pct = price_change_pct * position.leverage
         
-        # 2. Take-profit
-        if pnl_pct > position.take_profit_pct:
-            return True, f"TAKE-PROFIT ({pnl_pct*100:.2f}%)"
+        # CRITICAL: Targets are based on CAPITAL return, not price move!
+        # With 50x leverage:
+        # - 10% capital return = 0.2% price move
+        # - 2% capital loss = 0.04% price move
         
-        # 3. Trailing stop (only if in profit)
-        if pnl_pct > 0.01:  # Only activate trailing if up 1%+
+        target_price_move_for_stop = position.stop_loss_pct / position.leverage  # e.g., 2% / 50 = 0.04%
+        target_price_move_for_tp = position.take_profit_pct / position.leverage  # e.g., 10% / 50 = 0.2%
+        target_price_move_for_trail = position.trailing_stop_pct / position.leverage  # e.g., 3% / 50 = 0.06%
+        
+        # 1. Hard stop-loss (on capital, not price)
+        if price_change_pct < -target_price_move_for_stop:
+            return True, f"STOP-LOSS (Capital: {return_on_capital_pct*100:.2f}%, Price: {price_change_pct*100:.4f}%)"
+        
+        # 2. Take-profit (on capital, not price)
+        if price_change_pct > target_price_move_for_tp:
+            return True, f"TAKE-PROFIT (Capital: {return_on_capital_pct*100:.2f}%, Price: {price_change_pct*100:.4f}%)"
+        
+        # 3. Trailing stop (only if in profit on capital basis)
+        min_profit_for_trailing = 0.01 / position.leverage  # 1% capital return = 0.02% price move @ 50x
+        if price_change_pct > min_profit_for_trailing:
             if position.side == "long":
                 # Trail from highest price
-                trailing_stop_price = position.highest_price * (1 - position.trailing_stop_pct)
+                trailing_stop_price = position.highest_price * (1 - target_price_move_for_trail)
                 if current_price < trailing_stop_price:
-                    return True, f"TRAILING-STOP from peak ${position.highest_price:.4f}"
+                    return True, f"TRAILING-STOP from peak ${position.highest_price:.4f} (Capital PnL: {return_on_capital_pct*100:.2f}%)"
             else:  # short
                 # Trail from lowest price
-                trailing_stop_price = position.lowest_price * (1 + position.trailing_stop_pct)
+                trailing_stop_price = position.lowest_price * (1 + target_price_move_for_trail)
                 if current_price > trailing_stop_price:
-                    return True, f"TRAILING-STOP from low ${position.lowest_price:.4f}"
+                    return True, f"TRAILING-STOP from low ${position.lowest_price:.4f} (Capital PnL: {return_on_capital_pct*100:.2f}%)"
         
         return False, ""
 
