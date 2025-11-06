@@ -278,6 +278,84 @@ class SymbolState:
         features["sharpe_estimate"] = self.get_sharpe_estimate()
         features["n_trades"] = float(self.n_trades)
         
+        # ADVANCED INDICATORS (World-class technical analysis)
+        try:
+            # RSI (multiple timeframes)
+            features["rsi_2s"] = self.advanced_indicators.compute_rsi(period=2)
+            features["rsi_5s"] = self.advanced_indicators.compute_rsi(period=5)
+            features["rsi_15s"] = self.advanced_indicators.compute_rsi(period=15)
+            features["rsi_30s"] = self.advanced_indicators.compute_rsi(period=30)
+            
+            # MACD (ultra-fast scalping params)
+            macd_line, macd_signal, macd_hist = self.advanced_indicators.compute_macd(fast=3, slow=7, signal=2)
+            features["macd_line"] = macd_line
+            features["macd_signal"] = macd_signal
+            features["macd_histogram"] = macd_hist
+            
+            # Bollinger Bands
+            bb_upper, bb_middle, bb_lower = self.advanced_indicators.compute_bollinger_bands(period=20, std_dev=2.0)
+            features["bb_upper"] = bb_upper
+            features["bb_middle"] = bb_middle
+            features["bb_lower"] = bb_lower
+            if bb_upper > bb_lower:
+                # Position within bands: -1 (at lower) to +1 (at upper)
+                features["bb_position"] = (self.mid_price - bb_middle) / ((bb_upper - bb_middle) + 1e-8)
+            else:
+                features["bb_position"] = 0.0
+            
+            # EMA Crossovers
+            ema_crosses = self.advanced_indicators.compute_ema_crossovers()
+            bullish_count = sum(1 for _, _, signal in ema_crosses.values() if signal == "bullish")
+            bearish_count = sum(1 for _, _, signal in ema_crosses.values() if signal == "bearish")
+            features["ema_bullish_count"] = bullish_count
+            features["ema_bearish_count"] = bearish_count
+            
+            # VWAP Deviation
+            vwap, vwap_dev = self.advanced_indicators.compute_vwap_deviation(period=300)
+            features["vwap"] = vwap
+            features["vwap_deviation"] = vwap_dev
+            
+            # Enhanced Order Flow
+            features["order_flow_imbalance"] = self.advanced_indicators.compute_order_flow_imbalance()
+            
+            # Price Action Patterns
+            pattern_name, pattern_confidence = self.advanced_indicators.detect_price_action_pattern()
+            features["price_action_pattern"] = hash(pattern_name) % 1000  # Encode as number
+            features["price_action_confidence"] = pattern_confidence
+            if pattern_name == "uptrend":
+                features["price_action_direction"] = 1
+            elif pattern_name == "downtrend":
+                features["price_action_direction"] = -1
+            else:
+                features["price_action_direction"] = 0
+            
+            # Liquidity Sweep Detection
+            is_sweep, sweep_dir = self.advanced_indicators.detect_liquidity_sweep()
+            features["liquidity_sweep"] = 1.0 if is_sweep else 0.0
+            if sweep_dir == "up":
+                features["sweep_direction"] = -1  # Fade the move (bearish after up sweep)
+            elif sweep_dir == "down":
+                features["sweep_direction"] = 1  # Fade the move (bullish after down sweep)
+            else:
+                features["sweep_direction"] = 0
+            
+            # Tick Momentum
+            features["tick_momentum"] = self.advanced_indicators.compute_tick_momentum()
+            
+            # COMPOSITE SCORE (master signal)
+            composite_score, component_scores = compute_composite_score(features)
+            features["composite_score"] = composite_score
+            for comp_name, comp_score in component_scores.items():
+                features[f"score_{comp_name}"] = comp_score
+                
+        except Exception as e:
+            logger.warning(f"Failed to compute advanced indicators for {self.symbol}: {e}")
+            # Set default values
+            for key in ["rsi_2s", "rsi_5s", "rsi_15s", "rsi_30s", "macd_histogram", "bb_position",
+                        "ema_bullish_count", "vwap_deviation", "order_flow_imbalance", "tick_momentum",
+                        "composite_score"]:
+                features.setdefault(key, 0.0)
+        
         self.features = features
         return features
 
