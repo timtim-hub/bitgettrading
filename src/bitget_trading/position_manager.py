@@ -27,11 +27,11 @@ class Position:
     highest_price: float = 0.0  # For long positions
     lowest_price: float = 0.0   # For short positions
     
-    # DYNAMIC risk management (adjusted by regime and leverage)
-    # With 50x leverage: 6% capital loss = 0.12% price move
-    trailing_stop_pct: float = 0.05  # 5% trailing from peak (0.1% price @ 50x)
+    # OPTIMIZED for ultra-short-term scalping with fees in mind
+    # With 50x leverage + 0.04% round-trip fees
+    trailing_stop_pct: float = 0.04  # 4% trailing from peak (0.08% price @ 50x)
     stop_loss_pct: float = 0.06   # 6% hard stop-loss (0.12% price @ 50x)
-    take_profit_pct: float = 0.15  # 15% take-profit (0.3% price @ 50x)
+    take_profit_pct: float = 0.20  # 20% take-profit (0.4% price @ 50x) - let winners run!
     
     # Regime info
     regime: str = "ranging"  # Market regime at entry
@@ -68,8 +68,8 @@ class PositionManager:
         leverage: int,
         regime: str = "ranging",
         stop_loss_pct: float = 0.06,  # 6% capital (0.12% price @ 50x)
-        take_profit_pct: float = 0.15,  # 15% capital (0.3% price @ 50x)
-        trailing_stop_pct: float = 0.05,  # 5% capital (0.1% price @ 50x)
+        take_profit_pct: float = 0.20,  # 20% capital (0.4% price @ 50x) - let winners run!
+        trailing_stop_pct: float = 0.04,  # 4% capital (0.08% price @ 50x) - tighter trailing
     ) -> None:
         """Add a new position with regime-based parameters."""
         position = Position(
@@ -177,13 +177,34 @@ class PositionManager:
         if price_change_pct < -target_price_move_for_stop:
             return True, f"STOP-LOSS (Capital: {return_on_capital_pct*100:.2f}%, Price: {price_change_pct*100:.4f}%)"
         
-        # 2. MINIMUM PROFIT LOCK: Don't close small winners/losers (avoid fee erosion)
+        # 2. QUICK PROFIT EXIT: Take profit after 3-5 minutes if above minimum threshold
+        # This prevents giving back profits in choppy markets
+        from datetime import datetime, timedelta
+        try:
+            entry_dt = datetime.fromisoformat(position.entry_time)
+            time_in_position = (datetime.now() - entry_dt).total_seconds()
+            
+            # After 3 minutes, take any profit > 2% capital (covers fees + profit)
+            if time_in_position > 180 and return_on_capital_pct > 0.02:
+                return True, f"QUICK-PROFIT after {time_in_position/60:.1f}min (Capital: {return_on_capital_pct*100:.2f}%)"
+            
+            # After 5 minutes, take any profit > 1.5% capital (marginal profit)
+            if time_in_position > 300 and return_on_capital_pct > 0.015:
+                return True, f"TIME-EXIT after {time_in_position/60:.1f}min (Capital: {return_on_capital_pct*100:.2f}%)"
+            
+            # After 10 minutes, exit even at breakeven (free up capital)
+            if time_in_position > 600 and return_on_capital_pct > -0.005:
+                return True, f"MAX-TIME-EXIT after {time_in_position/60:.1f}min (Capital: {return_on_capital_pct*100:.2f}%)"
+        except:
+            pass  # If datetime parsing fails, skip time-based exits
+        
+        # 3. MINIMUM PROFIT LOCK: Don't close small winners/losers (avoid fee erosion)
         # Between -1% and +1.5% capital return, hold position (fees cost ~0.04%)
         if -0.01 < return_on_capital_pct < 0.015:
             # Too small to justify closing - would lose to fees
             return False, ""
         
-        # 3. Take-profit (on capital, not price)
+        # 4. Take-profit (on capital, not price)
         if price_change_pct > target_price_move_for_tp:
             return True, f"TAKE-PROFIT (Capital: {return_on_capital_pct*100:.2f}%, Price: {price_change_pct*100:.4f}%)"
         
