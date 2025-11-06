@@ -663,21 +663,27 @@ class LiveTrader:
                     "asks": [[mid + spread/2, 1000], [mid + spread, 500]],
                 })
         
-        # CRITICAL: Accumulate 3 minutes of 1-second data for reliable multi-timeframe signals
-        logger.info("⏳ Accumulating price history (180 seconds / 3 minutes at 1-second intervals)...")
-        for i in range(180):  # 180 iterations = 3 minutes
+        # CRITICAL: Accumulate 60 seconds of 1-second data for ultra-fast startup
+        # This is enough for ultra-short-term timeframes (1s, 3s, 5s, 10s, 15s, 30s)
+        logger.info("⏳ Accumulating price history (60 seconds at 1-second intervals - MAXIMUM SPEED)...")
+        logger.info(f"   💪 Using all device power for 100 symbols in parallel...")
+        
+        for i in range(60):  # 60 iterations = 1 minute
             await asyncio.sleep(1)
-            # Update EVERY second (not every 5) for accurate multi-timeframe features
+            # Fetch ALL tickers in ONE API call (Bitget returns all symbols at once - FAST!)
             ticker_dict = await self.universe_manager.fetch_tickers()
+            
+            # Batch update all symbols (Python is fast enough, no multiprocessing overhead)
             for symbol, ticker in ticker_dict.items():
                 if symbol in self.symbols:
                     self.state_manager.update_ticker(symbol, ticker)
             
-            # Log progress every 30 seconds
-            if (i + 1) % 30 == 0:
-                logger.info(f"   📊 Accumulated {i+1}/180 data points ({(i+1)/3:.0f} minutes)")
+            # Log progress every 15 seconds
+            if (i + 1) % 15 == 0:
+                active_count = len([s for s in self.symbols if s in ticker_dict])
+                logger.info(f"   📊 {i+1}/60s complete ({(i+1)/60:.0%}) | {active_count} symbols active")
 
-        logger.info("✅ 3 minutes of data ready! Multi-timeframe signals now reliable. Starting trading...\n")
+        logger.info("✅ 60 seconds of data ready! Multi-timeframe signals active. Starting trading...\n")
 
         # Start trading
         await self.trading_loop()

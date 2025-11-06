@@ -30,7 +30,7 @@ class Position:
     # OPTIMIZED for ultra-short-term scalping with fees in mind
     # With 50x leverage + 0.04% round-trip fees
     trailing_stop_pct: float = 0.04  # 4% trailing from peak (0.08% price @ 50x)
-    stop_loss_pct: float = 0.06   # 6% hard stop-loss (0.12% price @ 50x)
+    stop_loss_pct: float = 0.08   # 8% hard stop-loss (0.16% price @ 50x) - wider for volatility
     take_profit_pct: float = 0.20  # 20% take-profit (0.4% price @ 50x) - let winners run!
     
     # Regime info
@@ -67,7 +67,7 @@ class PositionManager:
         capital: float,
         leverage: int,
         regime: str = "ranging",
-        stop_loss_pct: float = 0.06,  # 6% capital (0.12% price @ 50x)
+        stop_loss_pct: float = 0.08,  # 8% capital (0.16% price @ 50x) - wider for volatility
         take_profit_pct: float = 0.20,  # 20% capital (0.4% price @ 50x) - let winners run!
         trailing_stop_pct: float = 0.04,  # 4% capital (0.08% price @ 50x) - tighter trailing
     ) -> None:
