@@ -102,19 +102,25 @@ class EnhancedRanker:
         """
         Compute enhanced score with all improvements.
         
+        STRICT FILTERS: Only trade high-quality setups!
+        
         Returns:
             (score, predicted_side, metadata)
         """
-        # 1. Multi-timeframe confluence CHECK
+        # 1. Multi-timeframe confluence CHECK (STRICT!)
         has_confluence, direction, confluence_strength = self.check_multi_timeframe_confluence(features)
         
         if not has_confluence:
             # No confluence = skip this symbol
             return 0.0, "neutral", {"reason": "no_confluence"}
         
-        # 2. Volume filter CHECK (RELAXED from 1.2 to 1.0)
+        # STRICT: Require STRONG confluence (user confirmed trades placed fast - filters work!)
+        if confluence_strength < 0.001:  # At least 0.1% average return across timeframes
+            return 0.0, "neutral", {"reason": "weak_confluence"}
+        
+        # 2. Volume filter CHECK (STRICT: Above-average volume required)
         volume_ratio = features.get("volume_ratio", 1.0)
-        if volume_ratio < 0.8:  # Only skip if significantly below average
+        if volume_ratio < 1.05:  # Must be 5%+ above average volume
             return 0.0, "neutral", {"reason": "low_volume"}
         
         # 3. Detect market regime
@@ -143,11 +149,17 @@ class EnhancedRanker:
         else:
             volatility_score = 0.0
         
-        # 7. Liquidity score
+        # 7. Liquidity score (STRICT: Good spreads only)
         spread_bps = features.get("spread_bps", 100.0)
+        if spread_bps > 40.0:  # Skip if spread > 40 bps (too expensive)
+            return 0.0, "neutral", {"reason": "wide_spread"}
         spread_score = max(0, 1 - spread_bps / 50.0)
         
-        # 8. Funding rate bias (EXPLOIT FUNDING!)
+        # 8. Momentum threshold (STRICT: Strong momentum required)
+        if abs(return_15s) < 0.0008:  # Must move at least 0.08% in 15s
+            return 0.0, "neutral", {"reason": "weak_momentum"}
+        
+        # 9. Funding rate bias (EXPLOIT FUNDING!)
         funding_rate = features.get("funding_rate", 0.0)
         funding_bias = 0.0
         if direction == "long" and funding_rate < 0:  # Longs get paid
@@ -164,13 +176,13 @@ class EnhancedRanker:
             funding_bias
         )
         
-        # 9. Boost by confluence strength
-        base_score *= (1 + confluence_strength)
+        # 10. Boost by confluence strength
+        base_score *= (1 + confluence_strength * 100)  # AMPLIFY confluence impact!
         
-        # 10. Boost by volume ratio
+        # 11. Boost by volume ratio
         base_score *= (1 + (volume_ratio - 1) * 0.5)  # 50% of excess volume
         
-        # 11. UCB bandit overlay
+        # 12. UCB bandit overlay
         bandit_score = state.get_ucb_score(1000, c=self.ucb_exploration)
         if np.isfinite(bandit_score):
             bandit_norm = np.clip(bandit_score, -100, 100) / 100.0
@@ -182,6 +194,10 @@ class EnhancedRanker:
             self.bandit_alpha * np.clip(base_score, -5, 5) / 5.0 +
             (1 - self.bandit_alpha) * bandit_norm
         )
+        
+        # STRICT: Only accept HIGH scores (top signals only!)
+        if final_score < 0.3:  # Minimum quality threshold
+            return 0.0, "neutral", {"reason": "low_score"}
         
         metadata = {
             "regime": regime,
@@ -257,7 +273,14 @@ class EnhancedRanker:
         btc_return = btc_features.get("return_5min", 0.0)
         
         scored_symbols = []
-        skip_reasons = {"no_confluence": 0, "low_volume": 0, "low_score": 0}
+        skip_reasons = {
+            "no_confluence": 0,
+            "weak_confluence": 0,
+            "low_volume": 0,
+            "wide_spread": 0,
+            "weak_momentum": 0,
+            "low_score": 0,
+        }
         
         for symbol, features in all_features.items():
             state = state_manager.get_state(symbol)
