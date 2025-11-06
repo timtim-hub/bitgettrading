@@ -13,7 +13,7 @@ logger = get_logger()
 
 @dataclass
 class Position:
-    """Trading position with trailing stop."""
+    """Trading position with trailing stop and regime-based parameters."""
     
     symbol: str
     side: str  # "long" or "short"
@@ -26,11 +26,14 @@ class Position:
     # Trailing stop tracking
     highest_price: float = 0.0  # For long positions
     lowest_price: float = 0.0   # For short positions
-    trailing_stop_pct: float = 0.03  # 3% trailing from peak
     
-    # Risk management (OPTIMIZED for fee reduction)
+    # DYNAMIC risk management (adjusted by regime)
+    trailing_stop_pct: float = 0.03  # 3% trailing from peak
     stop_loss_pct: float = 0.02   # 2% hard stop-loss
-    take_profit_pct: float = 0.10  # 10% take-profit (was 5% - let winners run!)
+    take_profit_pct: float = 0.10  # 10% take-profit
+    
+    # Regime info
+    regime: str = "ranging"  # Market regime at entry
     
     # Performance tracking
     unrealized_pnl: float = 0.0
@@ -62,8 +65,12 @@ class PositionManager:
         size: float,
         capital: float,
         leverage: int,
+        regime: str = "ranging",
+        stop_loss_pct: float = 0.02,
+        take_profit_pct: float = 0.10,
+        trailing_stop_pct: float = 0.03,
     ) -> None:
-        """Add a new position."""
+        """Add a new position with regime-based parameters."""
         position = Position(
             symbol=symbol,
             side=side,
@@ -74,6 +81,10 @@ class PositionManager:
             leverage=leverage,
             highest_price=entry_price if side == "long" else 0.0,
             lowest_price=entry_price if side == "short" else float('inf'),
+            regime=regime,
+            stop_loss_pct=stop_loss_pct,
+            take_profit_pct=take_profit_pct,
+            trailing_stop_pct=trailing_stop_pct,
         )
         
         self.positions[symbol] = position
@@ -85,6 +96,9 @@ class PositionManager:
             side=side,
             entry_price=entry_price,
             size=size,
+            regime=regime,
+            tp=f"{take_profit_pct*100}%",
+            sl=f"{stop_loss_pct*100}%",
         )
 
     def remove_position(self, symbol: str) -> Position | None:

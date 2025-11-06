@@ -55,8 +55,11 @@ class SymbolState:
         self.total_ask_depth: float = 0.0
         self.ob_imbalance: float = 0.0
         
-        # Price history for returns/volatility
-        self.price_history: Deque[tuple[float, float]] = deque(maxlen=300)  # (timestamp, price)
+        # Price history for returns/volatility (extended for multi-timeframe)
+        self.price_history: Deque[tuple[float, float]] = deque(maxlen=3600)  # 1 hour at 1Hz
+        
+        # Volume history
+        self.volume_history: Deque[tuple[float, float]] = deque(maxlen=300)  # (timestamp, volume)
         
         # Online trade statistics
         self.trades: Deque[Trade] = deque(maxlen=window_size)
@@ -87,6 +90,9 @@ class SymbolState:
         
         # Update price history
         self.price_history.append((time.time(), self.mid_price))
+        
+        # Update volume history
+        self.volume_history.append((time.time(), self.volume_24h))
 
     def update_orderbook(self, orderbook_data: dict) -> None:
         """Update from order book data."""
@@ -188,7 +194,7 @@ class SymbolState:
 
     def compute_features(self) -> dict[str, float]:
         """
-        Compute all features for this symbol.
+        Compute all features for this symbol including MULTI-TIMEFRAME.
         
         Returns:
             Feature dictionary
@@ -211,22 +217,45 @@ class SymbolState:
             "funding_rate": self.funding_rate,
         }
         
-        # Compute returns if we have price history
+        # Multi-timeframe returns and volatility
         if len(self.price_history) >= 2:
             prices = np.array([p for _, p in self.price_history])
             times = np.array([t for t, _ in self.price_history])
             
-            # Short-term returns
-            for window in [5, 15, 30, 60]:
+            # MULTIPLE TIMEFRAMES (confluence analysis)
+            timeframes = {
+                "5s": 5,
+                "15s": 15,
+                "30s": 30,
+                "60s": 60,
+                "5min": 300,
+                "15min": 900,
+                "1hr": 3600,
+            }
+            
+            for name, window in timeframes.items():
                 if len(prices) > window:
                     ret = (prices[-1] - prices[-window]) / prices[-window]
-                    features[f"return_{window}s"] = ret
+                    features[f"return_{name}"] = ret
             
-            # Volatility
+            # Multi-timeframe volatility
             if len(prices) >= 30:
                 returns = np.diff(prices) / prices[:-1]
                 features["volatility_30s"] = np.std(returns[-30:])
                 features["volatility_60s"] = np.std(returns[-60:]) if len(returns) >= 60 else np.std(returns[-30:])
+                features["volatility_5min"] = np.std(returns[-300:]) if len(returns) >= 300 else features["volatility_60s"]
+        
+        # Volume analysis
+        if len(self.volume_history) >= 2:
+            volumes = np.array([v for _, v in self.volume_history])
+            if len(volumes) >= 60:
+                avg_volume = np.mean(volumes[-300:]) if len(volumes) >= 300 else np.mean(volumes)
+                current_volume = volumes[-1]
+                features["volume_ratio"] = current_volume / (avg_volume + 1e-8)
+            else:
+                features["volume_ratio"] = 1.0
+        else:
+            features["volume_ratio"] = 1.0
         
         # Online statistics
         features["win_rate"] = self.get_win_rate()

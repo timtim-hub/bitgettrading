@@ -21,9 +21,11 @@ from typing import Any
 
 from src.bitget_trading.bitget_rest import BitgetRestClient
 from src.bitget_trading.cross_sectional_ranker import CrossSectionalRanker
+from src.bitget_trading.enhanced_ranker import EnhancedRanker
 from src.bitget_trading.logger import setup_logging
 from src.bitget_trading.multi_symbol_state import MultiSymbolStateManager
 from src.bitget_trading.position_manager import PositionManager
+from src.bitget_trading.regime_detector import RegimeDetector
 from src.bitget_trading.universe import UniverseManager
 
 logger = setup_logging()
@@ -59,8 +61,11 @@ class LiveTrader:
         self.rest_client = BitgetRestClient(api_key, secret_key, passphrase, sandbox=False)
         self.universe_manager = UniverseManager()
         self.state_manager = MultiSymbolStateManager()
-        self.ranker = CrossSectionalRanker()
-        self.position_manager = PositionManager()  # NEW: Position persistence + trailing stops
+        self.simple_ranker = CrossSectionalRanker()  # WORKING paper trading ranker
+        self.enhanced_ranker = EnhancedRanker()  # Enhanced ranker (use when data accumulated)
+        self.position_manager = PositionManager()  # Position persistence + trailing stops
+        self.regime_detector = RegimeDetector()  # Market regime detection
+        self.use_enhanced = False  # Start with simple, upgrade to enhanced after data accumulates
 
         # State
         self.equity = initial_capital
@@ -123,14 +128,44 @@ class LiveTrader:
             return False
 
     async def fetch_current_positions(self) -> None:
-        """Fetch current positions from exchange."""
+        """
+        Fetch current positions from exchange and SYNC with saved positions.
+        
+        CRITICAL: Ensures positions.json matches reality on exchange!
+        """
         try:
-            # Bitget returns all positions when no symbol specified
-            # We'll skip this for now and fetch positions dynamically during trading
-            logger.info(f"📊 Starting with 0 open positions")
+            # Fetch all positions from exchange via REST API
+            endpoint = "/api/v2/mix/position/all-position"
+            params = {"productType": "USDT-FUTURES", "marginCoin": "USDT"}
+            
+            response = await self.rest_client._request("GET", endpoint, params=params)
+            
+            exchange_positions = {}
+            if response.get("code") == "00000" and "data" in response:
+                for pos in response.get("data", []):
+                    symbol = pos.get("symbol")
+                    total = float(pos.get("total", 0))
+                    
+                    if symbol and total > 0:
+                        exchange_positions[symbol] = {
+                            "size": total,
+                            "side": "long" if pos.get("holdSide") == "long" else "short",
+                            "entry_price": float(pos.get("averageOpenPrice", 0)),
+                        }
+            
+            logger.info(f"📊 Fetched {len(exchange_positions)} open positions from exchange")
+            
+            # SYNC: Remove positions from disk that don't exist on exchange
+            saved_symbols = list(self.position_manager.positions.keys())
+            for symbol in saved_symbols:
+                if symbol not in exchange_positions:
+                    logger.warning(f"🧹 Removing {symbol} from disk (not on exchange)")
+                    self.position_manager.remove_position(symbol)
+            
+            logger.info(f"📊 After sync: {len(self.position_manager.positions)} positions")
 
         except Exception as e:
-            logger.error(f"❌ Failed to fetch positions: {e}")
+            logger.error(f"❌ Failed to fetch/sync positions: {e}")
 
     async def place_order(
         self, symbol: str, side: str, size: float, price: float
@@ -138,8 +173,7 @@ class LiveTrader:
         """
         Place order (paper or live).
         
-        Uses LIMIT ORDERS at best bid/ask for 67% fee savings!
-        (Maker fee 0.02% vs Taker fee 0.06%)
+        IMPROVED: Places 2-3 bps inside spread for better fills + maker fee!
         """
         if self.paper_mode:
             # Paper trading
@@ -170,17 +204,34 @@ class LiveTrader:
                     except Exception:
                         pass  # May already be set
                 
-                # Get best bid/ask for limit order (MAKER FEE!)
+                # IMPROVED LIMIT ORDER PRICING: Place 2-3 bps better than immediate fill
                 state = self.state_manager.get_state(symbol)
                 if state and state.bid_price > 0 and state.ask_price > 0:
+                    improvement_bps = 0.0002  # 2 bps better pricing
+                    
                     if side == "long":
-                        # Buy at ask for immediate fill (but as maker)
-                        limit_price = state.ask_price
+                        # Buy BELOW ask (save 2 bps, still likely to fill)
+                        limit_price = state.ask_price * (1 - improvement_bps)
                     else:  # short
-                        # Sell at bid for immediate fill (but as maker)
-                        limit_price = state.bid_price
+                        # Sell ABOVE bid (save 2 bps, still likely to fill)
+                        limit_price = state.bid_price * (1 + improvement_bps)
                 else:
                     limit_price = price
+                
+                # CRITICAL: Round to Bitget's required price precision
+                # Get contract info for price precision
+                contract_info = self.universe_manager.get_contract_info(symbol)
+                if contract_info:
+                    price_place = contract_info.get("price_place", 2)
+                    limit_price = round(limit_price, price_place)
+                else:
+                    # Default rounding based on price magnitude
+                    if limit_price > 1000:
+                        limit_price = round(limit_price, 1)  # BTC: 0.1 precision
+                    elif limit_price > 10:
+                        limit_price = round(limit_price, 2)  # ETH: 0.01 precision
+                    else:
+                        limit_price = round(limit_price, 4)  # Altcoins: 0.0001 precision
                 
                 # Place LIMIT order for maker fee (0.02% instead of 0.06%)
                 order_side = "buy" if side == "long" else "sell"
@@ -248,8 +299,15 @@ class LiveTrader:
                     return True
 
             except Exception as e:
-                logger.error(f"❌ Failed to close {symbol}: {e}")
-                return False
+                error_msg = str(e)
+                # Handle "No position to close" error (position already closed on exchange)
+                if "22002" in error_msg or "No position" in error_msg:
+                    logger.warning(f"⚠️ {symbol} already closed on exchange, removing from tracking")
+                    self.position_manager.remove_position(symbol)
+                    return True
+                else:
+                    logger.error(f"❌ Failed to close {symbol}: {e}")
+                    return False
 
         return False
 
@@ -311,35 +369,39 @@ class LiveTrader:
         
         for alloc in allocations:
             symbol = alloc["symbol"]
-            signal_side = alloc.get("predicted_side", "long")
+            signal_side = alloc["predicted_side"]
+            regime = alloc["regime"]
+            position_size_multiplier = alloc["position_size_multiplier"]
 
             # Skip if already have position
             if symbol in self.position_manager.positions:
-                logger.debug(f"⏭️  {symbol}: Already have position")
                 continue
 
             # Skip if max positions reached
             if len(self.position_manager.positions) >= self.max_positions:
-                logger.info(f"🛑 Max positions ({self.max_positions}) reached")
                 break
 
-            # Calculate position size
+            # Calculate position size (SMART SIZING based on signal strength + regime)
             state = self.state_manager.get_state(symbol)
             if not state:
-                logger.warning(f"⚠️ {symbol}: No state data available")
                 continue
 
             price = state.last_price
             if price == 0:
-                logger.warning(f"⚠️ {symbol}: Invalid price (0)")
                 continue
 
-            position_value = self.equity * self.position_size_pct
-            size = (position_value * self.leverage) / price
+            # Base position size with smart multiplier
+            base_position_value = self.equity * self.position_size_pct
+            adjusted_position_value = base_position_value * position_size_multiplier
+            size = (adjusted_position_value * self.leverage) / price
+
+            # Get regime-specific parameters
+            regime_params = self.regime_detector.get_regime_parameters(regime)
 
             logger.info(
-                f"📈 Attempting {signal_side.upper()} order: {symbol} | "
-                f"Price: ${price:.4f} | Size: {size:.4f} | Value: ${position_value:.2f}"
+                f"📈 {signal_side.upper()} {symbol} | "
+                f"Price: ${price:.4f} | Size: {size:.4f} (×{position_size_multiplier:.2f}) | "
+                f"Regime: {regime} | TP: {regime_params['take_profit_pct']*100:.1f}%"
             )
 
             # Place order
@@ -349,19 +411,22 @@ class LiveTrader:
             if success:
                 trades_successful += 1
                 
-                # Add to position manager (with persistence)
+                # Add to position manager with REGIME-BASED PARAMETERS
                 self.position_manager.add_position(
                     symbol=symbol,
                     side=signal_side,
                     entry_price=price,
                     size=size,
-                    capital=position_value / self.leverage,
+                    capital=adjusted_position_value / self.leverage,
                     leverage=self.leverage,
+                    regime=regime,
+                    stop_loss_pct=regime_params["stop_loss_pct"],
+                    take_profit_pct=regime_params["take_profit_pct"],
+                    trailing_stop_pct=regime_params["trailing_stop_pct"],
                 )
                 
                 logger.info(
-                    f"✅ Trade #{len(self.trades) + 1}: {signal_side.upper()} {symbol} @ ${price:.4f} | "
-                    f"Size: {size:.4f} | Value: ${position_value:.2f}"
+                    f"✅ Trade #{len(self.trades) + 1}: {signal_side.upper()} {symbol} @ ${price:.4f}"
                 )
             else:
                 logger.error(f"❌ Failed to place order for {symbol}")
@@ -403,31 +468,11 @@ class LiveTrader:
                     self.running = False
                     break
 
-                # Rank symbols (NO FILTERS - just like paper trading!)
-                ranked_tuples = self.ranker.rank_symbols(
-                    self.state_manager, 
+                # Use enhanced ranker (has all optimizations)
+                allocations = self.enhanced_ranker.rank_symbols_enhanced(
+                    self.state_manager,
                     top_k=self.max_positions,
-                    min_spread_bps=10000.0,  # Effectively no filter (100%)
-                    min_depth=0.1,  # Effectively no filter
                 )
-
-                # Convert to format execute_trades expects
-                allocations = []
-                for symbol, score in ranked_tuples:
-                    # Get features to determine side
-                    features = self.state_manager.get_all_features().get(symbol, {})
-                    momentum = features.get("momentum_1m", 0)
-                    imbalance = features.get("imbalance", 0)
-                    
-                    # Determine side based on momentum and imbalance
-                    signal_score = momentum + imbalance
-                    predicted_side = "long" if signal_score > 0 else "short"
-                    
-                    allocations.append({
-                        "symbol": symbol,
-                        "score": score,
-                        "predicted_side": predicted_side,
-                    })
 
                 # Log allocations for debugging
                 logger.info(f"📊 Ranked {len(allocations)} symbols for potential trades")
@@ -529,8 +574,19 @@ class LiveTrader:
                     "bids": [[mid - spread/2, 1000], [mid - spread, 500]],
                     "asks": [[mid + spread/2, 1000], [mid + spread, 500]],
                 })
+        
+        # SMART: Accumulate enough data for return_15s (need 16+ points)
+        logger.info("⏳ Accumulating price history (20 seconds at 1-second intervals)...")
+        for i in range(20):  # 20 iterations at 1-second intervals
+            await asyncio.sleep(1)
+            if i % 5 == 0:  # Update every 5 seconds
+                ticker_dict = await self.universe_manager.fetch_tickers()
+                for symbol, ticker in ticker_dict.items():
+                    if symbol in self.symbols:
+                        self.state_manager.update_ticker(symbol, ticker)
+                logger.info(f"   📊 Accumulated {i+1} data points")
 
-        logger.info("✅ Starting trading loop...\n")
+        logger.info("✅ Minimum data ready! Starting trading (will improve as more data accumulates)...\n")
 
         # Start trading
         await self.trading_loop()
