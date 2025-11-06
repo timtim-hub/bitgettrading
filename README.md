@@ -1,16 +1,29 @@
-# Bitget Ultra-Short-Term Futures Trading System
+# Bitget Multi-Symbol Cross-Sectional Futures Trading System
 
-Professional microstructure-based trading system for Bitget USDT-M perpetual futures using LightGBM and real-time WebSocket data.
+**NEW**: Trade ALL Bitget USDT-M futures simultaneously using cross-sectional ranking and online learning (no heavy training required).
 
 ## 🚀 Key Features
 
-- **Real-time Market Data**: WebSocket client for Bitget futures (ticker + order book)
-- **Microstructure Features**: 30+ features including order book imbalance, depth, spread dynamics
-- **LightGBM Model**: Fast gradient boosting for 5-15s ahead predictions
-- **Realistic Backtesting**: Includes taker fees (0.06%), slippage, spread costs
-- **Risk Management**: Daily loss limits, max drawdown protection, kill-switches
-- **M1 Optimized**: Native ARM support, no LLVM dependencies
-- **Production Ready**: Full type hints, structured logging, comprehensive error handling
+### Multi-Symbol Cross-Sectional Trading
+- **Universe Management**: Auto-discovers ALL Bitget USDT-M futures contracts
+- **Online Learning**: No heavy training - uses bandit algorithms (UCB) for adaptive selection
+- **Cross-Sectional Ranking**: Ranks all symbols every decision period, picks top K
+- **Rule-Based + Bandit**: Combines momentum/imbalance/volatility rules with online performance tracking
+
+### Market Microstructure
+- **Real-time Data**: WebSocket streams for all symbols (ticker + order book)
+- **30+ Features**: Order book imbalance, depth, spread, returns, volatility per symbol
+- **Online Statistics**: Rolling win-rate, Sharpe estimates, no batch retraining needed
+
+### Fast Optional ML
+- **Single Global Model**: One LightGBM trained on ALL symbols pooled (<5 min)
+- **Symbol-Agnostic**: Same features work across all futures
+- **Realistic Costs**: Taker fees (0.06%), slippage, spread costs modeled
+
+### Production Features
+- **M1 Optimized**: Native ARM, no LLVM/heavy dependencies
+- **Risk Management**: Global daily loss limits, per-symbol caps, kill-switches
+- **Full Type Safety**: mypy strict mode, comprehensive logging
 
 ## 📊 Architecture
 
