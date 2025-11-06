@@ -44,27 +44,27 @@ class EnhancedRanker:
 
     def check_multi_timeframe_confluence(self, features: dict[str, float]) -> tuple[bool, str, float]:
         """
-        SMART: Use available timeframes with quality requirement.
+        ULTRA-SHORT-TERM confluence check optimized for scalping.
         
-        If 60s data available: Require 2/3 agreement
-        If only 5s-15s available: Use what we have with higher threshold
+        Uses 1s, 3s, 5s, 10s, 15s, 30s for fast signal detection.
         
         Returns:
             (has_confluence, direction, strength)
         """
-        # Get all available returns
+        # Get ultra-short-term returns (optimized for scalping)
+        return_1s = features.get("return_1s", None)
+        return_3s = features.get("return_3s", None)
         return_5s = features.get("return_5s", None)
+        return_10s = features.get("return_10s", None)
         return_15s = features.get("return_15s", None)
-        return_60s = features.get("return_60s", None)
+        return_30s = features.get("return_30s", None)
         
         # Filter to available returns
         available_timeframes = []
-        if return_5s is not None and return_5s != 0:
-            available_timeframes.append(("5s", return_5s))
-        if return_15s is not None and return_15s != 0:
-            available_timeframes.append(("15s", return_15s))
-        if return_60s is not None and return_60s != 0:
-            available_timeframes.append(("60s", return_60s))
+        for name, ret in [("1s", return_1s), ("3s", return_3s), ("5s", return_5s),
+                         ("10s", return_10s), ("15s", return_15s), ("30s", return_30s)]:
+            if ret is not None and ret != 0:
+                available_timeframes.append((name, ret))
         
         if len(available_timeframes) == 0:
             return False, "neutral", 0.0
@@ -114,8 +114,10 @@ class EnhancedRanker:
             # No confluence = skip this symbol
             return 0.0, "neutral", {"reason": "no_confluence"}
         
-        # STRICT: Strong confluence required for high win rate
-        if confluence_strength < 0.002:  # At least 0.2% average return (4x stricter)
+        # ULTRA-SHORT-TERM: Adjust for faster timeframes (1s-30s)
+        # With 1s-30s timeframes, 0.002 (0.2%) is too high - most moves are smaller
+        # Target: 0.05-0.15% on ultra-short timeframes = good scalping opportunity
+        if confluence_strength < 0.0008:  # 0.08% average return across timeframes
             return 0.0, "neutral", {"reason": "weak_confluence"}
         
         # 1.5. FEE-ADJUSTED FILTER: Expected profit must exceed fees
@@ -152,9 +154,10 @@ class EnhancedRanker:
         # 5. Order book imbalance
         ob_imbalance = features.get("ob_imbalance", 0.0)
         
-        # 6. Volatility factor
+        # 6. Volatility factor (ULTRA-SHORT-TERM optimized)
+        # For scalping, we want slightly lower volatility (easier to capture small moves)
         volatility_30s = features.get("volatility_30s", 0.0)
-        optimal_vol = 0.002
+        optimal_vol = 0.0015  # 0.15% volatility = sweet spot for scalping
         if volatility_30s > 0:
             vol_ratio = min(volatility_30s / optimal_vol, optimal_vol / volatility_30s)
             volatility_score = vol_ratio
@@ -167,8 +170,10 @@ class EnhancedRanker:
             return 0.0, "neutral", {"reason": "wide_spread"}
         spread_score = max(0, 1 - spread_bps / 50.0)
         
-        # 8. Momentum threshold (STRICT: Strong directional move needed)
-        if abs(return_15s) < 0.001:  # Must move at least 0.1% in 15s (2.5x stricter)
+        # 8. Momentum threshold (ULTRA-SHORT-TERM: Scalping-friendly)
+        # For 15s timeframe in scalping, 0.05-0.1% is a good move
+        return_5s = features.get("return_5s", 0.0)
+        if abs(return_5s) < 0.0005 and abs(return_15s) < 0.0008:  # Very weak momentum
             return 0.0, "neutral", {"reason": "weak_momentum"}
         
         # 9. Funding rate bias (EXPLOIT FUNDING!)

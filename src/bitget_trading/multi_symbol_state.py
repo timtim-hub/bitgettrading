@@ -236,15 +236,17 @@ class SymbolState:
             prices = np.array([p for _, p in self.price_history])
             times = np.array([t for t, _ in self.price_history])
             
-            # MULTIPLE TIMEFRAMES (confluence analysis)
+            # ULTRA-SHORT-TERM TIMEFRAMES (optimized for 10s-10min scalping)
             timeframes = {
-                "5s": 5,
-                "15s": 15,
-                "30s": 30,
-                "60s": 60,
-                "5min": 300,
-                "15min": 900,
-                "1hr": 3600,
+                "1s": 1,     # Ultra-fast tick momentum
+                "3s": 3,     # Micro-trend detection
+                "5s": 5,     # Short-term momentum (PRIMARY)
+                "10s": 10,   # Quick reversal detection
+                "15s": 15,   # Primary scalping timeframe
+                "30s": 30,   # Confirmation timeframe
+                "1min": 60,  # Trend filter
+                "3min": 180, # Medium-term trend
+                "5min": 300, # Context (institutional levels)
             }
             
             for name, window in timeframes.items():
