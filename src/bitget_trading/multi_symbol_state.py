@@ -8,6 +8,7 @@ from typing import Deque
 import numpy as np
 
 from bitget_trading.logger import get_logger
+from bitget_trading.advanced_indicators import AdvancedIndicators, compute_composite_score
 
 logger = get_logger()
 
@@ -75,6 +76,9 @@ class SymbolState:
         
         # Feature cache
         self.features: dict[str, float] = {}
+        
+        # Advanced indicators
+        self.advanced_indicators = AdvancedIndicators()
 
     def update_ticker(self, ticker_data: dict) -> None:
         """Update from ticker data."""
@@ -89,10 +93,20 @@ class SymbolState:
             self.spread_bps = ((self.ask_price - self.bid_price) / self.mid_price) * 10000
         
         # Update price history
-        self.price_history.append((time.time(), self.mid_price))
+        timestamp = time.time()
+        self.price_history.append((timestamp, self.mid_price))
         
         # Update volume history
-        self.volume_history.append((time.time(), self.volume_24h))
+        self.volume_history.append((timestamp, self.volume_24h))
+        
+        # Update advanced indicators
+        self.advanced_indicators.update(
+            price=self.mid_price if self.mid_price > 0 else self.last_price,
+            volume=self.volume_24h,
+            timestamp=timestamp,
+            bid_volume=self.total_bid_depth,
+            ask_volume=self.total_ask_depth,
+        )
 
     def update_orderbook(self, orderbook_data: dict) -> None:
         """Update from order book data."""

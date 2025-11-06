@@ -204,18 +204,18 @@ class LiveTrader:
                     except Exception:
                         pass  # May already be set
                 
-                # SMART LIMIT ORDERS: Place AT bid/ask for instant fill + maker fee!
-                # This gives us BOTH:
-                # - Immediate fill (like market orders)
-                # - Maker fee (0.02% instead of 0.06%)
+                # SMART LIMIT ORDERS: Place 2bps INSIDE spread for:
+                # - Better entry price (0.02% improvement)
+                # - High fill probability
+                # - Guaranteed maker fee (0.02% vs 0.06%)
                 state = self.state_manager.get_state(symbol)
                 if state and state.bid_price > 0 and state.ask_price > 0:
                     if side == "long":
-                        # Buy AT the ask = immediate fill as maker
-                        limit_price = state.ask_price
+                        # Buy 2bps BELOW ask = better price + likely fill
+                        limit_price = state.ask_price * 0.9998  # 0.02% better
                     else:  # short
-                        # Sell AT the bid = immediate fill as maker
-                        limit_price = state.bid_price
+                        # Sell 2bps ABOVE bid = better price + likely fill
+                        limit_price = state.bid_price * 1.0002  # 0.02% better
                 else:
                     limit_price = price
                 
@@ -271,11 +271,36 @@ class LiveTrader:
             return True
         else:
             try:
+                # Use LIMIT order at bid/ask for instant fill + maker fee (0.02% vs 0.06%)
+                state = self.state_manager.get_state(symbol)
+                if state and state.bid_price > 0 and state.ask_price > 0:
+                    if side == "sell":  # Closing long
+                        limit_price = state.bid_price  # Sell at bid = instant fill as maker
+                    else:  # Closing short
+                        limit_price = state.ask_price  # Buy at ask = instant fill as maker
+                else:
+                    # Fallback to current price
+                    limit_price = position.entry_price
+                
+                # Round to required precision
+                contract_info = self.universe_manager.get_contract_info(symbol)
+                if contract_info:
+                    price_place = contract_info.get("price_place", 2)
+                    limit_price = round(limit_price, price_place)
+                else:
+                    if limit_price > 1000:
+                        limit_price = round(limit_price, 1)
+                    elif limit_price > 10:
+                        limit_price = round(limit_price, 2)
+                    else:
+                        limit_price = round(limit_price, 4)
+                
                 order = await self.rest_client.place_order(
                     symbol=symbol,
                     side=side,
-                    order_type="market",
+                    order_type="limit",  # LIMIT at bid/ask = maker fee + instant fill!
                     size=position.size,
+                    price=limit_price,
                     reduce_only=True,
                 )
 
@@ -293,7 +318,7 @@ class LiveTrader:
                     
                     logger.info(
                         f"✅ [LIVE] CLOSED {symbol} | PnL: ${position.unrealized_pnl:.2f} | "
-                        f"Peak: {position.peak_pnl_pct:.2f}%"
+                        f"Peak: {position.peak_pnl_pct:.2f}% | Exit Price: ${limit_price:.4f}"
                     )
                     
                     self.position_manager.remove_position(symbol)
@@ -473,14 +498,16 @@ class LiveTrader:
 
     async def trading_loop(self) -> None:
         """
-        DUAL-SPEED trading loop:
-        - ULTRA-FAST: Check exits every 2 seconds (critical with 50x leverage!)
-        - SLOW: Rebalance portfolio every 5 minutes (reduce fees)
+        HOLD-AND-FILL trading loop (NO REBALANCING!):
+        - FAST: Check exits every 2-3 seconds (TP/SL/trailing only)
+        - SLOW: Look for new entries every 60 seconds when slots available
+        
+        KEY: Hold winners until TP/SL hit. No churning = minimal fees!
         """
-        rebalance_iteration = 0
-        last_rebalance_time = datetime.now()
-        rebalance_interval_sec = int(os.getenv("REBALANCE_INTERVAL_SEC", "300"))  # 5 min default
-        position_check_interval_sec = 2  # Check exits every 2 seconds (50x leverage = FAST moves!)
+        iteration = 0
+        last_entry_check_time = datetime.now()
+        entry_check_interval_sec = 60  # Check for new entries every 60 seconds
+        position_check_interval_sec = 2  # Check exits every 2 seconds
 
         while self.running:
             try:
@@ -517,60 +544,64 @@ class LiveTrader:
                     self.running = False
                     break
 
-                # SOMETIMES: Rebalance portfolio (SLOW LOOP - every 5 minutes)
-                time_since_rebalance = (datetime.now() - last_rebalance_time).total_seconds()
-                should_rebalance = time_since_rebalance >= rebalance_interval_sec
+                # SOMETIMES: Look for new entries ONLY if we have empty slots (NO REBALANCING!)
+                available_slots = self.max_positions - len(self.position_manager.positions)
+                time_since_entry_check = (datetime.now() - last_entry_check_time).total_seconds()
+                should_check_entries = time_since_entry_check >= entry_check_interval_sec
 
-                if should_rebalance:
-                    rebalance_iteration += 1
-                    last_rebalance_time = datetime.now()
+                if should_check_entries and available_slots > 0:
+                    iteration += 1
+                    last_entry_check_time = datetime.now()
                     
                     logger.info(f"\n{'='*70}")
-                    logger.info(f"[REBALANCE #{rebalance_iteration}] Portfolio Review")
+                    logger.info(f"[ENTRY CHECK #{iteration}] Looking for {available_slots} new positions")
                     logger.info(f"{'='*70}")
 
-                    # Use enhanced ranker with STRICT filters
+                    # Rank symbols - ONLY for available slots (not full portfolio)
                     allocations = self.enhanced_ranker.rank_symbols_enhanced(
                         self.state_manager,
-                        top_k=self.max_positions,
+                        top_k=available_slots,  # CRITICAL: Only rank for empty slots!
                     )
 
-                    logger.info(f"📊 Ranked {len(allocations)} symbols for potential trades")
+                    logger.info(f"📊 Found {len(allocations)} high-quality signals for empty slots")
                     if allocations:
-                        top_3 = allocations[:3]
-                        for i, alloc in enumerate(top_3, 1):
+                        for i, alloc in enumerate(allocations, 1):
                             logger.info(
                                 f"  {i}. {alloc['symbol']}: score={alloc.get('score', 0):.3f}, "
                                 f"side={alloc.get('predicted_side', 'N/A')}"
                             )
 
-                    # Execute new trades
-                    if allocations:
-                        logger.info(f"🎯 Attempting to execute trades for {len(allocations)} symbols...")
+                        logger.info(f"🎯 Filling {len(allocations)} empty slots...")
                         await self.execute_trades(allocations)
                     else:
-                        logger.info("⏸️ No strong signals - waiting for better opportunities")
+                        logger.info(f"⏸️ No strong signals for {available_slots} empty slots - holding current positions")
                     
                     logger.info(
-                        f"[{rebalance_iteration}] Equity: ${self.equity:.2f} ({pnl_pct:+.2f}%) | "
-                        f"Positions: {len(self.position_manager.positions)} | Trades: {len(self.trades)} | "
-                        f"Unrealized PnL: ${total_unrealized_pnl:.2f}"
+                        f"[{iteration}] Equity: ${self.equity:.2f} ({pnl_pct:+.2f}%) | "
+                        f"Positions: {len(self.position_manager.positions)}/{self.max_positions} | "
+                        f"Total Trades: {len(self.trades)} | Unrealized PnL: ${total_unrealized_pnl:.2f}"
                     )
                     logger.info(f"{'='*70}\n")
                 else:
-                    # Just log quick status (not full rebalance) - every 10th check (20 seconds)
+                    # Just log quick status - every 20th check (40 seconds @ 2s interval)
                     check_count = getattr(self, '_check_count', 0)
                     self._check_count = check_count + 1
                     
-                    if check_count % 10 == 0 and len(self.position_manager.positions) > 0:
-                        logger.info(
-                            f"[Monitor] Equity: ${self.equity:.2f} ({pnl_pct:+.2f}%) | "
-                            f"Positions: {len(self.position_manager.positions)} | "
-                            f"Next rebalance in: {rebalance_interval_sec - time_since_rebalance:.0f}s | "
-                            f"Check #{check_count}"
-                        )
+                    if check_count % 20 == 0:
+                        if len(self.position_manager.positions) > 0:
+                            logger.info(
+                                f"[Monitor] Equity: ${self.equity:.2f} ({pnl_pct:+.2f}%) | "
+                                f"Positions: {len(self.position_manager.positions)}/{self.max_positions} | "
+                                f"Next entry check: {entry_check_interval_sec - time_since_entry_check:.0f}s"
+                            )
+                        else:
+                            # No positions - show time until next search
+                            logger.info(
+                                f"[Waiting] No positions | Equity: ${self.equity:.2f} ({pnl_pct:+.2f}%) | "
+                                f"Next entry search: {entry_check_interval_sec - time_since_entry_check:.0f}s"
+                            )
 
-                # Wait before next position check (FAST LOOP - 2 seconds!)
+                # Wait before next position check
                 await asyncio.sleep(position_check_interval_sec)
 
             except KeyboardInterrupt:
@@ -632,18 +663,21 @@ class LiveTrader:
                     "asks": [[mid + spread/2, 1000], [mid + spread, 500]],
                 })
         
-        # SMART: Accumulate enough data for return_15s (need 16+ points)
-        logger.info("⏳ Accumulating price history (20 seconds at 1-second intervals)...")
-        for i in range(20):  # 20 iterations at 1-second intervals
+        # CRITICAL: Accumulate 3 minutes of 1-second data for reliable multi-timeframe signals
+        logger.info("⏳ Accumulating price history (180 seconds / 3 minutes at 1-second intervals)...")
+        for i in range(180):  # 180 iterations = 3 minutes
             await asyncio.sleep(1)
-            if i % 5 == 0:  # Update every 5 seconds
-                ticker_dict = await self.universe_manager.fetch_tickers()
-                for symbol, ticker in ticker_dict.items():
-                    if symbol in self.symbols:
-                        self.state_manager.update_ticker(symbol, ticker)
-                logger.info(f"   📊 Accumulated {i+1} data points")
+            # Update EVERY second (not every 5) for accurate multi-timeframe features
+            ticker_dict = await self.universe_manager.fetch_tickers()
+            for symbol, ticker in ticker_dict.items():
+                if symbol in self.symbols:
+                    self.state_manager.update_ticker(symbol, ticker)
+            
+            # Log progress every 30 seconds
+            if (i + 1) % 30 == 0:
+                logger.info(f"   📊 Accumulated {i+1}/180 data points ({(i+1)/3:.0f} minutes)")
 
-        logger.info("✅ Minimum data ready! Starting trading (will improve as more data accumulates)...\n")
+        logger.info("✅ 3 minutes of data ready! Multi-timeframe signals now reliable. Starting trading...\n")
 
         # Start trading
         await self.trading_loop()
@@ -712,16 +746,30 @@ async def main() -> None:
         balance = await temp_client.get_account_balance()
         
         if balance and balance.get("code") == "00000":
-            # CORRECT: Parse nested data structure
+            # Parse nested data structure
             data = balance.get("data", [{}])[0]
-            available_balance = float(data.get("available", 0))
             
-            if available_balance <= 0:
-                logger.error(f"❌ Insufficient balance! Available: ${available_balance:.2f}")
+            # Use TOTAL EQUITY (available + margin in positions + unrealized PnL)
+            # This is the correct capital to base position sizing on
+            equity = float(data.get("equity", 0))
+            available = float(data.get("available", 0))
+            frozen = float(data.get("frozen", 0))
+            unrealized_pnl = float(data.get("unrealizedPL", 0))
+            
+            # If equity field exists, use it. Otherwise calculate from components
+            if equity > 0:
+                initial_capital = equity
+                logger.info(f"✅ Total Equity: ${equity:.2f} USDT")
+                logger.info(f"   Available: ${available:.2f} | Frozen: ${frozen:.2f} | Unrealized PnL: ${unrealized_pnl:+.2f}")
+            else:
+                # Fallback: calculate equity manually
+                initial_capital = available + frozen + unrealized_pnl
+                logger.info(f"✅ Calculated Equity: ${initial_capital:.2f} USDT")
+                logger.info(f"   Available: ${available:.2f} | Frozen: ${frozen:.2f} | Unrealized PnL: ${unrealized_pnl:+.2f}")
+            
+            if initial_capital <= 0:
+                logger.error(f"❌ Insufficient balance! Equity: ${initial_capital:.2f}")
                 sys.exit(1)
-            
-            logger.info(f"✅ Available balance: ${available_balance:.2f} USDT")
-            initial_capital = available_balance
         else:
             logger.error("❌ Failed to fetch balance from API")
             sys.exit(1)

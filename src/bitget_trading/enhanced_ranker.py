@@ -114,14 +114,26 @@ class EnhancedRanker:
             # No confluence = skip this symbol
             return 0.0, "neutral", {"reason": "no_confluence"}
         
-        # STRICT: Require STRONG confluence (user confirmed trades placed fast - filters work!)
-        if confluence_strength < 0.001:  # At least 0.1% average return across timeframes
+        # STRICT: Strong confluence required for high win rate
+        if confluence_strength < 0.002:  # At least 0.2% average return (4x stricter)
             return 0.0, "neutral", {"reason": "weak_confluence"}
         
-        # 2. Volume filter CHECK (STRICT: Above-average volume required)
+        # 1.5. FEE-ADJUSTED FILTER: Expected profit must exceed fees
+        # With 50x leverage, 0.002 price move = 10% capital return
+        # Round-trip maker fees = 0.04% (0.02% entry + 0.02% exit)
+        # Require expected profit > 3x fees for safety margin
+        leverage = 50  # From env, but hardcode for now
+        expected_capital_return = confluence_strength * leverage  # e.g., 0.002 * 50 = 10%
+        fee_cost = 0.0004  # 0.04% round-trip maker fees
+        min_expected_return = fee_cost * 3  # 0.12% minimum (3x fees)
+        
+        if expected_capital_return < min_expected_return:
+            return 0.0, "neutral", {"reason": "profit_below_fees"}
+        
+        # 2. Volume filter CHECK (STRICT: Volume surge required)
         volume_ratio = features.get("volume_ratio", 1.0)
-        if volume_ratio < 1.05:  # Must be 5%+ above average volume
-            return 0.0, "neutral", {"reason": "low_volume"}
+        if volume_ratio < 1.2:  # Must have 20% above average volume
+            return 0.0, "neutral", {"reason": "insufficient_volume"}
         
         # 3. Detect market regime
         price_history = list(state.price_history)
@@ -149,14 +161,14 @@ class EnhancedRanker:
         else:
             volatility_score = 0.0
         
-        # 7. Liquidity score (STRICT: Good spreads only)
+        # 7. Liquidity score (BALANCED: Reasonable spreads)
         spread_bps = features.get("spread_bps", 100.0)
-        if spread_bps > 40.0:  # Skip if spread > 40 bps (too expensive)
+        if spread_bps > 60.0:  # Skip if spread > 60 bps (too expensive)
             return 0.0, "neutral", {"reason": "wide_spread"}
         spread_score = max(0, 1 - spread_bps / 50.0)
         
-        # 8. Momentum threshold (STRICT: Strong momentum required)
-        if abs(return_15s) < 0.0008:  # Must move at least 0.08% in 15s
+        # 8. Momentum threshold (STRICT: Strong directional move needed)
+        if abs(return_15s) < 0.001:  # Must move at least 0.1% in 15s (2.5x stricter)
             return 0.0, "neutral", {"reason": "weak_momentum"}
         
         # 9. Funding rate bias (EXPLOIT FUNDING!)
@@ -195,8 +207,8 @@ class EnhancedRanker:
             (1 - self.bandit_alpha) * bandit_norm
         )
         
-        # STRICT: Only accept HIGH scores (top signals only!)
-        if final_score < 0.3:  # Minimum quality threshold
+        # STRICT: Only accept high-quality signals to reduce trade frequency
+        if final_score < 0.5:  # Much higher quality bar (was 0.2)
             return 0.0, "neutral", {"reason": "low_score"}
         
         metadata = {

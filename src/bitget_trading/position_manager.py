@@ -27,10 +27,11 @@ class Position:
     highest_price: float = 0.0  # For long positions
     lowest_price: float = 0.0   # For short positions
     
-    # DYNAMIC risk management (adjusted by regime)
-    trailing_stop_pct: float = 0.03  # 3% trailing from peak
-    stop_loss_pct: float = 0.02   # 2% hard stop-loss
-    take_profit_pct: float = 0.10  # 10% take-profit
+    # DYNAMIC risk management (adjusted by regime and leverage)
+    # With 50x leverage: 6% capital loss = 0.12% price move
+    trailing_stop_pct: float = 0.05  # 5% trailing from peak (0.1% price @ 50x)
+    stop_loss_pct: float = 0.06   # 6% hard stop-loss (0.12% price @ 50x)
+    take_profit_pct: float = 0.15  # 15% take-profit (0.3% price @ 50x)
     
     # Regime info
     regime: str = "ranging"  # Market regime at entry
@@ -66,9 +67,9 @@ class PositionManager:
         capital: float,
         leverage: int,
         regime: str = "ranging",
-        stop_loss_pct: float = 0.02,
-        take_profit_pct: float = 0.10,
-        trailing_stop_pct: float = 0.03,
+        stop_loss_pct: float = 0.06,  # 6% capital (0.12% price @ 50x)
+        take_profit_pct: float = 0.15,  # 15% capital (0.3% price @ 50x)
+        trailing_stop_pct: float = 0.05,  # 5% capital (0.1% price @ 50x)
     ) -> None:
         """Add a new position with regime-based parameters."""
         position = Position(
@@ -172,15 +173,21 @@ class PositionManager:
         target_price_move_for_tp = position.take_profit_pct / position.leverage  # e.g., 10% / 50 = 0.2%
         target_price_move_for_trail = position.trailing_stop_pct / position.leverage  # e.g., 3% / 50 = 0.06%
         
-        # 1. Hard stop-loss (on capital, not price)
+        # 1. Hard stop-loss (on capital, not price) - ALWAYS HONOR
         if price_change_pct < -target_price_move_for_stop:
             return True, f"STOP-LOSS (Capital: {return_on_capital_pct*100:.2f}%, Price: {price_change_pct*100:.4f}%)"
         
-        # 2. Take-profit (on capital, not price)
+        # 2. MINIMUM PROFIT LOCK: Don't close small winners/losers (avoid fee erosion)
+        # Between -1% and +1.5% capital return, hold position (fees cost ~0.04%)
+        if -0.01 < return_on_capital_pct < 0.015:
+            # Too small to justify closing - would lose to fees
+            return False, ""
+        
+        # 3. Take-profit (on capital, not price)
         if price_change_pct > target_price_move_for_tp:
             return True, f"TAKE-PROFIT (Capital: {return_on_capital_pct*100:.2f}%, Price: {price_change_pct*100:.4f}%)"
         
-        # 3. Trailing stop (only if in profit on capital basis)
+        # 4. Trailing stop (only if in profit on capital basis)
         min_profit_for_trailing = 0.01 / position.leverage  # 1% capital return = 0.02% price move @ 50x
         if price_change_pct > min_profit_for_trailing:
             if position.side == "long":
