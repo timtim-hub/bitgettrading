@@ -23,6 +23,7 @@ from src.bitget_trading.bitget_rest import BitgetRestClient
 from src.bitget_trading.cross_sectional_ranker import CrossSectionalRanker
 from src.bitget_trading.logger import setup_logging
 from src.bitget_trading.multi_symbol_state import MultiSymbolStateManager
+from src.bitget_trading.position_manager import PositionManager
 from src.bitget_trading.universe import UniverseManager
 
 logger = setup_logging()
@@ -59,15 +60,22 @@ class LiveTrader:
         self.universe_manager = UniverseManager()
         self.state_manager = MultiSymbolStateManager()
         self.ranker = CrossSectionalRanker()
+        self.position_manager = PositionManager()  # NEW: Position persistence + trailing stops
 
         # State
         self.equity = initial_capital
         self.initial_equity = initial_capital
-        self.positions: dict[str, dict[str, Any]] = {}
         self.trades: list[dict[str, Any]] = []
         self.running = True
         self.start_time = datetime.now()
         self.symbols: list[str] = []  # Tradable symbols
+        
+        # Load saved positions on startup
+        logger.info(
+            "positions_restored_from_disk",
+            count=len(self.position_manager.positions),
+            symbols=list(self.position_manager.positions.keys()),
+        )
 
     async def verify_api_credentials(self) -> bool:
         """Verify API credentials work."""
@@ -127,7 +135,12 @@ class LiveTrader:
     async def place_order(
         self, symbol: str, side: str, size: float, price: float
     ) -> bool:
-        """Place order (paper or live)."""
+        """
+        Place order (paper or live).
+        
+        Uses LIMIT ORDERS at best bid/ask for 67% fee savings!
+        (Maker fee 0.02% vs Taker fee 0.06%)
+        """
         if self.paper_mode:
             # Paper trading
             logger.info(
@@ -157,13 +170,26 @@ class LiveTrader:
                     except Exception:
                         pass  # May already be set
                 
-                # Now place order
+                # Get best bid/ask for limit order (MAKER FEE!)
+                state = self.state_manager.get_state(symbol)
+                if state and state.bid_price > 0 and state.ask_price > 0:
+                    if side == "long":
+                        # Buy at ask for immediate fill (but as maker)
+                        limit_price = state.ask_price
+                    else:  # short
+                        # Sell at bid for immediate fill (but as maker)
+                        limit_price = state.bid_price
+                else:
+                    limit_price = price
+                
+                # Place LIMIT order for maker fee (0.02% instead of 0.06%)
                 order_side = "buy" if side == "long" else "sell"
                 order = await self.rest_client.place_order(
                     symbol=symbol,
                     side=order_side,
-                    order_type="market",
+                    order_type="limit",  # LIMIT = MAKER FEE (67% savings!)
                     size=size,
+                    price=limit_price,
                 )
 
                 if order:
@@ -181,15 +207,15 @@ class LiveTrader:
 
     async def close_position(self, symbol: str) -> bool:
         """Close an existing position."""
-        if symbol not in self.positions:
+        position = self.position_manager.get_position(symbol)
+        if not position:
             return False
 
-        pos = self.positions[symbol]
-        side = "sell" if pos["side"] == "long" else "buy"
+        side = "sell" if position.side == "long" else "buy"
 
         if self.paper_mode:
-            logger.info(f"📝 [PAPER] CLOSE {symbol} | Size: {pos['size']:.4f}")
-            del self.positions[symbol]
+            logger.info(f"📝 [PAPER] CLOSE {symbol} | Size: {position.size:.4f}")
+            self.position_manager.remove_position(symbol)
             return True
         else:
             try:
@@ -197,13 +223,28 @@ class LiveTrader:
                     symbol=symbol,
                     side=side,
                     order_type="market",
-                    size=pos["size"],
+                    size=position.size,
                     reduce_only=True,
                 )
 
-                if order:
-                    logger.info(f"✅ [LIVE] CLOSED {symbol}")
-                    del self.positions[symbol]
+                if order and order.get("code") == "00000":
+                    # Record trade
+                    self.trades.append({
+                        "symbol": symbol,
+                        "side": position.side,
+                        "entry_price": position.entry_price,
+                        "entry_time": position.entry_time,
+                        "exit_time": datetime.now().isoformat(),
+                        "pnl": position.unrealized_pnl,
+                        "peak_pnl_pct": position.peak_pnl_pct,
+                    })
+                    
+                    logger.info(
+                        f"✅ [LIVE] CLOSED {symbol} | PnL: ${position.unrealized_pnl:.2f} | "
+                        f"Peak: {position.peak_pnl_pct:.2f}%"
+                    )
+                    
+                    self.position_manager.remove_position(symbol)
                     return True
 
             except Exception as e:
@@ -213,10 +254,8 @@ class LiveTrader:
         return False
 
     async def manage_positions(self) -> None:
-        """Manage existing positions (stop-loss, take-profit)."""
-        for symbol in list(self.positions.keys()):
-            pos = self.positions[symbol]
-
+        """Manage existing positions with TRAILING STOPS."""
+        for symbol in list(self.position_manager.positions.keys()):
             # Get current price
             state = self.state_manager.get_state(symbol)
             if not state:
@@ -226,27 +265,32 @@ class LiveTrader:
             if current_price == 0:
                 continue
 
-            entry_price = pos["entry_price"]
-            pnl_pct = 0.0
+            # Update position price and trailing stop levels
+            self.position_manager.update_position_price(symbol, current_price)
 
-            if pos["side"] == "long":
-                pnl_pct = ((current_price - entry_price) / entry_price) * 100
-            else:
-                pnl_pct = ((entry_price - current_price) / entry_price) * 100
+            # Check exit conditions (stop-loss, take-profit, trailing stop)
+            should_close, reason = self.position_manager.check_exit_conditions(
+                symbol, current_price
+            )
 
-            # Stop-loss: -2% (accounting for leverage)
-            if pnl_pct * self.leverage < -2.0:
-                logger.warning(
-                    f"🛑 STOP-LOSS triggered for {symbol} | PnL: {pnl_pct * self.leverage:.2f}%"
-                )
-                await self.close_position(symbol)
-                continue
-
-            # Take-profit: +5%
-            if pnl_pct * self.leverage > 5.0:
-                logger.info(
-                    f"💰 TAKE-PROFIT triggered for {symbol} | PnL: {pnl_pct * self.leverage:.2f}%"
-                )
+            if should_close:
+                position = self.position_manager.get_position(symbol)
+                if position:
+                    pnl_pct = position.unrealized_pnl / position.capital * 100 if position.capital > 0 else 0
+                    
+                    if "STOP-LOSS" in reason:
+                        logger.warning(
+                            f"🛑 {reason} for {symbol} | PnL: {pnl_pct:.2f}%"
+                        )
+                    elif "TRAILING" in reason:
+                        logger.info(
+                            f"📈 {reason} for {symbol} | PnL: {pnl_pct:.2f}% | Peak: {position.peak_pnl_pct:.2f}%"
+                        )
+                    else:
+                        logger.info(
+                            f"💰 {reason} for {symbol} | PnL: {pnl_pct:.2f}%"
+                        )
+                
                 await self.close_position(symbol)
                 continue
 
@@ -256,7 +300,7 @@ class LiveTrader:
         
         # Close positions not in new allocations
         allocated_symbols = {alloc["symbol"] for alloc in allocations}
-        for symbol in list(self.positions.keys()):
+        for symbol in list(self.position_manager.positions.keys()):
             if symbol not in allocated_symbols:
                 logger.info(f"🔄 Closing {symbol} (no longer in top allocations)")
                 await self.close_position(symbol)
@@ -270,12 +314,12 @@ class LiveTrader:
             signal_side = alloc.get("predicted_side", "long")
 
             # Skip if already have position
-            if symbol in self.positions:
+            if symbol in self.position_manager.positions:
                 logger.debug(f"⏭️  {symbol}: Already have position")
                 continue
 
             # Skip if max positions reached
-            if len(self.positions) >= self.max_positions:
+            if len(self.position_manager.positions) >= self.max_positions:
                 logger.info(f"🛑 Max positions ({self.max_positions}) reached")
                 break
 
@@ -304,25 +348,21 @@ class LiveTrader:
 
             if success:
                 trades_successful += 1
-                self.positions[symbol] = {
-                    "symbol": symbol,
-                    "side": signal_side,
-                    "size": size,
-                    "entry_price": price,
-                    "unrealized_pnl": 0.0,
-                }
-
-                self.trades.append(
-                    {
-                        "timestamp": datetime.now().isoformat(),
-                        "symbol": symbol,
-                        "side": signal_side,
-                        "size": size,
-                        "price": price,
-                    }
+                
+                # Add to position manager (with persistence)
+                self.position_manager.add_position(
+                    symbol=symbol,
+                    side=signal_side,
+                    entry_price=price,
+                    size=size,
+                    capital=position_value / self.leverage,
+                    leverage=self.leverage,
                 )
                 
-                logger.info(f"✅ Trade #{len(self.trades)}: {signal_side.upper()} {symbol} @ ${price:.4f}")
+                logger.info(
+                    f"✅ Trade #{len(self.trades) + 1}: {signal_side.upper()} {symbol} @ ${price:.4f} | "
+                    f"Size: {size:.4f} | Value: ${position_value:.2f}"
+                )
             else:
                 logger.error(f"❌ Failed to place order for {symbol}")
         
@@ -412,20 +452,20 @@ class LiveTrader:
                     logger.info("⏸️ No trades to execute - waiting for better signals")
 
                 # Update equity
-                total_unrealized_pnl = sum(
-                    pos.get("unrealized_pnl", 0) for pos in self.positions.values()
-                )
+                total_unrealized_pnl = self.position_manager.get_total_unrealized_pnl()
                 self.equity = self.initial_equity + total_unrealized_pnl
 
                 # Log status
                 pnl_pct = ((self.equity - self.initial_equity) / self.initial_equity) * 100
                 logger.info(
                     f"[{iteration}] Equity: ${self.equity:.2f} ({pnl_pct:+.2f}%) | "
-                    f"Positions: {len(self.positions)} | Trades: {len(self.trades)}"
+                    f"Positions: {len(self.position_manager.positions)} | Trades: {len(self.trades)} | "
+                    f"Unrealized PnL: ${total_unrealized_pnl:.2f}"
                 )
 
-                # Wait before next iteration (60 seconds)
-                await asyncio.sleep(60)
+                # Wait before next iteration (configurable - default 300s = 5min to reduce fees)
+                rebalance_interval = int(os.getenv("REBALANCE_INTERVAL_SEC", "300"))
+                await asyncio.sleep(rebalance_interval)
 
             except KeyboardInterrupt:
                 logger.info("⚠️  Keyboard interrupt - shutting down gracefully...")
@@ -508,8 +548,11 @@ class LiveTrader:
         pnl_pct = (pnl / self.initial_capital) * 100
         logger.info(f"Total PnL:       ${pnl:+.2f} ({pnl_pct:+.2f}%)")
         logger.info(f"Total Trades:    {len(self.trades)}")
-        logger.info(f"Final Positions: {len(self.positions)}")
+        logger.info(f"Final Positions: {len(self.position_manager.positions)}")
         logger.info("=" * 70)
+        
+        # Save final positions
+        self.position_manager.save_positions()
 
 
 
