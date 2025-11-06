@@ -115,26 +115,26 @@ class EnhancedRanker:
             return 0.0, "neutral", {"reason": "no_confluence"}
         
         # ULTRA-SHORT-TERM: Adjust for faster timeframes (1s-30s)
-        # With 1s-30s timeframes, 0.002 (0.2%) is too high - most moves are smaller
-        # Target: 0.05-0.15% on ultra-short timeframes = good scalping opportunity
-        if confluence_strength < 0.0008:  # 0.08% average return across timeframes
+        # With 1s-30s timeframes, most moves are 0.03-0.1%
+        # Target: 0.03%+ on ultra-short = scalping opportunity (1.5%+ capital @ 50x)
+        if confluence_strength < 0.0003:  # 0.03% average return = 1.5% capital @ 50x
             return 0.0, "neutral", {"reason": "weak_confluence"}
         
         # 1.5. FEE-ADJUSTED FILTER: Expected profit must exceed fees
-        # With 50x leverage, 0.002 price move = 10% capital return
+        # With 50x leverage, 0.0003 price move = 1.5% capital return
         # Round-trip maker fees = 0.04% (0.02% entry + 0.02% exit)
-        # Require expected profit > 3x fees for safety margin
+        # Require expected profit > 2x fees for realistic scalping
         leverage = 50  # From env, but hardcode for now
-        expected_capital_return = confluence_strength * leverage  # e.g., 0.002 * 50 = 10%
+        expected_capital_return = confluence_strength * leverage  # e.g., 0.0003 * 50 = 1.5%
         fee_cost = 0.0004  # 0.04% round-trip maker fees
-        min_expected_return = fee_cost * 3  # 0.12% minimum (3x fees)
+        min_expected_return = fee_cost * 2  # 0.08% minimum (2x fees) - more realistic
         
         if expected_capital_return < min_expected_return:
             return 0.0, "neutral", {"reason": "profit_below_fees"}
         
-        # 2. Volume filter CHECK (STRICT: Volume surge required)
+        # 2. Volume filter CHECK (BALANCED: Some volume activity required)
         volume_ratio = features.get("volume_ratio", 1.0)
-        if volume_ratio < 1.2:  # Must have 20% above average volume
+        if volume_ratio < 1.05:  # Must have 5% above average volume (realistic)
             return 0.0, "neutral", {"reason": "insufficient_volume"}
         
         # 3. Detect market regime
@@ -171,9 +171,9 @@ class EnhancedRanker:
         spread_score = max(0, 1 - spread_bps / 50.0)
         
         # 8. Momentum threshold (ULTRA-SHORT-TERM: Scalping-friendly)
-        # For 15s timeframe in scalping, 0.05-0.1% is a good move
+        # For ultra-short scalping, even 0.02-0.05% moves are tradeable
         return_5s = features.get("return_5s", 0.0)
-        if abs(return_5s) < 0.0005 and abs(return_15s) < 0.0008:  # Very weak momentum
+        if abs(return_5s) < 0.0002 and abs(return_15s) < 0.0003:  # Too flat to trade
             return 0.0, "neutral", {"reason": "weak_momentum"}
         
         # 9. Funding rate bias (EXPLOIT FUNDING!)
@@ -212,8 +212,8 @@ class EnhancedRanker:
             (1 - self.bandit_alpha) * bandit_norm
         )
         
-        # STRICT: Only accept high-quality signals to reduce trade frequency
-        if final_score < 0.5:  # Much higher quality bar (was 0.2)
+        # BALANCED: Accept good signals for ultra-short-term scalping
+        if final_score < 0.3:  # Realistic quality bar for fast scalping
             return 0.0, "neutral", {"reason": "low_score"}
         
         metadata = {
