@@ -51,7 +51,7 @@ class BitgetRestClient:
         method: str,
         request_path: str,
         body: str = "",
-    ) -> tuple[str, str]:
+    ) -> str:
         """
         Create HMAC signature for Bitget API.
         
@@ -62,7 +62,7 @@ class BitgetRestClient:
             body: Request body (for POST requests)
         
         Returns:
-            Tuple of (signature, signed_passphrase)
+            HMAC signature (passphrase is sent as plain text)
         """
         # Create prehash string
         prehash = timestamp + method.upper() + request_path + body
@@ -76,16 +76,7 @@ class BitgetRestClient:
             ).digest()
         ).decode()
         
-        # Sign passphrase
-        signed_passphrase = base64.b64encode(
-            hmac.new(
-                self.api_secret.encode("utf-8"),
-                self.passphrase.encode("utf-8"),
-                sha256,
-            ).digest()
-        ).decode()
-        
-        return signature, signed_passphrase
+        return signature
 
     async def _request(
         self,
@@ -120,17 +111,17 @@ class BitgetRestClient:
             body = orjson.dumps(data).decode()
         
         # Sign request
-        signature, signed_passphrase = self._sign_request(
+        signature = self._sign_request(
             timestamp, method, request_path, body
         )
         
-        # Headers
+        # Headers (passphrase is sent as plain text, NOT signed!)
         headers = {
             "Content-Type": "application/json",
             "ACCESS-KEY": self.api_key,
             "ACCESS-SIGN": signature,
             "ACCESS-TIMESTAMP": timestamp,
-            "ACCESS-PASSPHRASE": signed_passphrase,
+            "ACCESS-PASSPHRASE": self.passphrase,  # Plain text, not signed!
         }
         
         # Make request

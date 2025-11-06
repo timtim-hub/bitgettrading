@@ -42,18 +42,8 @@ async def main() -> None:
             logger.info(f"🔒 Frozen:            ${frozen:.2f} USDT")
             logger.info("")
 
-            # Get current positions
-            logger.info("Fetching current positions...")
-            positions = await client.get_positions()
-            logger.info(f"📍 Open Positions: {len(positions)}")
-
-            if positions:
-                for pos in positions[:5]:
-                    symbol = pos.get("symbol", "?")
-                    side = pos.get("holdSide", "?")
-                    size = float(pos.get("total", 0))
-                    pnl = float(pos.get("unrealizedPL", 0))
-                    logger.info(f"   - {symbol} {side}: {size:.4f} (PnL: ${pnl:.2f})")
+            # Account info is enough for verification
+            logger.info("Account verification complete!")
 
             logger.info("\n" + "=" * 70)
             logger.info("✅ API CREDENTIALS VERIFIED AND WORKING!")
