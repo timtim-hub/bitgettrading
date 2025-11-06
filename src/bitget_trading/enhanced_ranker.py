@@ -75,13 +75,13 @@ class EnhancedRanker:
         
         total_timeframes = len(available_timeframes)
         
-        # Adaptive threshold based on data available
+        # RELAXED: Ultra-short-term scalping needs faster signals
         if total_timeframes == 1:
-            required_agreement = 1  # With only 1 timeframe, accept it if strong
+            required_agreement = 1  # Accept single strong signal
         elif total_timeframes == 2:
-            required_agreement = 2  # Need both to agree
+            required_agreement = 1  # Accept 1 out of 2 (50% agreement - fast entry!)
         else:
-            required_agreement = 2  # Need 2 out of 3+
+            required_agreement = 2  # Accept 2 out of 3+ (60%+ agreement)
         
         if bullish_count >= required_agreement:
             # Bullish confluence
@@ -132,9 +132,9 @@ class EnhancedRanker:
         if expected_capital_return < min_expected_return:
             return 0.0, "neutral", {"reason": "profit_below_fees"}
         
-        # 2. Volume filter CHECK (BALANCED: Some volume activity required)
+        # 2. Volume filter CHECK (MINIMAL: Just avoid dead symbols)
         volume_ratio = features.get("volume_ratio", 1.0)
-        if volume_ratio < 1.05:  # Must have 5% above average volume (realistic)
+        if volume_ratio < 0.5:  # Only skip if volume is dead (50% below average)
             return 0.0, "neutral", {"reason": "insufficient_volume"}
         
         # 3. Detect market regime
