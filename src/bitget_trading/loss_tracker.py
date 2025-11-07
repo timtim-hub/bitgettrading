@@ -48,7 +48,13 @@ class TradeRecord:
     entry_near_sr: bool  # Near support/resistance?
     entry_rr_ratio: float  # Risk/reward ratio
     
-    # Technical indicators at entry (for evaluation and improvement)
+    # Exit details
+    exit_time: str
+    exit_price: float
+    exit_reason: str  # stop_loss, take_profit, trailing_stop, time_exit, manual, etc.
+    time_in_trade_seconds: float
+    
+    # Technical indicators at entry (for evaluation and improvement) - with defaults at end
     entry_rsi: float = 50.0  # RSI value at entry
     entry_macd_line: float = 0.0  # MACD line at entry
     entry_macd_signal: float = 0.0  # MACD signal at entry
@@ -68,12 +74,6 @@ class TradeRecord:
     entry_spread_bps: float = 0.0  # Spread in basis points at entry
     entry_ob_imbalance: float = 0.0  # Order book imbalance at entry
     entry_funding_rate: float = 0.0  # Funding rate at entry
-    
-    # Exit details
-    exit_time: str
-    exit_price: float
-    exit_reason: str  # stop_loss, take_profit, trailing_stop, time_exit, manual, etc.
-    time_in_trade_seconds: float
     
     # Performance
     pnl_usd: float
