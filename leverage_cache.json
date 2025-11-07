@@ -2414,5 +2414,29 @@
   "SOPHUSDT_short": {
     "leverage": 25,
     "timestamp": 1762532647.687273
+  },
+  "LRCUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762532998.623638
+  },
+  "LRCUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762532999.204692
+  },
+  "COMPUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762532999.8011231
+  },
+  "COMPUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762533000.419664
+  },
+  "BSVUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762533001.041624
+  },
+  "BSVUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762533001.678539
   }
 }

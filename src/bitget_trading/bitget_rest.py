@@ -1062,41 +1062,71 @@ class BitgetRestClient:
             f"trigger_price={trigger_price}"
         )
         
-        try:
-            response = await self._request("POST", endpoint, data=data)
-            code = response.get("code", "N/A")
-            msg = response.get("msg", "N/A")
-            data_resp = response.get("data", {})
-            
-            if code == "00000":
-                order_id = data_resp.get('orderId', 'N/A')
-                logger.info(
-                    f"✅ [TRAILING TP PLACED - ENTIRE TP/SL!] {symbol} | "
-                    f"planType=pos_profit (SAME LOGIC AS SL!) | "
-                    f"No size (full position) | "
-                    f"Callback: {callback_ratio*100:.2f}% (TRAILS!) | "
-                    f"Trigger: {trigger_price} | "
-                    f"Order ID: {order_id}"
-                )
-                logger.warning(
-                    f"🔍 [DEBUG] CHECK BITGET APP 'Entire TP/SL' TAB: "
-                    f"Is TRAILING TP order ID {order_id} visible for {symbol}? "
-                    f"Should show in SAME section as SL!"
-                )
-            else:
-                logger.error(
-                    f"❌ [TRAILING TP FAILED] {symbol} | "
-                    f"Code: {code} | Msg: {msg} | "
-                    f"Full response: {response}"
-                )
-            
-            return response
-        except Exception as e:
-            logger.error(
-                f"❌ [GESAMTER TP/SL EXCEPTION] {symbol} | "
-                f"Exception: {e}"
-            )
-            raise
+        # 🚨 RETRY LOGIC: Try up to 3 times to ensure it places!
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = await self._request("POST", endpoint, data=data)
+                code = response.get("code", "N/A")
+                msg = response.get("msg", "N/A")
+                data_resp = response.get("data", {})
+                
+                if code == "00000":
+                    order_id = data_resp.get('orderId', 'N/A')
+                    logger.info(
+                        f"✅ [TRAILING TP PLACED!] {symbol} | "
+                        f"planType=pos_profit + rangeRate={callback_ratio*100:.2f}% (TRAILS!) | "
+                        f"Trigger: {trigger_price} ({hold_side} position) | "
+                        f"Order ID: {order_id} | "
+                        f"Attempt: {attempt + 1}/{max_retries}"
+                    )
+                    logger.warning(
+                        f"🔍 [VERIFY IN APP] Check {symbol} has TRAILING TP (not static!) "
+                        f"with {callback_ratio*100:.1f}% callback in 'Entire TP/SL' tab!"
+                    )
+                    return response  # Success, return immediately
+                else:
+                    # Check for "Insufficient position" error - needs longer wait
+                    if code == "43023" or "Insufficient position" in str(msg):
+                        if attempt < max_retries - 1:
+                            wait_time = 2.0 * (attempt + 1)  # 2s, 4s, 6s
+                            logger.warning(
+                                f"⚠️ [TP RETRY] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                                f"Insufficient position - waiting {wait_time}s..."
+                            )
+                            await asyncio.sleep(wait_time)
+                            continue
+                    
+                    logger.error(
+                        f"❌ [TRAILING TP FAILED] {symbol} | "
+                        f"Attempt {attempt + 1}/{max_retries} | "
+                        f"Code: {code} | Msg: {msg}"
+                    )
+                    
+                    if attempt < max_retries - 1:
+                        logger.info(f"🔄 Retrying TP placement for {symbol}...")
+                        await asyncio.sleep(1.0)
+                        continue
+                    else:
+                        return response  # Final attempt failed, return error response
+                        
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"⚠️ [TP EXCEPTION] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                        f"Exception: {e} | Retrying..."
+                    )
+                    await asyncio.sleep(1.0)
+                    continue
+                else:
+                    logger.error(
+                        f"❌ [TP EXCEPTION] {symbol} | All {max_retries} attempts failed! | "
+                        f"Exception: {e}"
+                    )
+                    raise
+        
+        # Should never reach here
+        return {"code": "error", "msg": "All retries exhausted"}
 
     async def get_historical_candles(
         self,
