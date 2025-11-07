@@ -3022,5 +3022,15 @@
     "leverage": 25,
     "timestamp": 1762553521.737737,
     "failed": false
+  },
+  "CHRUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762554081.002862,
+    "failed": false
+  },
+  "CHRUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762554081.732168,
+    "failed": false
   }
 }

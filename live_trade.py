@@ -2069,8 +2069,18 @@ class LiveTrader:
                         )
                         await self.close_position(symbol, exit_reason=f"QUICK PROFIT: +{pnl_pct:.2f}% in {time_in_position_min:.1f}min (100% profit target)")
                         continue
+                    
+                    # 🚨 TIME-BASED LOSS EXIT: Exit positions open >2 hours and still in loss
+                    elif time_in_position_min >= 120 and pnl_pct < 0:
+                        # Position has been open for 2+ hours and is still losing money - cut losses!
+                        logger.warning(
+                            f"⏰ [TIME-BASED LOSS EXIT] {symbol} | Position open for {time_in_position_min:.1f}min (>2h) and still in loss ({pnl_pct:.2f}%) | "
+                            f"Closing to free capital and avoid further losses"
+                        )
+                        await self.close_position(symbol, exit_reason=f"TIME-BASED LOSS EXIT: {pnl_pct:.2f}% loss after {time_in_position_min:.1f}min (>2h)")
+                        continue
                 except Exception as e:
-                    logger.debug(f"⚠️ Failed to check quick profit for {symbol}: {e}")
+                    logger.debug(f"⚠️ Failed to check quick profit/time-based exit for {symbol}: {e}")
 
             # 🚀 NEW FEATURE: Momentum Reversal Exit
             # If momentum gives a strong opposite signal, exit immediately regardless of profit/loss
