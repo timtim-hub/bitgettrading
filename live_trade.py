@@ -1976,32 +1976,77 @@ class LiveTrader:
                     logger.error(f"❌ [PRICE ERROR] {symbol} | Price is 0, skipping trade")
                     continue
                 
-                # 🚀 NEW: Wait for price confirmation (price should move slightly in our direction)
-                # This ensures we enter when momentum is confirmed, not just when signal appears
-                # Check if price has moved in our direction in the last 1-2 seconds
+                # 🚀 CRITICAL: Validate that price is actually moving in our direction!
+                # This prevents entering longs during downtrends and shorts during uptrends
                 try:
-                    # Get recent price history (last 3-5 seconds)
-                    recent_prices = [p for _, p in list(state.price_history)[-5:]] if state.price_history else []
-                    if len(recent_prices) >= 2:
-                        price_change_pct = ((recent_prices[-1] - recent_prices[0]) / recent_prices[0]) * 100
+                    # Get recent price history (last 10-15 seconds for trend confirmation)
+                    recent_prices = [p for _, p in list(state.price_history)[-15:]] if state.price_history else []
+                    if len(recent_prices) >= 3:
+                        # Check short-term momentum (last 3 prices = ~3-5 seconds)
+                        short_term_change = ((recent_prices[-1] - recent_prices[-3]) / recent_prices[-3]) * 100 if len(recent_prices) >= 3 else 0
+                        # Check medium-term momentum (last 5 prices = ~5-10 seconds)
+                        medium_term_change = ((recent_prices[-1] - recent_prices[-5]) / recent_prices[-5]) * 100 if len(recent_prices) >= 5 else 0
+                        # Check longer-term momentum (last 10 prices = ~10-15 seconds)
+                        long_term_change = ((recent_prices[-1] - recent_prices[-10]) / recent_prices[-10]) * 100 if len(recent_prices) >= 10 else 0
                         
-                        # For long: price should be rising (positive change)
-                        # For short: price should be falling (negative change)
-                        if signal_side == "long" and price_change_pct < -0.05:
-                            # Price is falling, wait for confirmation
-                            logger.debug(f"⏳ [ENTRY WAIT] {symbol} | Price falling {price_change_pct:.3f}%, waiting for confirmation...")
-                            # Skip this iteration, will retry next time
-                            continue
-                        elif signal_side == "short" and price_change_pct > 0.05:
-                            # Price is rising, wait for confirmation
-                            logger.debug(f"⏳ [ENTRY WAIT] {symbol} | Price rising {price_change_pct:.3f}%, waiting for confirmation...")
-                            # Skip this iteration, will retry next time
-                            continue
-                        else:
-                            # Price moving in our direction or neutral - good to enter
-                            logger.debug(f"✅ [ENTRY CONFIRMED] {symbol} | Price change: {price_change_pct:.3f}% (direction confirmed)")
+                        # For long: ALL timeframes should show rising price (positive change)
+                        # For short: ALL timeframes should show falling price (negative change)
+                        if signal_side == "long":
+                            # Long position: require price to be rising across all timeframes
+                            if short_term_change < -0.03 or medium_term_change < -0.05 or long_term_change < -0.08:
+                                # Price is falling - REJECT long entry!
+                                logger.warning(
+                                    f"🚫 [ENTRY REJECTED] {symbol} | LONG signal but price is FALLING! | "
+                                    f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
+                                    f"Long: {long_term_change:.3f}% | Skipping to avoid entering during downtrend"
+                                )
+                                continue
+                            elif short_term_change > 0.02 and medium_term_change > 0.03:
+                                # Price is rising - good to enter
+                                logger.info(
+                                    f"✅ [ENTRY CONFIRMED] {symbol} | LONG signal with RISING price | "
+                                    f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
+                                    f"Long: {long_term_change:.3f}%"
+                                )
+                            else:
+                                # Price is neutral/flat - wait for confirmation
+                                logger.debug(
+                                    f"⏳ [ENTRY WAIT] {symbol} | LONG signal but price is neutral | "
+                                    f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
+                                    f"Waiting for price to start rising..."
+                                )
+                                continue
+                        else:  # short
+                            # Short position: require price to be falling across all timeframes
+                            if short_term_change > 0.03 or medium_term_change > 0.05 or long_term_change > 0.08:
+                                # Price is rising - REJECT short entry!
+                                logger.warning(
+                                    f"🚫 [ENTRY REJECTED] {symbol} | SHORT signal but price is RISING! | "
+                                    f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
+                                    f"Long: {long_term_change:.3f}% | Skipping to avoid entering during uptrend"
+                                )
+                                continue
+                            elif short_term_change < -0.02 and medium_term_change < -0.03:
+                                # Price is falling - good to enter
+                                logger.info(
+                                    f"✅ [ENTRY CONFIRMED] {symbol} | SHORT signal with FALLING price | "
+                                    f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
+                                    f"Long: {long_term_change:.3f}%"
+                                )
+                            else:
+                                # Price is neutral/flat - wait for confirmation
+                                logger.debug(
+                                    f"⏳ [ENTRY WAIT] {symbol} | SHORT signal but price is neutral | "
+                                    f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
+                                    f"Waiting for price to start falling..."
+                                )
+                                continue
+                    else:
+                        # Not enough price history - skip for now
+                        logger.debug(f"⚠️ [ENTRY WAIT] {symbol} | Not enough price history ({len(recent_prices)} points), waiting...")
+                        continue
                 except Exception as e:
-                    logger.debug(f"⚠️ [ENTRY CONFIRMATION ERROR] {symbol} | Error: {e} | Proceeding anyway")
+                    logger.warning(f"⚠️ [ENTRY CONFIRMATION ERROR] {symbol} | Error: {e} | Proceeding with caution")
 
                 # 🚨 CRITICAL: Use TOTAL EQUITY (available + margin in positions + unrealized PnL) for position sizing
                 # This ensures each trade gets 10% of TOTAL capital, not just remaining available balance
