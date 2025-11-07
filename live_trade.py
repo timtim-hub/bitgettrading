@@ -611,25 +611,48 @@ class LiveTrader:
                                 # Only if current price is BELOW TP threshold, we need to set trigger ≥ current price
                                 if side == "long":
                                     # For long positions, trigger price must be ≥ current market price
-                                    # BUT: We want trailing TP to activate at TP threshold, not at current price!
-                                    # So: if current < TP threshold, set trigger = max(TP threshold, current * 1.001)
-                                    #     if current >= TP threshold, set trigger = current (will activate immediately)
+                                    # 🚨 CRITICAL FIX: If price is already above TP threshold, we have a problem!
+                                    # Bitget requires trigger ≥ current price, but we want to activate at TP threshold.
+                                    # Solution: Set trigger at TP threshold, but if current > TP, we must set trigger = current
+                                    # However, this means trailing activates immediately, which can cause early exits!
+                                    # Better: Always set trigger at TP threshold (or slightly above current if current < TP)
                                     if current_market_price < take_profit_price:
                                         # Price hasn't reached TP threshold yet - set trigger at TP threshold or slightly above current
                                         trailing_trigger_price = max(take_profit_price, current_market_price * 1.001)  # 0.1% above current to ensure it activates
                                     else:
-                                        # Price already at/above TP threshold - set trigger at current price (will activate immediately)
-                                        # Bitget requires trigger ≥ current, so using current price should work
+                                        # 🚨 PROBLEM: Price already at/above TP threshold!
+                                        # Bitget requires trigger ≥ current, so we MUST set trigger = current (or higher)
+                                        # This means trailing will activate immediately, which can cause early exits if price drops!
+                                        # Log a warning about this edge case
+                                        logger.warning(
+                                            f"⚠️ [TRAILING TP EDGE CASE] {symbol} | "
+                                            f"Current price (${current_market_price:.4f}) is already ABOVE TP threshold (${take_profit_price:.4f})! | "
+                                            f"Setting trigger at current price - trailing will activate IMMEDIATELY! | "
+                                            f"This may cause early exit if price drops by callback ratio ({trailing_stop_pct_capital*100:.1f}% capital = {trailing_range_rate*100:.3f}% price)!"
+                                        )
+                                        # We MUST set trigger ≥ current price (Bitget requirement)
                                         trailing_trigger_price = current_market_price
                                 else:  # short
                                     # For short positions, trigger price must be ≤ current market price
-                                    # BUT: We want trailing TP to activate at TP threshold, not at current price!
+                                    # 🚨 CRITICAL FIX: If price is already below TP threshold, we have a problem!
+                                    # Bitget requires trigger ≤ current price, but we want to activate at TP threshold.
+                                    # Solution: Set trigger at TP threshold, but if current < TP, we must set trigger = current
+                                    # However, this means trailing activates immediately, which can cause early exits!
                                     if current_market_price > take_profit_price:
                                         # Price hasn't reached TP threshold yet - set trigger at TP threshold or slightly below current
                                         trailing_trigger_price = min(take_profit_price, current_market_price * 0.999)  # 0.1% below current to ensure it activates
                                     else:
-                                        # Price already at/below TP threshold - set trigger at current price (will activate immediately)
-                                        # Bitget requires trigger ≤ current, so using current price should work
+                                        # 🚨 PROBLEM: Price already at/below TP threshold!
+                                        # Bitget requires trigger ≤ current, so we MUST set trigger = current (or lower)
+                                        # This means trailing will activate immediately, which can cause early exits if price rises!
+                                        # Log a warning about this edge case
+                                        logger.warning(
+                                            f"⚠️ [TRAILING TP EDGE CASE] {symbol} | "
+                                            f"Current price (${current_market_price:.4f}) is already BELOW TP threshold (${take_profit_price:.4f})! | "
+                                            f"Setting trigger at current price - trailing will activate IMMEDIATELY! | "
+                                            f"This may cause early exit if price rises by callback ratio ({trailing_stop_pct_capital*100:.1f}% capital = {trailing_range_rate*100:.3f}% price)!"
+                                        )
+                                        # We MUST set trigger ≤ current price (Bitget requirement)
                                         trailing_trigger_price = current_market_price
                                 
                                 # 🚨 CRITICAL: Round trigger price to correct decimal places (error 40808: checkBDScale)
