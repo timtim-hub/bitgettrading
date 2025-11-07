@@ -515,7 +515,9 @@ class LiveTrader:
                                 
                                 # 2. Place trailing take profit order (moving_plan)
                                 # Calculate trailing TP parameters
-                                trailing_range_rate = regime_params.get("trailing_stop_pct", 0.01) if regime_params else 0.01  # 1% trailing
+                                # "Rückrufquote" (callback rate) = percentage retracement from peak before TP triggers
+                                # Higher = more room for price movement before triggering (recommended: 1.5-2%)
+                                trailing_range_rate = regime_params.get("trailing_stop_pct", 0.015) if regime_params else 0.015  # 1.5% callback rate (Rückrufquote)
                                 
                                 # 🚨 CRITICAL: Get FRESH current market price RIGHT BEFORE placing order
                                 # Bitget API requires: trigger price ≥ current market price (for longs)

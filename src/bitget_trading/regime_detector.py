@@ -134,40 +134,40 @@ class RegimeDetector:
         if regime == MarketRegime.TRENDING:
             return {
                 "stop_loss_pct": 0.25,      # 25% capital (1% price @ 25x) - Balanced risk/reward
-                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH 1% trailing!
-                "trailing_stop_pct": 0.01,  # 1% capital (0.04% price @ 25x) - ACTIVE!
+                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH trailing!
+                "trailing_stop_pct": 0.015,  # 1.5% callback rate (Rückrufquote) - More room for price movement
                 "position_size_multiplier": 1.5,  # 50% larger for trending (was 1.2)
             }
         
         elif regime == MarketRegime.RANGING:
             return {
                 "stop_loss_pct": 0.25,      # 25% capital (1% price @ 25x) - Balanced risk/reward
-                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH 1% trailing!
-                "trailing_stop_pct": 0.01,  # 1% trailing (0.04% price @ 25x) - ACTIVE!
+                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH trailing!
+                "trailing_stop_pct": 0.015,  # 1.5% callback rate (Rückrufquote) - More room for price movement
                 "position_size_multiplier": 1.0,  # Normal size for ranging
             }
         
         elif regime == MarketRegime.BREAKOUT:
             return {
                 "stop_loss_pct": 0.25,      # 25% capital (1% price @ 25x) - Balanced risk/reward
-                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH 1% trailing!
-                "trailing_stop_pct": 0.01,  # 1% trailing (0.04% price @ 25x) - ACTIVE!
+                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH trailing!
+                "trailing_stop_pct": 0.02,  # 2% callback rate (Rückrufquote) - More room for breakouts
                 "position_size_multiplier": 1.3,  # 30% larger for breakouts (high conviction)
             }
         
         elif regime == MarketRegime.VOLATILE:
             return {
                 "stop_loss_pct": 0.25,      # 25% capital (1% price @ 25x) - Balanced risk/reward
-                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH 1% trailing!
-                "trailing_stop_pct": 0.01,  # 1% trailing (0.04% price @ 25x) - ACTIVE!
+                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH trailing!
+                "trailing_stop_pct": 0.015,  # 1.5% callback rate (Rückrufquote) - More room for volatility
                 "position_size_multiplier": 0.8,  # 20% smaller in volatile (risk reduction)
             }
         
         else:  # Default
             return {
                 "stop_loss_pct": 0.25,      # 25% capital (1% price @ 25x) - Balanced risk/reward
-                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH 1% trailing!
-                "trailing_stop_pct": 0.01,  # 1% trailing (0.04% price @ 25x) - ACTIVE!
+                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH trailing!
+                "trailing_stop_pct": 0.015,  # 1.5% callback rate (Rückrufquote) - More room for price movement
                 "position_size_multiplier": 1.0,
             }
 
