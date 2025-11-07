@@ -265,21 +265,16 @@ class LiveTrader:
                         stop_loss_price = price * (1 + sl_price_pct)
                         take_profit_price = price * (1 - tp_price_pct)
                     
-                    # Round TP/SL prices to required precision
-                    if contract_info:
-                        price_place = contract_info.get("price_place", 2)
-                        stop_loss_price = round(stop_loss_price, price_place)
-                        take_profit_price = round(take_profit_price, price_place)
+                    # Round TP/SL prices based on price magnitude
+                    if price > 1000:
+                        stop_loss_price = round(stop_loss_price, 1)
+                        take_profit_price = round(take_profit_price, 1)
+                    elif price > 10:
+                        stop_loss_price = round(stop_loss_price, 2)
+                        take_profit_price = round(take_profit_price, 2)
                     else:
-                        if price > 1000:
-                            stop_loss_price = round(stop_loss_price, 1)
-                            take_profit_price = round(take_profit_price, 1)
-                        elif price > 10:
-                            stop_loss_price = round(stop_loss_price, 2)
-                            take_profit_price = round(take_profit_price, 2)
-                        else:
-                            stop_loss_price = round(stop_loss_price, 4)
-                            take_profit_price = round(take_profit_price, 4)
+                        stop_loss_price = round(stop_loss_price, 4)
+                        take_profit_price = round(take_profit_price, 4)
                     
                     # 🚨 CRITICAL: Cancel OLD TP/SL orders FIRST!
                     # Old exchange-side orders with wrong values override bot-side monitoring!
@@ -1110,4 +1105,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-
