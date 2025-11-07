@@ -48,6 +48,27 @@ class TradeRecord:
     entry_near_sr: bool  # Near support/resistance?
     entry_rr_ratio: float  # Risk/reward ratio
     
+    # Technical indicators at entry (for evaluation and improvement)
+    entry_rsi: float = 50.0  # RSI value at entry
+    entry_macd_line: float = 0.0  # MACD line at entry
+    entry_macd_signal: float = 0.0  # MACD signal at entry
+    entry_macd_histogram: float = 0.0  # MACD histogram at entry
+    entry_bb_upper: float = 0.0  # Bollinger upper band
+    entry_bb_middle: float = 0.0  # Bollinger middle band
+    entry_bb_lower: float = 0.0  # Bollinger lower band
+    entry_bb_position: float = 0.0  # Position within Bollinger bands (-1 to 1)
+    entry_ema_bullish: int = 0  # Number of bullish EMA crossovers
+    entry_ema_bearish: int = 0  # Number of bearish EMA crossovers
+    entry_vwap: float = 0.0  # VWAP at entry
+    entry_vwap_deviation: float = 0.0  # VWAP deviation at entry
+    entry_momentum_5s: float = 0.0  # 5s momentum at entry
+    entry_momentum_15s: float = 0.0  # 15s momentum at entry
+    entry_volatility_30s: float = 0.0  # 30s volatility at entry
+    entry_volatility_60s: float = 0.0  # 60s volatility at entry
+    entry_spread_bps: float = 0.0  # Spread in basis points at entry
+    entry_ob_imbalance: float = 0.0  # Order book imbalance at entry
+    entry_funding_rate: float = 0.0  # Funding rate at entry
+    
     # Exit details
     exit_time: str
     exit_price: float

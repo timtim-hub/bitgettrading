@@ -43,8 +43,8 @@ class LiveTrader:
         secret_key: str,
         passphrase: str,
         initial_capital: float = 50.0,
-        leverage: int = 25,  # 25x leverage for safety
-        position_size_pct: float = 0.20,  # 20% of capital per position
+        leverage: int = 25,  # 25x leverage (fixed in code)
+        position_size_pct: float = 0.10,  # 10% of capital per position
         max_positions: int = 10,
         daily_loss_limit: float = 0.15,
         paper_mode: bool = True,
@@ -909,6 +909,28 @@ class LiveTrader:
                     entry_near_sr = position.metadata.get("near_sr", False)
                     entry_rr = position.metadata.get("rr_ratio", 0.0)
                     
+                    # Get all indicators from metadata
+                    indicators = position.metadata.get("indicators", {})
+                    entry_rsi = indicators.get("rsi", 50.0)
+                    entry_macd_line = indicators.get("macd_line", 0.0)
+                    entry_macd_signal = indicators.get("macd_signal", 0.0)
+                    entry_macd_histogram = indicators.get("macd_histogram", 0.0)
+                    entry_bb_upper = indicators.get("bb_upper", 0.0)
+                    entry_bb_middle = indicators.get("bb_middle", 0.0)
+                    entry_bb_lower = indicators.get("bb_lower", 0.0)
+                    entry_bb_position = indicators.get("bb_position", 0.0)
+                    entry_ema_bullish = indicators.get("ema_bullish", 0)
+                    entry_ema_bearish = indicators.get("ema_bearish", 0)
+                    entry_vwap = indicators.get("vwap", 0.0)
+                    entry_vwap_deviation = indicators.get("vwap_deviation", 0.0)
+                    entry_momentum_5s = position.metadata.get("momentum_5s", 0.0)
+                    entry_momentum_15s = position.metadata.get("momentum_15s", 0.0)
+                    entry_volatility_30s = position.metadata.get("volatility_30s", 0.0)
+                    entry_volatility_60s = position.metadata.get("volatility_60s", 0.0)
+                    entry_spread_bps = position.metadata.get("spread_bps", 0.0)
+                    entry_ob_imbalance = position.metadata.get("ob_imbalance", 0.0)
+                    entry_funding_rate = position.metadata.get("funding_rate", 0.0)
+                    
                     # Get current market structure
                     state = self.state_manager.get_state(symbol)
                     prices = np.array([p for _, p in state.price_history]) if state and state.price_history else np.array([])
@@ -919,7 +941,7 @@ class LiveTrader:
                         market_structure = pro_ind.analyze_market_structure(prices)
                         exit_structure = market_structure.get("structure", "unknown")
                     
-                    # Create detailed trade record for loss analysis
+                    # Create detailed trade record for loss analysis (with all indicators)
                     trade_record = TradeRecord(
                         trade_id=f"{symbol}_{position.entry_time}",
                         symbol=symbol,
@@ -935,6 +957,26 @@ class LiveTrader:
                         entry_market_structure=entry_structure,
                         entry_near_sr=entry_near_sr,
                         entry_rr_ratio=entry_rr,
+                        # All technical indicators at entry
+                        entry_rsi=entry_rsi,
+                        entry_macd_line=entry_macd_line,
+                        entry_macd_signal=entry_macd_signal,
+                        entry_macd_histogram=entry_macd_histogram,
+                        entry_bb_upper=entry_bb_upper,
+                        entry_bb_middle=entry_bb_middle,
+                        entry_bb_lower=entry_bb_lower,
+                        entry_bb_position=entry_bb_position,
+                        entry_ema_bullish=entry_ema_bullish,
+                        entry_ema_bearish=entry_ema_bearish,
+                        entry_vwap=entry_vwap,
+                        entry_vwap_deviation=entry_vwap_deviation,
+                        entry_momentum_5s=entry_momentum_5s,
+                        entry_momentum_15s=entry_momentum_15s,
+                        entry_volatility_30s=entry_volatility_30s,
+                        entry_volatility_60s=entry_volatility_60s,
+                        entry_spread_bps=entry_spread_bps,
+                        entry_ob_imbalance=entry_ob_imbalance,
+                        entry_funding_rate=entry_funding_rate,
                         exit_time=exit_time,
                         exit_price=current_price,
                         exit_reason=exit_reason,
@@ -1162,7 +1204,7 @@ class LiveTrader:
                             f"💰 [EQUITY CHECK] {symbol} | Total Equity: ${total_equity:.2f} | "
                             f"Available: ${available_balance:.2f} | Frozen: ${frozen:.2f} | "
                             f"Unrealized PnL: ${unrealized_pnl:+.2f} | "
-                            f"20% Position Size: ${base_position_value:.2f}"
+                            f"10% Position Size: ${base_position_value:.2f}"
                         )
                     else:
                         # Fallback to tracked equity if balance fetch fails
@@ -1219,6 +1261,62 @@ class LiveTrader:
                 if success:
                     trades_successful += 1
                     
+                    # Extract entry metadata for loss tracking (including all indicators)
+                    # Get features from state to capture all indicators
+                    features = state.compute_features() if state else {}
+                    
+                    # Calculate technical indicators for saving
+                    prices = np.array([p for _, p in state.price_history]) if state and state.price_history else np.array([])
+                    entry_indicators = {}
+                    
+                    if len(prices) >= 20:
+                        # Calculate RSI
+                        rsi = self.enhanced_ranker.technical_indicators.calculate_rsi(prices, period=14)
+                        entry_indicators["rsi"] = rsi
+                        
+                        # Calculate MACD
+                        macd_data = self.enhanced_ranker.technical_indicators.calculate_macd(prices, fast_period=3, slow_period=7, signal_period=2)
+                        entry_indicators["macd_line"] = macd_data.get("macd_line", 0.0)
+                        entry_indicators["macd_signal"] = macd_data.get("signal_line", 0.0)
+                        entry_indicators["macd_histogram"] = macd_data.get("histogram", 0.0)
+                        
+                        # Calculate Bollinger Bands
+                        bb_data = self.enhanced_ranker.technical_indicators.calculate_bollinger_bands(prices, period=20, std_dev=2.0)
+                        entry_indicators["bb_upper"] = bb_data.get("upper_band", 0.0)
+                        entry_indicators["bb_middle"] = bb_data.get("middle_band", 0.0)
+                        entry_indicators["bb_lower"] = bb_data.get("lower_band", 0.0)
+                        current_price = state.last_price if state else price
+                        if bb_data.get("upper_band", 0) > bb_data.get("lower_band", 0):
+                            entry_indicators["bb_position"] = (current_price - bb_data.get("middle_band", current_price)) / ((bb_data.get("upper_band", current_price) - bb_data.get("middle_band", current_price)) + 1e-8)
+                        else:
+                            entry_indicators["bb_position"] = 0.0
+                        
+                        # Calculate EMA Crossovers
+                        ema_data = self.enhanced_ranker.technical_indicators.calculate_ema_crossovers(prices, fast_period=3, slow_period=7)
+                        entry_indicators["ema_bullish"] = 1 if ema_data.get("is_bullish", False) else 0
+                        entry_indicators["ema_bearish"] = 1 if ema_data.get("is_bearish", False) else 0
+                        
+                        # Calculate VWAP
+                        vwap_data = self.enhanced_ranker.technical_indicators.calculate_vwap(prices, period=20)
+                        entry_indicators["vwap"] = vwap_data.get("vwap", 0.0)
+                        entry_indicators["vwap_deviation"] = vwap_data.get("deviation", 0.0)
+                    else:
+                        # Not enough data - use defaults
+                        entry_indicators = {
+                            "rsi": 50.0,
+                            "macd_line": 0.0,
+                            "macd_signal": 0.0,
+                            "macd_histogram": 0.0,
+                            "bb_upper": 0.0,
+                            "bb_middle": 0.0,
+                            "bb_lower": 0.0,
+                            "bb_position": 0.0,
+                            "ema_bullish": 0,
+                            "ema_bearish": 0,
+                            "vwap": 0.0,
+                            "vwap_deviation": 0.0,
+                        }
+                    
                     # Extract entry metadata for loss tracking
                     entry_metadata = {
                         "grade": alloc.get("grade", "Unknown"),
@@ -1228,6 +1326,15 @@ class LiveTrader:
                         "entry_structure": alloc.get("market_structure", "unknown"),
                         "near_sr": alloc.get("near_sr", False),
                         "rr_ratio": alloc.get("rr_ratio", 0.0),
+                        # Add all indicators
+                        "indicators": entry_indicators,
+                        "momentum_5s": features.get("return_5s", 0.0),
+                        "momentum_15s": features.get("return_15s", 0.0),
+                        "volatility_30s": features.get("volatility_30s", 0.0),
+                        "volatility_60s": features.get("volatility_60s", 0.0),
+                        "spread_bps": features.get("spread_bps", 0.0),
+                        "ob_imbalance": features.get("ob_imbalance", 0.0),
+                        "funding_rate": features.get("funding_rate", 0.0),
                     }
                     
                     # Add to position manager with REGIME-BASED PARAMETERS + METADATA
@@ -1639,8 +1746,8 @@ async def main() -> None:
         secret_key=secret_key,
         passphrase=passphrase,
         initial_capital=initial_capital,  # USE ACTUAL BALANCE!
-        leverage=int(os.getenv("LEVERAGE", "25")),  # 25x for safety
-        position_size_pct=float(os.getenv("POSITION_SIZE_PCT", "0.20")),  # 20% per position
+        leverage=25,  # Fixed 25x leverage (hardcoded in code)
+        position_size_pct=0.10,  # Fixed 10% per position (hardcoded in code)
         max_positions=int(os.getenv("MAX_POSITIONS", "10")),
         daily_loss_limit=float(os.getenv("DAILY_LOSS_LIMIT", "0.15")),
         paper_mode=paper_mode,
