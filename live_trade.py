@@ -305,31 +305,48 @@ class LiveTrader:
                             stop_loss_price = round(stop_loss_price, 4)
                             take_profit_price = round(take_profit_price, 4)
                     
-                    try:
-                        # Place exchange-side TP/SL orders
-                        tpsl_order = await self.rest_client.place_tpsl_order(
-                            symbol=symbol,
-                            hold_side=side,  # "long" or "short"
-                            stop_loss_price=stop_loss_price,
-                            take_profit_price=take_profit_price,
-                        )
-                        
-                        if tpsl_order and tpsl_order.get("code") == "00000":
-                            # Calculate actual percentages for logging
-                            sl_capital_pct = sl_price_pct * self.leverage * 100
-                            tp_capital_pct = tp_price_pct * self.leverage * 100
-                            logger.info(
-                                f"🛡️  [EXCHANGE-SIDE TP/SL] {symbol} @ {self.leverage}x | "
-                                f"SL: ${stop_loss_price:.4f} (-{sl_capital_pct:.0f}% capital / {sl_price_pct*100:.1f}% price) | "
-                                f"TP: ${take_profit_price:.4f} (+{tp_capital_pct:.0f}% capital / {tp_price_pct*100:.2f}% price)"
+                    # Try to place exchange-side TP/SL with retry logic
+                    tpsl_success = False
+                    for attempt in range(3):  # 3 attempts with retry
+                        try:
+                            # Place exchange-side TP/SL orders
+                            tpsl_order = await self.rest_client.place_tpsl_order(
+                                symbol=symbol,
+                                hold_side=side,  # "long" or "short"
+                                stop_loss_price=stop_loss_price,
+                                take_profit_price=take_profit_price,
                             )
-                        else:
-                            logger.warning(
-                                f"⚠️  Failed to place TP/SL for {symbol}: {tpsl_order}"
-                            )
-                    except Exception as e:
-                        logger.error(f"❌ Failed to place TP/SL orders: {e}")
-                        # Don't fail the trade if TP/SL placement fails - bot-side will handle it
+                            
+                            if tpsl_order and tpsl_order.get("code") == "00000":
+                                # Calculate actual percentages for logging
+                                sl_capital_pct = sl_price_pct * self.leverage * 100
+                                tp_capital_pct = tp_price_pct * self.leverage * 100
+                                logger.info(
+                                    f"🛡️  [EXCHANGE-SIDE TP/SL] {symbol} @ {self.leverage}x | "
+                                    f"SL: ${stop_loss_price:.4f} (-{sl_capital_pct:.0f}% capital / {sl_price_pct*100:.1f}% price) | "
+                                    f"TP: ${take_profit_price:.4f} (+{tp_capital_pct:.0f}% capital / {tp_price_pct*100:.2f}% price)"
+                                )
+                                tpsl_success = True
+                                break  # Success, exit retry loop
+                            else:
+                                logger.warning(
+                                    f"⚠️  Failed to place TP/SL for {symbol}: {tpsl_order}"
+                                )
+                                break  # API error (not connection), don't retry
+                        except Exception as e:
+                            if attempt < 2:  # Not the last attempt
+                                logger.warning(
+                                    f"⚠️  TP/SL placement attempt {attempt + 1}/3 failed: {e}. Retrying in 1s..."
+                                )
+                                await asyncio.sleep(1)  # Wait before retry
+                            else:  # Last attempt failed
+                                logger.warning(
+                                    f"⚠️  Exchange-side TP/SL failed after 3 attempts: {e}. "
+                                    f"Bot-side monitoring will handle exits (checking every 5ms)."
+                                )
+                    
+                    # Trade is successful even if exchange-side TP/SL fails
+                    # Bot-side monitoring (5ms checks) will handle exits as backup
                     
                     return True
                 else:

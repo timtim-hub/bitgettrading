@@ -124,10 +124,16 @@ class BitgetRestClient:
             "ACCESS-PASSPHRASE": self.passphrase,  # Plain text, not signed!
         }
         
-        # Make request
+        # Make request with timeout settings
         url = self.base_url + request_path
         
-        async with aiohttp.ClientSession() as session:
+        # Configure timeouts (in seconds)
+        # - total: 30s max for entire request
+        # - connect: 10s max to establish connection
+        # - sock_read: 20s max to read response
+        timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=20)
+        
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.request(
                 method,
                 url,
