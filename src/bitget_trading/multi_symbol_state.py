@@ -59,6 +59,12 @@ class SymbolState:
         # Price history for returns/volatility (extended for multi-timeframe)
         self.price_history: Deque[tuple[float, float]] = deque(maxlen=3600)  # 1 hour at 1Hz
         
+        # 🚀 MULTI-TIMEFRAME CANDLE DATA (for pro-style indicator analysis)
+        # Store candles for 1min, 5min, 15min timeframes
+        self.candles_1m: Deque[dict] = deque(maxlen=200)  # [timestamp, open, high, low, close, volume]
+        self.candles_5m: Deque[dict] = deque(maxlen=200)  # [timestamp, open, high, low, close, volume]
+        self.candles_15m: Deque[dict] = deque(maxlen=200)  # [timestamp, open, high, low, close, volume]
+        
         # Volume history
         self.volume_history: Deque[tuple[float, float]] = deque(maxlen=300)  # (timestamp, volume)
         
@@ -79,6 +85,74 @@ class SymbolState:
         
         # Advanced indicators
         self.advanced_indicators = AdvancedIndicators()
+    
+    def add_candle(self, timeframe: str, candle_data: dict) -> None:
+        """
+        Add candle data for multi-timeframe analysis.
+        
+        Args:
+            timeframe: "1m", "5m", or "15m"
+            candle_data: Dict with keys: timestamp, open, high, low, close, volume
+        """
+        if timeframe == "1m":
+            self.candles_1m.append(candle_data)
+        elif timeframe == "5m":
+            self.candles_5m.append(candle_data)
+        elif timeframe == "15m":
+            self.candles_15m.append(candle_data)
+    
+    def get_candle_prices(self, timeframe: str) -> np.ndarray:
+        """
+        Get close prices from candles for a specific timeframe.
+        
+        Args:
+            timeframe: "1m", "5m", or "15m"
+        
+        Returns:
+            Array of close prices
+        """
+        if timeframe == "1m":
+            candles = self.candles_1m
+        elif timeframe == "5m":
+            candles = self.candles_5m
+        elif timeframe == "15m":
+            candles = self.candles_15m
+        else:
+            return np.array([])
+        
+        if not candles:
+            return np.array([])
+        
+        return np.array([c.get("close", 0) for c in candles if c.get("close", 0) > 0])
+    
+    def get_candle_ohlc(self, timeframe: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Get OHLC arrays from candles for a specific timeframe.
+        
+        Args:
+            timeframe: "1m", "5m", or "15m"
+        
+        Returns:
+            (high_prices, low_prices, close_prices, volumes)
+        """
+        if timeframe == "1m":
+            candles = self.candles_1m
+        elif timeframe == "5m":
+            candles = self.candles_5m
+        elif timeframe == "15m":
+            candles = self.candles_15m
+        else:
+            return (np.array([]), np.array([]), np.array([]), np.array([]))
+        
+        if not candles:
+            return (np.array([]), np.array([]), np.array([]), np.array([]))
+        
+        high_prices = np.array([c.get("high", 0) for c in candles if c.get("high", 0) > 0])
+        low_prices = np.array([c.get("low", 0) for c in candles if c.get("low", 0) > 0])
+        close_prices = np.array([c.get("close", 0) for c in candles if c.get("close", 0) > 0])
+        volumes = np.array([c.get("volume", 0) for c in candles])
+        
+        return (high_prices, low_prices, close_prices, volumes)
 
     def update_ticker(self, ticker_data: dict) -> None:
         """Update from ticker data."""

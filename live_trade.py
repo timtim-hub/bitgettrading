@@ -2857,16 +2857,17 @@ class LiveTrader:
                 time_since_entry_check = (datetime.now() - last_entry_check_time).total_seconds()
                 should_check_entries = time_since_entry_check >= entry_check_interval_sec
 
-                # Debug logging every 50 iterations (0.25 seconds)
+                # Debug logging every 200 iterations (1 second) to show bot is active
                 loop_count = getattr(self, '_loop_count', 0)
                 self._loop_count = loop_count + 1
-                if loop_count % 50 == 0:  # Every 0.25 seconds
+                if loop_count % 200 == 0:  # Every 1 second (200 * 0.005s = 1s)
                     logger.info(  # Changed to info so it shows up
-                        f"[LOOP] Iteration {loop_count} | "
+                        f"💓 [HEARTBEAT] Loop iteration {loop_count} | "
                         f"Available slots: {available_slots} | "
-                        f"Time since entry check: {time_since_entry_check:.3f}s | "
+                        f"Time since entry check: {time_since_entry_check:.1f}s | "
                         f"Should check: {should_check_entries} | "
-                        f"Positions: {len(self.position_manager.positions)}/{self.max_positions}"
+                        f"Positions: {len(self.position_manager.positions)}/{self.max_positions} | "
+                        f"Equity: ${self.equity:.2f} ({pnl_pct:+.2f}%)"
                     )
 
                 # 🚀 INSTANT ENTRY: Check immediately when slots available (don't wait for interval)
@@ -3144,12 +3145,25 @@ class LiveTrader:
                     logger.warning(f"⚠️  No candles returned for {symbol} ({timeframe})")
                     return
                 # Ensure oldest -> newest
+                state = self.state_manager.get_state(symbol)
                 for candle in reversed(candles):
                     # Each candle: [timestamp, open, high, low, close, volume, ...]
                     timestamp = int(candle[0])
                     price = float(candle[4])
                     volume = float(candle[5]) if len(candle) > 5 else 0.0
                     self.state_manager.add_price_point(symbol, price, timestamp, volume)
+                    
+                    # 🚀 STORE MULTI-TIMEFRAME CANDLE DATA for pro-style indicator analysis
+                    if state:
+                        candle_data = {
+                            "timestamp": timestamp,
+                            "open": float(candle[1]),
+                            "high": float(candle[2]),
+                            "low": float(candle[3]),
+                            "close": float(candle[4]),
+                            "volume": volume,
+                        }
+                        state.add_candle(timeframe, candle_data)
             except Exception as e:
                 logger.warning(f"⚠️  Could not fetch history for {symbol} ({timeframe}): {e}")
 

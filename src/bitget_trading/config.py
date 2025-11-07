@@ -86,9 +86,9 @@ class TradingConfig(BaseSettings):
     momentum_reversal_enabled: bool = Field(default=True, alias="MOMENTUM_REVERSAL_ENABLED")
     momentum_reversal_threshold: float = Field(default=2.0, ge=1.0, le=5.0, alias="MOMENTUM_REVERSAL_THRESHOLD")  # Minimum score for strong opposite signal
     
-    # Entry Signal Thresholds (STRICTER for higher quality trades)
-    min_entry_score: float = Field(default=2.5, ge=1.0, le=5.0, alias="MIN_ENTRY_SCORE")  # Minimum score to enter trade (was unlimited)
-    min_entry_score_short: float = Field(default=2.0, ge=1.0, le=5.0, alias="MIN_ENTRY_SCORE_SHORT")  # Slightly lower for shorts (harder to find)
+    # Entry Signal Thresholds (BALANCED for entry chances + win rate)
+    min_entry_score: float = Field(default=2.0, ge=1.0, le=5.0, alias="MIN_ENTRY_SCORE")  # Minimum score to enter trade (balanced: was 2.5)
+    min_entry_score_short: float = Field(default=1.8, ge=1.0, le=5.0, alias="MIN_ENTRY_SCORE_SHORT")  # Slightly lower for shorts (was 2.0)
 
     def validate_credentials(self) -> bool:
         """Check if API credentials are set."""

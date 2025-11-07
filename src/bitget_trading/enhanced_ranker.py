@@ -301,6 +301,8 @@ class EnhancedRanker:
         STRICT FILTERS: Only trade high-quality setups!
 
         NEW: 6-Layer Confluence Validation with Adaptive Thresholds
+        NEW: Multi-Timeframe Indicator Analysis (1min, 5min, 15min)
+        NEW: Pro Trading Indicator Weights
 
         Returns:
             (score, predicted_side, metadata)
@@ -444,29 +446,62 @@ class EnhancedRanker:
         elif direction == "short" and funding_rate > 0:  # Shorts get paid
             funding_bias = 0.2  # Boost short score
 
-        # 10. TECHNICAL INDICATORS (RSI, MACD, Bollinger, EMA, VWAP)
-        prices = (
-            np.array([p for _, p in state.price_history])
-            if state.price_history
-            else np.array([])
-        )
-        indicator_scores = {}
+        # 10. MULTI-TIMEFRAME TECHNICAL INDICATORS (PRO-STYLE ANALYSIS)
+        # 🚀 PRO TRADING: Calculate indicators on 1min, 5min, 15min timeframes
+        # Weight: 1min (3.0x) > 5min (2.0x) > 15min (1.0x) for short-term leverage trading
+        timeframe_weights = {
+            "1m": 3.0,  # Primary entry timeframe (most important)
+            "5m": 2.0,  # Trend confirmation
+            "15m": 1.0,  # Overall trend filter
+        }
+        
+        # 🚀 PRO TRADING INDICATOR WEIGHTS (for short-term leverage trading)
+        # Based on professional trader importance for short-term leverage trading
+        indicator_weights = {
+            "order_flow": 0.20,  # Most important - buying/selling pressure
+            "vwap": 0.18,  # Institutional levels
+            "macd": 0.15,  # Momentum
+            "rsi": 0.12,  # Overbought/oversold
+            "adx": 0.10,  # Trend strength
+            "ema": 0.08,  # Trend confirmation
+            "bollinger": 0.06,  # Volatility/mean reversion
+            "stochastic": 0.06,  # Momentum confirmation
+            "atr": 0.05,  # Volatility for stops
+        }
+        
+        # Aggregate indicator scores across timeframes
+        indicator_scores_aggregated = {
+            "rsi": 0.0,
+            "macd": 0.0,
+            "bollinger": 0.0,
+            "ema": 0.0,
+            "vwap": 0.0,
+            "adx": 0.0,
+            "stochastic": 0.0,
+            "atr": 0.0,
+            "order_flow": 0.0,
+        }
         indicator_confluence = []
-
-        if len(prices) >= 20:
+        total_timeframe_weight = 0.0
+        
+        # Calculate indicators on each timeframe and aggregate with weights
+        for tf in ["1m", "5m", "15m"]:
+            # Get candle data for this timeframe
+            prices = state.get_candle_prices(tf)
+            if len(prices) < 20:
+                continue  # Skip if not enough data
+            
+            tf_weight = timeframe_weights.get(tf, 1.0)
+            total_timeframe_weight += tf_weight
+            current_price = state.last_price
+            
             # Calculate RSI
             rsi = self.technical_indicators.calculate_rsi(prices, period=14)
             if direction == "long":
-                rsi_score = (
-                    1.0 if rsi < 30 else (0.5 if rsi < 50 else 0.0)
-                )  # Oversold = bullish
-            else:  # short
-                rsi_score = (
-                    1.0 if rsi > 70 else (0.5 if rsi > 50 else 0.0)
-                )  # Overbought = bearish
-            indicator_scores["rsi"] = rsi_score
-            if rsi_score > 0.5:
-                indicator_confluence.append("rsi")
+                rsi_score = 1.0 if rsi < 30 else (0.5 if rsi < 50 else 0.0)
+            else:
+                rsi_score = 1.0 if rsi > 70 else (0.5 if rsi > 50 else 0.0)
+            indicator_scores_aggregated["rsi"] += rsi_score * tf_weight
 
             # Calculate MACD
             macd_data = self.technical_indicators.calculate_macd(
@@ -474,69 +509,19 @@ class EnhancedRanker:
             )
             if direction == "long":
                 macd_score = 1.0 if macd_data["is_bullish"] else 0.0
-            else:  # short
+            else:
                 macd_score = 1.0 if macd_data["is_bearish"] else 0.0
-            indicator_scores["macd"] = macd_score
-            if macd_score > 0.5:
-                indicator_confluence.append("macd")
+            indicator_scores_aggregated["macd"] += macd_score * tf_weight
 
             # Calculate Bollinger Bands
             bb_data = self.technical_indicators.calculate_bollinger_bands(
                 prices, period=20, std_dev=2.0
             )
-            current_price = state.last_price
             if direction == "long":
-                # Buy when price touches lower band (oversold)
-                bb_score = (
-                    1.0
-                    if current_price <= bb_data["lower_band"] * 1.001
-                    else (0.5 if current_price < bb_data["middle_band"] else 0.0)
-                )
-            else:  # short
-                # Sell when price touches upper band (overbought)
-                bb_score = (
-                    1.0
-                    if current_price >= bb_data["upper_band"] * 0.999
-                    else (0.5 if current_price > bb_data["middle_band"] else 0.0)
-                )
-            indicator_scores["bollinger"] = bb_score
-            if bb_score > 0.5:
-                indicator_confluence.append("bollinger")
-            
-            # 🚀 NEW: Bollinger Squeeze Detection (breakout signal)
-            if bb_data.get("is_squeeze", False):
-                # Squeeze detected = low volatility = breakout imminent
-                indicator_scores["bollinger_squeeze"] = 1.0
-                indicator_confluence.append("bollinger_squeeze")
-                logger.debug(f"🔍 [BOLLINGER SQUEEZE] {state.symbol} | Breakout signal detected!")
-            
-            # 🚀 NEW: RSI Divergence Detection
-            if len(prices) >= 28:  # Need enough data for divergence
-                rsi_prev = self.technical_indicators.calculate_rsi(prices[:-7], period=14)
-                rsi_current = rsi
-                price_prev = prices[-14]
-                price_current = current_price
-                
-                # Bullish divergence: price lower, RSI higher
-                if direction == "long" and price_current < price_prev and rsi_current > rsi_prev:
-                    indicator_scores["rsi_divergence"] = 1.0
-                    indicator_confluence.append("rsi_divergence")
-                    logger.debug(f"🔍 [RSI DIVERGENCE] {state.symbol} | Bullish divergence detected!")
-                # Bearish divergence: price higher, RSI lower
-                elif direction == "short" and price_current > price_prev and rsi_current < rsi_prev:
-                    indicator_scores["rsi_divergence"] = 1.0
-                    indicator_confluence.append("rsi_divergence")
-                    logger.debug(f"🔍 [RSI DIVERGENCE] {state.symbol} | Bearish divergence detected!")
-            
-            # 🚀 NEW: MACD Momentum (histogram expansion)
-            if macd_data.get("histogram", 0) != 0:
-                # Strong momentum if histogram is expanding
-                macd_momentum = abs(macd_data["histogram"])
-                if macd_momentum > 0.001:  # Significant momentum
-                    indicator_scores["macd_momentum"] = min(1.0, macd_momentum * 100)
-                    if indicator_scores["macd_momentum"] > 0.5:
-                        indicator_confluence.append("macd_momentum")
-                        logger.debug(f"🔍 [MACD MOMENTUM] {state.symbol} | Strong momentum: {macd_momentum:.4f}")
+                bb_score = 1.0 if current_price <= bb_data["lower_band"] * 1.001 else (0.5 if current_price < bb_data["middle_band"] else 0.0)
+            else:
+                bb_score = 1.0 if current_price >= bb_data["upper_band"] * 0.999 else (0.5 if current_price > bb_data["middle_band"] else 0.0)
+            indicator_scores_aggregated["bollinger"] += bb_score * tf_weight
 
             # Calculate EMA Crossovers
             ema_data = self.technical_indicators.calculate_ema_crossovers(
@@ -544,123 +529,86 @@ class EnhancedRanker:
             )
             if direction == "long":
                 ema_score = 1.0 if ema_data["is_bullish"] else 0.0
-            else:  # short
+            else:
                 ema_score = 1.0 if ema_data["is_bearish"] else 0.0
-            indicator_scores["ema"] = ema_score
-            if ema_score > 0.5:
-                indicator_confluence.append("ema")
+            indicator_scores_aggregated["ema"] += ema_score * tf_weight
 
             # Calculate VWAP
             vwap_data = self.technical_indicators.calculate_vwap(prices, period=20)
             if direction == "long":
-                vwap_score = (
-                    1.0 if vwap_data["is_above"] else 0.0
-                )  # Price above VWAP = bullish
-            else:  # short
-                vwap_score = (
-                    1.0 if vwap_data["is_below"] else 0.0
-                )  # Price below VWAP = bearish
-            indicator_scores["vwap"] = vwap_score
-            if vwap_score > 0.5:
-                indicator_confluence.append("vwap")
+                vwap_score = 1.0 if vwap_data["is_above"] else 0.0
+            else:
+                vwap_score = 1.0 if vwap_data["is_below"] else 0.0
+            indicator_scores_aggregated["vwap"] += vwap_score * tf_weight
             
-            # 🚀 NEW PROFESSIONAL INDICATORS: ADX, Stochastic, ATR, Order Flow
-            if len(prices) >= 28:  # Need enough data for ADX/Stochastic/ATR
-                # Approximate high/low from price history (rolling windows)
-                # For ultra-short-term, use recent price range as high/low approximation
-                window_size = min(14, len(prices))
-                high_prices = np.array([np.max(prices[max(0, i-window_size):i+1]) for i in range(len(prices))])
-                low_prices = np.array([np.min(prices[max(0, i-window_size):i+1]) for i in range(len(prices))])
-                close_prices = prices
-                
-                # Calculate ADX (trend strength)
-                adx_data = self.technical_indicators.calculate_adx(
-                    high_prices, low_prices, close_prices, period=14
-                )
-                # ADX > 25 = strong trend (good for directional trades)
-                if adx_data["adx"] > 25:
-                    # Check if trend direction aligns with our signal
-                    if (direction == "long" and adx_data["trend_direction"] == "bullish") or \
-                       (direction == "short" and adx_data["trend_direction"] == "bearish"):
-                        indicator_scores["adx"] = 1.0
-                        indicator_confluence.append("adx")
-                        logger.debug(f"🔍 [ADX] {state.symbol} | Strong trend: {adx_data['trend_strength']} ({adx_data['adx']:.1f})")
-                    else:
-                        indicator_scores["adx"] = 0.0
-                elif adx_data["adx"] > 20:
-                    # Moderate trend - partial score
-                    if (direction == "long" and adx_data["trend_direction"] == "bullish") or \
-                       (direction == "short" and adx_data["trend_direction"] == "bearish"):
-                        indicator_scores["adx"] = 0.5
-                else:
-                    indicator_scores["adx"] = 0.0
-                
-                # Calculate Stochastic Oscillator
-                stoch_data = self.technical_indicators.calculate_stochastic(
-                    high_prices, low_prices, close_prices, k_period=14, d_period=3
-                )
-                if direction == "long":
-                    # Oversold = bullish signal
-                    stoch_score = 1.0 if stoch_data["is_oversold"] else (0.5 if stoch_data["signal"] == "bullish" else 0.0)
-                else:  # short
-                    # Overbought = bearish signal
-                    stoch_score = 1.0 if stoch_data["is_overbought"] else (0.5 if stoch_data["signal"] == "bearish" else 0.0)
-                indicator_scores["stochastic"] = stoch_score
-                if stoch_score > 0.5:
-                    indicator_confluence.append("stochastic")
-                    logger.debug(f"🔍 [STOCHASTIC] {state.symbol} | %K: {stoch_data['k_percent']:.1f}, Signal: {stoch_data['signal']}")
-                
-                # Calculate ATR (volatility)
-                atr_data = self.technical_indicators.calculate_atr(
-                    high_prices, low_prices, close_prices, period=14
-                )
-                # ATR expansion = breakout potential (good for directional trades)
-                if atr_data["is_expanding"]:
-                    indicator_scores["atr"] = 1.0
-                    indicator_confluence.append("atr")
-                    logger.debug(f"🔍 [ATR] {state.symbol} | Volatility expanding: {atr_data['atr_pct']:.2f}%")
-                elif atr_data["volatility_level"] == "moderate":
-                    indicator_scores["atr"] = 0.5
-                else:
-                    indicator_scores["atr"] = 0.0
-                
-                # Calculate Order Flow Imbalance
-                # Use price/volume data to infer imbalance
-                volumes = features.get("volume_ratio", 1.0)  # Approximate from volume ratio
-                if volumes > 0:
-                    # Create volume array from volume ratio
-                    volume_array = np.array([volumes] * len(prices))
-                    of_data = self.technical_indicators.calculate_order_flow_imbalance(
-                        prices=prices, volumes=volume_array, period=20
+            # Calculate ADX, Stochastic, ATR (need OHLC data)
+            if len(prices) >= 28:
+                high_prices, low_prices, close_prices, volumes = state.get_candle_ohlc(tf)
+                if len(high_prices) >= 28 and len(low_prices) >= 28:
+                    # ADX
+                    adx_data = self.technical_indicators.calculate_adx(
+                        high_prices, low_prices, close_prices, period=14
+                    )
+                    if adx_data["adx"] > 25:
+                        if (direction == "long" and adx_data["trend_direction"] == "bullish") or \
+                           (direction == "short" and adx_data["trend_direction"] == "bearish"):
+                            indicator_scores_aggregated["adx"] += 1.0 * tf_weight
+                        else:
+                            indicator_scores_aggregated["adx"] += 0.0
+                    elif adx_data["adx"] > 20:
+                        if (direction == "long" and adx_data["trend_direction"] == "bullish") or \
+                           (direction == "short" and adx_data["trend_direction"] == "bearish"):
+                            indicator_scores_aggregated["adx"] += 0.5 * tf_weight
+                    
+                    # Stochastic
+                    stoch_data = self.technical_indicators.calculate_stochastic(
+                        high_prices, low_prices, close_prices, k_period=14, d_period=3
                     )
                     if direction == "long":
-                        # Positive imbalance = buying pressure = bullish
-                        of_score = 1.0 if of_data["pressure"] in ["buy", "strong_buy"] else (0.5 if of_data["pressure"] == "neutral" else 0.0)
-                    else:  # short
-                        # Negative imbalance = selling pressure = bearish
-                        of_score = 1.0 if of_data["pressure"] in ["sell", "strong_sell"] else (0.5 if of_data["pressure"] == "neutral" else 0.0)
-                    indicator_scores["order_flow"] = of_score
-                    if of_score > 0.5:
-                        indicator_confluence.append("order_flow")
-                        logger.debug(f"🔍 [ORDER FLOW] {state.symbol} | Pressure: {of_data['pressure']}, Imbalance: {of_data['imbalance_pct']:.1f}%")
+                        stoch_score = 1.0 if stoch_data["is_oversold"] else (0.5 if stoch_data["signal"] == "bullish" else 0.0)
+                    else:
+                        stoch_score = 1.0 if stoch_data["is_overbought"] else (0.5 if stoch_data["signal"] == "bearish" else 0.0)
+                    indicator_scores_aggregated["stochastic"] += stoch_score * tf_weight
+                    
+                    # ATR
+                    atr_data = self.technical_indicators.calculate_atr(
+                        high_prices, low_prices, close_prices, period=14
+                    )
+                    if atr_data["is_expanding"]:
+                        indicator_scores_aggregated["atr"] += 1.0 * tf_weight
+                    elif atr_data["volatility_level"] == "moderate":
+                        indicator_scores_aggregated["atr"] += 0.5 * tf_weight
+        
+        # Normalize aggregated scores by total timeframe weight
+        if total_timeframe_weight > 0:
+            for key in indicator_scores_aggregated:
+                indicator_scores_aggregated[key] /= total_timeframe_weight
+        
+        # Calculate Order Flow (use price history, not candles)
+        prices_history = (
+            np.array([p for _, p in state.price_history])
+            if state.price_history
+            else np.array([])
+        )
+        if len(prices_history) >= 20:
+            volumes = features.get("volume_ratio", 1.0)
+            if volumes > 0:
+                volume_array = np.array([volumes] * len(prices_history))
+                of_data = self.technical_indicators.calculate_order_flow_imbalance(
+                    prices=prices_history, volumes=volume_array, period=20
+                )
+                if direction == "long":
+                    of_score = 1.0 if of_data["pressure"] in ["buy", "strong_buy"] else (0.5 if of_data["pressure"] == "neutral" else 0.0)
                 else:
-                    indicator_scores["order_flow"] = 0.0
-        else:
-            # Not enough data for technical indicators
-            indicator_scores = {
-                "rsi": 0.0,
-                "macd": 0.0,
-                "bollinger": 0.0,
-                "ema": 0.0,
-                "vwap": 0.0,
-                "adx": 0.0,
-                "stochastic": 0.0,
-                "atr": 0.0,
-                "order_flow": 0.0,
-            }
+                    of_score = 1.0 if of_data["pressure"] in ["sell", "strong_sell"] else (0.5 if of_data["pressure"] == "neutral" else 0.0)
+                indicator_scores_aggregated["order_flow"] = of_score
+        
+        # Check which indicators agree (for confluence)
+        for indicator, score in indicator_scores_aggregated.items():
+            if score > 0.5:  # Indicator agrees with direction
+                indicator_confluence.append(indicator)
 
         # 11. Multi-Indicator Confluence Check
-        # Require at least 4 out of 6 indicators to agree (momentum + 5 technical indicators)
         momentum_agrees = (
             (momentum_score > 0) if direction == "long" else (momentum_score < 0)
         )
@@ -669,9 +617,10 @@ class EnhancedRanker:
 
         total_indicators = 9  # 9 technical indicators (RSI, MACD, Bollinger, EMA, VWAP, ADX, Stochastic, ATR, Order Flow)
         confluence_count = len(indicator_confluence)
-        # 🚀 PHASE 2.2: Require minimum 6 indicators aligned (out of 9) for entry
-        # This ensures strong technical confirmation before entering trades
-        required_confluence = 6  # At least 6 out of 9 must agree (ultra-strict for high win rate)
+        # 🚀 BALANCED: Require minimum 4 indicators aligned (out of 9) for entry
+        # This balances entry chances and win rate (was 6/9, now 4/9 for better entry chances)
+        # Multi-timeframe analysis provides stronger signals, so we can require fewer indicators
+        required_confluence = 4  # At least 4 out of 9 must agree (balanced for entry chances + win rate)
 
         if confluence_count < required_confluence:
             logger.debug(
@@ -690,22 +639,22 @@ class EnhancedRanker:
                 },
             )
 
-        # Combine all scores with new technical indicators (including new professional indicators)
+        # Combine all scores with PRO TRADING INDICATOR WEIGHTS
         composite_score = (
-            self.momentum_weight * momentum_score * 0.15
-            + indicator_scores.get("rsi", 0.0) * 0.12
-            + indicator_scores.get("macd", 0.0) * 0.12
-            + indicator_scores.get("bollinger", 0.0) * 0.08
-            + indicator_scores.get("ema", 0.0) * 0.08
-            + indicator_scores.get("vwap", 0.0) * 0.08
-            + indicator_scores.get("adx", 0.0) * 0.10  # NEW: ADX (trend strength)
-            + indicator_scores.get("stochastic", 0.0) * 0.08  # NEW: Stochastic
-            + indicator_scores.get("atr", 0.0) * 0.05  # NEW: ATR (volatility)
-            + indicator_scores.get("order_flow", 0.0) * 0.10  # NEW: Order Flow
-            + self.imbalance_weight * ob_imbalance * 0.10
-            + self.volatility_weight * volatility_score * 0.04
-            + self.liquidity_weight * spread_score * 0.04
-            + funding_bias * 0.04
+            self.momentum_weight * momentum_score * 0.10
+            + indicator_scores_aggregated.get("order_flow", 0.0) * indicator_weights["order_flow"]  # 20%
+            + indicator_scores_aggregated.get("vwap", 0.0) * indicator_weights["vwap"]  # 18%
+            + indicator_scores_aggregated.get("macd", 0.0) * indicator_weights["macd"]  # 15%
+            + indicator_scores_aggregated.get("rsi", 0.0) * indicator_weights["rsi"]  # 12%
+            + indicator_scores_aggregated.get("adx", 0.0) * indicator_weights["adx"]  # 10%
+            + indicator_scores_aggregated.get("ema", 0.0) * indicator_weights["ema"]  # 8%
+            + indicator_scores_aggregated.get("bollinger", 0.0) * indicator_weights["bollinger"]  # 6%
+            + indicator_scores_aggregated.get("stochastic", 0.0) * indicator_weights["stochastic"]  # 6%
+            + indicator_scores_aggregated.get("atr", 0.0) * indicator_weights["atr"]  # 5%
+            + self.imbalance_weight * ob_imbalance * 0.05
+            + self.volatility_weight * volatility_score * 0.03
+            + self.liquidity_weight * spread_score * 0.03
+            + funding_bias * 0.03
         )
 
         # Normalize composite score to 0-100 range
@@ -728,7 +677,7 @@ class EnhancedRanker:
         base_score *= volume_boost
 
         # 14. Boost by technical indicator confluence
-        if len(prices) >= 20:
+        if total_timeframe_weight > 0:
             indicator_confluence_bonus = (
                 confluence_count / total_indicators
             ) * 0.5  # Up to 50% bonus
@@ -742,7 +691,7 @@ class EnhancedRanker:
             bandit_norm = 1.0
 
         # Combined final score (use composite score if available, otherwise base_score)
-        if len(prices) >= 20:
+        if total_timeframe_weight > 0:
             # Use composite score with technical indicators
             final_score = (
                 self.bandit_alpha * (composite_score_normalized / 100.0)
@@ -760,19 +709,19 @@ class EnhancedRanker:
 
         # PRO TRADER QUALITY CHECK: Analyze market structure and trade quality
 
-        if len(prices) >= 30:
+        if len(prices_history) >= 30:
             # 1. Detect support/resistance
             (
                 support_levels,
                 resistance_levels,
-            ) = self.pro_indicators.detect_support_resistance(prices)
+            ) = self.pro_indicators.detect_support_resistance(prices_history)
             current_price = state.last_price
 
             # Check if near S/R
             near_sr = is_near_level(current_price, support_levels + resistance_levels)
 
             # 2. Analyze market structure
-            market_structure = self.pro_indicators.analyze_market_structure(prices)
+            market_structure = self.pro_indicators.analyze_market_structure(prices_history)
 
             # 3. Calculate expected R:R (simplified - use TP/SL from position manager)
             # For 50x leverage: 8% capital stop = 0.16% price, 20% capital TP = 0.4% price
@@ -789,32 +738,16 @@ class EnhancedRanker:
 
             # 4. Add technical indicator data to features for trade grading
             enhanced_features = features.copy()
-            if len(prices) >= 20:
-                rsi = self.technical_indicators.calculate_rsi(prices, period=14)
-                macd_data = self.technical_indicators.calculate_macd(
-                    prices, fast_period=3, slow_period=7, signal_period=2
-                )
-                bb_data = self.technical_indicators.calculate_bollinger_bands(
-                    prices, period=20, std_dev=2.0
-                )
-                ema_data = self.technical_indicators.calculate_ema_crossovers(
-                    prices, fast_period=3, slow_period=7
-                )
-                vwap_data = self.technical_indicators.calculate_vwap(prices, period=20)
-
+            if total_timeframe_weight > 0:
+                # Use aggregated indicator scores
                 enhanced_features.update(
                     {
-                        "rsi": rsi,
-                        "macd_bullish": macd_data["is_bullish"],
-                        "macd_bearish": macd_data["is_bearish"],
-                        "bb_extreme": (current_price <= bb_data["lower_band"] * 1.001)
-                        or (current_price >= bb_data["upper_band"] * 0.999),
-                        "ema_aligned": (direction == "long" and ema_data["is_bullish"])
-                        or (direction == "short" and ema_data["is_bearish"]),
-                        "vwap_favorable": (
-                            direction == "long" and vwap_data["is_above"]
-                        )
-                        or (direction == "short" and vwap_data["is_below"]),
+                        "rsi": indicator_scores_aggregated.get("rsi", 0.5) * 100,  # Normalize to 0-100
+                        "macd_bullish": indicator_scores_aggregated.get("macd", 0.0) > 0.5,
+                        "macd_bearish": indicator_scores_aggregated.get("macd", 0.0) < 0.5,
+                        "bb_extreme": indicator_scores_aggregated.get("bollinger", 0.0) > 0.5,
+                        "ema_aligned": indicator_scores_aggregated.get("ema", 0.0) > 0.5,
+                        "vwap_favorable": indicator_scores_aggregated.get("vwap", 0.0) > 0.5,
                     }
                 )
 
@@ -828,14 +761,13 @@ class EnhancedRanker:
             )
 
             # 🚨 LOGGING: Log all indicator values for debugging
-            if len(prices) >= 20:
+            if total_timeframe_weight > 0:
                 logger.debug(
                     f"📊 [INDICATORS] {state.symbol} | "
-                    f"RSI: {enhanced_features.get('rsi', 50):.1f} | "
-                    f"MACD: {'bullish' if enhanced_features.get('macd_bullish') else 'bearish' if enhanced_features.get('macd_bearish') else 'neutral'} | "
-                    f"BB: {'extreme' if enhanced_features.get('bb_extreme') else 'normal'} | "
-                    f"EMA: {'aligned' if enhanced_features.get('ema_aligned') else 'not aligned'} | "
-                    f"VWAP: {'favorable' if enhanced_features.get('vwap_favorable') else 'not favorable'} | "
+                    f"RSI: {indicator_scores_aggregated.get('rsi', 0.0):.2f} | "
+                    f"MACD: {indicator_scores_aggregated.get('macd', 0.0):.2f} | "
+                    f"VWAP: {indicator_scores_aggregated.get('vwap', 0.0):.2f} | "
+                    f"Order Flow: {indicator_scores_aggregated.get('order_flow', 0.0):.2f} | "
                     f"Confluence: {confluence_count}/{total_indicators} indicators agree"
                 )
 
@@ -890,9 +822,10 @@ class EnhancedRanker:
             )
 
         # ULTRA-STRICT: Only take PERFECT signals (A-grade + very high score)
+        # 🚀 BALANCED: Lower threshold to 2.0 (from 2.5) to increase entry chances while maintaining quality
         if (
-            final_score < 2.5
-        ):  # ULTRA-STRICT: 67% stricter threshold for 75-85% win rate target
+            final_score < 2.0
+        ):  # BALANCED: 2.0 threshold for balanced entry chances + win rate (was 2.5)
             return 0.0, "neutral", {"reason": "low_score"}
 
         # Build metadata with trade quality info for loss tracking
@@ -904,7 +837,7 @@ class EnhancedRanker:
         }
 
         # Add pro trader metadata if available
-        if len(prices) >= 30:
+        if len(prices_history) >= 30:
             metadata.update(
                 {
                     "grade": trade_grade["grade"],
@@ -1067,11 +1000,12 @@ class EnhancedRanker:
         else:
             filtered = scored_symbols  # Return ALL ranked symbols, not just top_k
 
-        # Log ranking summary
-        logger.debug(
-            f"enhanced_ranking_complete: total_analyzed={len(all_features)}, "
-            f"scored={len(scored_symbols)}, after_filters={len(filtered)}, "
-            f"skip_reasons={skip_reasons}"
+        # Log ranking summary (INFO level so it shows up)
+        logger.info(
+            f"📊 [RANKING SUMMARY] Analyzed {len(all_features)} symbols | "
+            f"Scored: {len(scored_symbols)} | "
+            f"After filters: {len(filtered)} | "
+            f"Skip reasons: {dict(sorted(skip_reasons.items(), key=lambda x: x[1], reverse=True)[:5])}"
         )
 
         # Return top_k only at the end (after ranking all)
