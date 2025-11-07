@@ -887,7 +887,7 @@ class LiveTrader:
                 logger.warning(f"⚠️  Failed to cancel pending for {symbol}: {e}")
         
         logger.info(f"✅ Cancelled {tpsl_cancelled} TP/SL orders + {pending_cancelled} pending orders")
-        logger.info("✅ Bot-side monitoring ONLY (5ms checks with 50% SL, 10% TP, 4% trailing)")
+        logger.info("✅ Exchange-side TP/SL ENABLED (STOP-MARKET). Bot-side 5ms checks as backup.")
 
         # Discover universe
         logger.info("🔍 Discovering tradable symbols...")
@@ -922,101 +922,46 @@ class LiveTrader:
         # Fetch MULTIPLE TIMEFRAMES for better multi-timeframe analysis
         logger.info("⚡ INSTANT DATA LOADING - Fetching MULTIPLE timeframes from Bitget API...")
         logger.info(f"   🎯 Loading 1m, 5m, 15m candles per symbol (MORE DATA!)")
-        logger.info(f"   💪 Processing {len(self.symbols)} symbols in parallel...")
-        
+        logger.info(f"   💪 Processing %d symbols in parallel...", len(self.symbols))
+
         # Fetch historical candles for all symbols in parallel
-        async def load_symbol_history(symbol: str) -> tuple[str, bool]:
-            """Load historical data for one symbol across multiple timeframes."""
+        async def fetch_and_store(symbol: str, timeframe: str):
             try:
-                # Fetch multiple timeframes for better analysis
-                timeframes = [
-                    ("1m", 200),   # 200 minutes = 3.3 hours
-                    ("5m", 200),   # 1000 minutes = 16.7 hours
-                    ("15m", 200),  # 3000 minutes = 50 hours
-                ]
-                
-                all_data_points = []
-                
-                for granularity, limit in timeframes:
-                    # Rate limit protection: small delay between timeframe requests
-                    await asyncio.sleep(0.1)  # 100ms between requests per symbol
-                    
-                    candles_response = await self.rest_client.get_historical_candles(
-                        symbol=symbol,
-                        granularity=granularity,
-                        limit=limit,
-                    )
-                    
-                    if candles_response.get("code") != "00000":
-                        continue
-                    
-                    candles = candles_response.get("data", [])
-                    if not candles:
-                        continue
-                    
-                    # Each candle: [timestamp, open, high, low, close, volume, ...]
-                    for candle in reversed(candles):  # Oldest first
-                        timestamp_ms = int(candle[0])
-                        close_price = float(candle[4])
-                        volume = float(candle[5]) if len(candle) > 5 else 0.0
-                        
-                        all_data_points.append((timestamp_ms, close_price, volume))
-                
-                # Sort by timestamp and remove duplicates
-                all_data_points.sort(key=lambda x: x[0])
-                seen_timestamps = set()
-                
-                # Populate price history with data from all timeframes
-                for timestamp_ms, close_price, volume in all_data_points:
-                    if timestamp_ms not in seen_timestamps:
-                        seen_timestamps.add(timestamp_ms)
-                        
-                        ticker_data = {
-                            "last_price": close_price,
-                            "bid_price": close_price,  # Approximate
-                            "ask_price": close_price,  # Approximate
-                            "volume_24h": volume,
-                            "quote_volume_24h": 0.0,
-                            "open_interest": 0.0,
-                        }
-                        
-                        self.state_manager.update_ticker(symbol, ticker_data)
-                
-                return (symbol, True)
-                
+                # Use a limit of 200 candles, standard for TA
+                candles = await self.rest_client.get_historical_candles(symbol, timeframe, 200)
+                if candles:
+                    for candle in candles:
+                        timestamp = int(candle[0])
+                        price = float(candle[4]) # Close price
+                        self.state_manager.add_price(symbol, price, timestamp, timeframe)
             except Exception as e:
-                logger.warning(f"load_history_failed", symbol=symbol, error=str(e))
-                return (symbol, False)
-        
-        # Load all symbols in parallel (batches of 10 with delays to respect API rate limits)
-        # Bitget API limits: ~100 requests/second, we do 3 requests per symbol
-        # Batch size 10 = 30 requests per batch + 1s delay = safe rate limiting
-        batch_size = 10  # Reduced from 20 to be more conservative
-        successful = 0
-        failed = 0
-        
+                logger.warning(f"⚠️  Could not fetch history for {symbol} ({timeframe}): {e}")
+
+        batch_size = 10  # Process 10 symbols concurrently
         total_batches = (len(self.symbols) + batch_size - 1) // batch_size
-        for i in range(0, len(self.symbols), batch_size):
-            batch = self.symbols[i:i + batch_size]
-            batch_num = i // batch_size + 1
-            
-            results = await asyncio.gather(*[load_symbol_history(s) for s in batch])
-            
-            for symbol, success in results:
-                if success:
-                    successful += 1
-                else:
-                    failed += 1
-            
-            logger.info(f"   📊 Batch {batch_num}/{total_batches}: Loaded {successful}/{successful+failed} symbols ({successful/(successful+failed)*100:.0f}%)")
-            
-            # Rate limit protection: 1 second delay between batches
-            if i + batch_size < len(self.symbols):  # Don't delay after last batch
-                await asyncio.sleep(1.0)
+        timeframes = ["1m", "5m", "15m"]
         
-        logger.info(f"✅ INSTANT STARTUP COMPLETE! {successful} symbols loaded with MULTI-TIMEFRAME data!")
-        logger.info(f"   📊 1m (3h) + 5m (17h) + 15m (50h) = RICH historical context!")
-        logger.info(f"   ⚡ NO WAITING! Starting trading immediately...\n")
+        total_symbols = len(self.symbols)
+        completed_symbols = 0
+
+        for i in range(0, len(self.symbols), batch_size):
+            batch_symbols = self.symbols[i : i + batch_size]
+            tasks = []
+            for symbol in batch_symbols:
+                for timeframe in timeframes:
+                    # Small delay to avoid hitting rate limits too hard
+                    await asyncio.sleep(0.05)
+                    tasks.append(fetch_and_store(symbol, timeframe))
+
+            await asyncio.gather(*tasks)
+            completed_symbols += len(batch_symbols)
+            logger.info(
+                f"   📊 Batch {(i // batch_size) + 1}/{total_batches}: "
+                f"Loaded {len(batch_symbols)} symbols "
+                f"({completed_symbols}/{total_symbols} total - {completed_symbols/total_symbols:.0%})"
+            )
+            
+        logger.info("✅ All historical data loaded successfully!")
 
         # Start trading
         await self.trading_loop()
