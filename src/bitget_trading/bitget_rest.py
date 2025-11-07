@@ -408,7 +408,7 @@ class BitgetRestClient:
     async def cancel_all_tpsl_orders(
         self,
         symbol: str,
-        product_type: str = "USDT-FUTURES",
+        product_type: str = "usdt-futures",  # FIXED: lowercase format required
     ) -> dict[str, Any]:
         """
         Cancel ALL TP/SL orders for a symbol.
@@ -418,7 +418,7 @@ class BitgetRestClient:
         
         Args:
             symbol: Trading pair (e.g., "BTCUSDT")
-            product_type: Product type
+            product_type: Product type (default: "usdt-futures" - lowercase required!)
         
         Returns:
             Cancellation response
@@ -430,7 +430,7 @@ class BitgetRestClient:
             query_endpoint = "/api/v2/mix/order/orders-plan-pending"
             params = {
                 "symbol": symbol,
-                "productType": product_type,
+                "productType": product_type,  # "usdt-futures" (lowercase)
                 "planType": "profit_loss",  # TP/SL orders
             }
             pending_orders = await self._request("GET", query_endpoint, params=params)
@@ -472,11 +472,11 @@ class BitgetRestClient:
     async def place_tpsl_order(
         self,
         symbol: str,
-        hold_side: str,  # "long" or "short" - which position to protect
+        hold_side: str,  # "long" or "short" - which position to protect (will be converted to "buy"/"sell")
         size: float,  # Position size in contracts
         stop_loss_price: float | None = None,
         take_profit_price: float | None = None,
-        product_type: str = "USDT-FUTURES",
+        product_type: str = "usdt-futures",  # FIXED: lowercase format required by API
     ) -> dict[str, Any]:
         """
         Place exchange-side TP/SL plan orders that execute at MARKET on trigger.
@@ -489,17 +489,25 @@ class BitgetRestClient:
         
         Args:
             symbol: Trading pair (e.g., "BTCUSDT")
-            hold_side: "long" or "short" - which position to protect
+            hold_side: "long" or "short" - which position to protect (converted to "buy"/"sell" for API)
             size: Position size in contracts (must match position size!)
             stop_loss_price: Stop loss trigger price (optional)
             take_profit_price: Take profit trigger price (optional)
-            product_type: Product type
+            product_type: Product type (default: "usdt-futures" - lowercase required!)
         
         Returns:
             Dict with results of both orders
         """
         endpoint = "/api/v2/mix/order/place-tpsl-order"
         results: dict[str, Any] = {"sl": None, "tp": None}
+        
+        # 🚨 CRITICAL FIX: Convert "long"/"short" to "buy"/"sell" for one-way mode
+        # According to Bitget API docs, holdSide should be "buy" for long, "sell" for short in one-way mode
+        api_hold_side = "buy" if hold_side == "long" else "sell"
+        
+        logger.info(
+            f"🔧 [TP/SL CONVERSION] {symbol} | hold_side: {hold_side} → API holdSide: {api_hold_side}"
+        )
         
         # Helper to post plan order with fallback triggerType
         async def _post_plan(data: dict[str, str]) -> dict[str, Any]:
@@ -516,11 +524,11 @@ class BitgetRestClient:
         if stop_loss_price is not None:
             sl_data = {
                 "symbol": symbol,
-                "productType": product_type,
+                "productType": product_type,  # "usdt-futures" (lowercase)
                 "marginMode": "isolated",  # Match our trading mode
                 "marginCoin": "USDT",
                 "planType": "loss_plan",  # STOP-LOSS type
-                "holdSide": hold_side,
+                "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
                 "triggerPrice": str(stop_loss_price),
                 "executePrice": "0",  # MARKET on trigger
                 "size": str(size),  # REQUIRED!
@@ -529,7 +537,7 @@ class BitgetRestClient:
                 results["sl"] = await _post_plan(sl_data)
                 logger.info(
                     f"✅ [EXCHANGE SL] {symbol} @ ${stop_loss_price:.4f} | "
-                    f"Size: {size:.4f} | Response: {results['sl'].get('code')}"
+                    f"Size: {size:.4f} | holdSide: {api_hold_side} | Response: {results['sl'].get('code')}"
                 )
             except Exception as e:
                 logger.error(f"❌ [EXCHANGE SL FAILED] {symbol}: {e}")
@@ -539,11 +547,11 @@ class BitgetRestClient:
         if take_profit_price is not None:
             tp_data = {
                 "symbol": symbol,
-                "productType": product_type,
+                "productType": product_type,  # "usdt-futures" (lowercase)
                 "marginMode": "isolated",
                 "marginCoin": "USDT",
                 "planType": "profit_plan",  # TAKE-PROFIT type
-                "holdSide": hold_side,
+                "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
                 "triggerPrice": str(take_profit_price),
                 "executePrice": "0",  # MARKET on trigger
                 "size": str(size),  # REQUIRED!
@@ -552,7 +560,7 @@ class BitgetRestClient:
                 results["tp"] = await _post_plan(tp_data)
                 logger.info(
                     f"✅ [EXCHANGE TP] {symbol} @ ${take_profit_price:.4f} | "
-                    f"Size: {size:.4f} | Response: {results['tp'].get('code')}"
+                    f"Size: {size:.4f} | holdSide: {api_hold_side} | Response: {results['tp'].get('code')}"
                 )
             except Exception as e:
                 logger.error(f"❌ [EXCHANGE TP FAILED] {symbol}: {e}")
