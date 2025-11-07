@@ -802,6 +802,10 @@ class BitgetRestClient:
         # Convert "long"/"short" to "buy"/"sell" for one-way mode
         api_hold_side = "buy" if hold_side == "long" else "sell"
         
+        # 🚨 CRITICAL: Bitget API requires rangeRate to have exactly 2 decimal places
+        # Format range_rate to exactly 2 decimal places (e.g., 0.015 → "0.02", 0.02 → "0.02")
+        formatted_range_rate = f"{range_rate:.2f}"  # Format to 2 decimal places
+        
         data = {
             "symbol": symbol,
             "productType": product_type,  # "usdt-futures" (lowercase)
@@ -810,7 +814,7 @@ class BitgetRestClient:
             "planType": "moving_plan",  # Trailing take profit order type
             "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
             "size": str(rounded_size),
-            "rangeRate": str(range_rate),  # Trailing take profit range rate (e.g., "0.01" = 1%)
+            "rangeRate": formatted_range_rate,  # Trailing take profit range rate (e.g., "0.02" = 2%, must be 2 decimal places!)
             "triggerPrice": str(trigger_price),  # Price at which trailing TP becomes active
             "triggerType": "mark_price",  # Use mark price for triggering
         }
@@ -819,7 +823,7 @@ class BitgetRestClient:
             f"🧵 [TRAILING TAKE PROFIT ORDER] {symbol} | "
             f"hold_side: {hold_side} → API holdSide: {api_hold_side} | "
             f"size: {size} → rounded: {rounded_size} | "
-            f"range_rate: {range_rate*100:.2f}% | "
+            f"range_rate: {range_rate*100:.2f}% → formatted: {formatted_range_rate} (2 decimal places) | "
             f"trigger_price: {trigger_price} | product_type: {product_type}"
         )
         
