@@ -2158,6 +2158,12 @@ class LiveTrader:
         entry_check_interval_sec = 5  # Check for new entries every 5 seconds (SCALPING SPEED!)
         position_check_interval_sec = 0.005  # Check exits every 0.005 seconds (5ms - HYPER FAST! 10x faster!)
 
+        logger.info("🚀 [TRADING LOOP] Starting trading loop...")
+        logger.info(f"   Entry check interval: {entry_check_interval_sec}s")
+        logger.info(f"   Position check interval: {position_check_interval_sec}s")
+        logger.info(f"   Max positions: {self.max_positions}")
+        logger.info(f"   Current positions: {len(self.position_manager.positions)}")
+
         while self.running:
             try:
                 # ALWAYS: Update market data and check positions (FAST LOOP)
@@ -2191,6 +2197,18 @@ class LiveTrader:
                 available_slots = self.max_positions - len(self.position_manager.positions)
                 time_since_entry_check = (datetime.now() - last_entry_check_time).total_seconds()
                 should_check_entries = time_since_entry_check >= entry_check_interval_sec
+
+                # Debug logging every 50 iterations (0.25 seconds)
+                loop_count = getattr(self, '_loop_count', 0)
+                self._loop_count = loop_count + 1
+                if loop_count % 50 == 0:  # Every 0.25 seconds
+                    logger.debug(
+                        f"[LOOP] Iteration {loop_count} | "
+                        f"Available slots: {available_slots} | "
+                        f"Time since entry check: {time_since_entry_check:.1f}s | "
+                        f"Should check: {should_check_entries} | "
+                        f"Positions: {len(self.position_manager.positions)}/{self.max_positions}"
+                    )
 
                 if should_check_entries and available_slots > 0:
                     iteration += 1
