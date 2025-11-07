@@ -81,6 +81,10 @@ class TradingConfig(BaseSettings):
     position_size_best_multiplier: float = Field(default=1.3, ge=0.5, le=2.0, alias="POSITION_SIZE_BEST_MULTIPLIER")
     position_size_good_multiplier: float = Field(default=1.15, ge=0.5, le=2.0, alias="POSITION_SIZE_GOOD_MULTIPLIER")
     position_size_poor_multiplier: float = Field(default=0.8, ge=0.5, le=2.0, alias="POSITION_SIZE_POOR_MULTIPLIER")
+    
+    # Momentum Reversal Exit
+    momentum_reversal_enabled: bool = Field(default=True, alias="MOMENTUM_REVERSAL_ENABLED")
+    momentum_reversal_threshold: float = Field(default=2.0, ge=1.0, le=5.0, alias="MOMENTUM_REVERSAL_THRESHOLD")  # Minimum score for strong opposite signal
 
     def validate_credentials(self) -> bool:
         """Check if API credentials are set."""

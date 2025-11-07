@@ -1953,6 +1953,53 @@ class LiveTrader:
                 except Exception as e:
                     logger.debug(f"⚠️ Failed to check liquidation price for {symbol} in main loop: {e}")
 
+            # 🚀 NEW FEATURE: Momentum Reversal Exit
+            # If momentum gives a strong opposite signal, exit immediately regardless of profit/loss
+            if position and self.config.momentum_reversal_enabled:
+                try:
+                    # Get current signal for this symbol
+                    features = self.state_manager.get_features(symbol)
+                    if features:
+                        # Get BTC return for correlation check
+                        btc_features = self.state_manager.get_features("BTCUSDT")
+                        btc_return = btc_features.get("return_5min", 0.0) if btc_features else 0.0
+                        
+                        # Compute current signal score and direction
+                        signal_score, signal_direction, signal_metadata = self.enhanced_ranker.compute_enhanced_score(
+                            state, features, btc_return
+                        )
+                        
+                        # Check if signal is opposite to position side AND score is strong
+                        is_opposite = (
+                            (position.side == "long" and signal_direction == "short") or
+                            (position.side == "short" and signal_direction == "long")
+                        )
+                        
+                        if is_opposite and signal_score >= self.config.momentum_reversal_threshold:
+                            # Calculate current PnL for logging
+                            if position.side == "long":
+                                price_change_pct = ((current_price - position.entry_price) / position.entry_price)
+                            else:
+                                price_change_pct = ((position.entry_price - current_price) / position.entry_price)
+                            return_on_capital_pct = price_change_pct * position.leverage
+                            pnl_pct = return_on_capital_pct * 100
+                            
+                            logger.warning(
+                                f"🔄 [MOMENTUM REVERSAL] {symbol} | "
+                                f"Position: {position.side.upper()} | Current Signal: {signal_direction.upper()} (score: {signal_score:.2f}) | "
+                                f"Strong opposite signal detected! | "
+                                f"Current PnL: {pnl_pct:.2f}% | "
+                                f"Exiting immediately regardless of profit/loss"
+                            )
+                            
+                            await self.close_position(
+                                symbol,
+                                exit_reason=f"MOMENTUM REVERSAL: Strong {signal_direction.upper()} signal (score: {signal_score:.2f}) detected while holding {position.side.upper()} position | PnL: {pnl_pct:.2f}%"
+                            )
+                            continue
+                except Exception as e:
+                    logger.debug(f"⚠️ Failed to check momentum reversal for {symbol}: {e}")
+            
             # 🚨 CRITICAL: We use EXCHANGE-SIDE TP/SL orders - NO bot-side exit checking!
             # The exchange automatically closes positions when TP/SL triggers.
             # We only update position tracking data - we NEVER trigger exits from the bot!
@@ -1961,10 +2008,11 @@ class LiveTrader:
             # 1. Update prices for tracking (for PnL display and logging)
             # 2. Detect when exchange closes positions (done in sync logic above, lines 1097-1139)
             # 3. Monitor liquidation risk and close positions before liquidation
+            # 4. Check for momentum reversal (strong opposite signal)
             # 
             # What we DON'T do:
             # - Check exit conditions (disabled - exchange handles it)
-            # - Manually close positions (only when exchange already closed them OR liquidation risk)
+            # - Manually close positions (only when exchange already closed them OR liquidation risk OR momentum reversal)
             # - Trigger any exits (exchange TP/SL handles all exits automatically)
             # 
             # This ensures positions close at EXACTLY the TP/SL prices we set on the exchange!
