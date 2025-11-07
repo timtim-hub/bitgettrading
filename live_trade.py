@@ -25,6 +25,7 @@ from src.bitget_trading.enhanced_ranker import EnhancedRanker
 from src.bitget_trading.logger import setup_logging
 from src.bitget_trading.multi_symbol_state import MultiSymbolStateManager
 from src.bitget_trading.position_manager import PositionManager
+from src.bitget_trading.loss_tracker import LossTracker, TradeRecord
 from src.bitget_trading.regime_detector import RegimeDetector
 from src.bitget_trading.universe import UniverseManager
 
@@ -64,6 +65,7 @@ class LiveTrader:
         self.simple_ranker = CrossSectionalRanker()  # WORKING paper trading ranker
         self.enhanced_ranker = EnhancedRanker()  # Enhanced ranker (use when data accumulated)
         self.position_manager = PositionManager()  # Position persistence + trailing stops
+        self.loss_tracker = LossTracker()  # Comprehensive loss analysis
         self.regime_detector = RegimeDetector()  # Market regime detection
         self.use_enhanced = False  # Start with simple, upgrade to enhanced after data accumulates
 
@@ -305,13 +307,87 @@ class LiveTrader:
                 )
 
                 if order and order.get("code") == "00000":
-                    # Record trade
+                    # Calculate trade details
+                    exit_time = datetime.now().isoformat()
+                    entry_dt = datetime.fromisoformat(position.entry_time)
+                    exit_dt = datetime.fromisoformat(exit_time)
+                    time_in_trade = (exit_dt - entry_dt).total_seconds()
+                    
+                    # Calculate PnL metrics
+                    pnl_pct_capital = (position.unrealized_pnl / position.capital) if position.capital > 0 else 0
+                    pnl_pct_price = ((limit_price - position.entry_price) / position.entry_price) if position.side == "long" else ((position.entry_price - limit_price) / position.entry_price)
+                    
+                    # Estimate fees (0.02% maker fee for entry + exit)
+                    fees_paid = (position.capital * 0.0002) + (position.capital * 0.0002)
+                    net_pnl = position.unrealized_pnl - fees_paid
+                    
+                    # Get exit reason from position manager check
+                    _, exit_reason = self.position_manager.check_exit_conditions(symbol, limit_price)
+                    
+                    # Get entry metrics from position metadata
+                    entry_grade = position.metadata.get("grade", "Unknown")
+                    entry_score = position.metadata.get("score", 0.0)
+                    entry_confluence = position.metadata.get("confluence", 0.0)
+                    entry_volume_ratio = position.metadata.get("volume_ratio", 1.0)
+                    entry_structure = position.metadata.get("entry_structure", "unknown")
+                    entry_near_sr = position.metadata.get("near_sr", False)
+                    entry_rr = position.metadata.get("rr_ratio", 0.0)
+                    
+                    # Get current market structure
+                    state = self.state_manager.get_state(symbol)
+                    prices = np.array([p for _, p in state.price_history]) if state and state.price_history else np.array([])
+                    exit_structure = "unknown"
+                    if len(prices) >= 30:
+                        from src.bitget_trading.pro_trader_indicators import ProTraderIndicators
+                        pro_ind = ProTraderIndicators()
+                        market_structure = pro_ind.analyze_market_structure(prices)
+                        exit_structure = market_structure.get("structure", "unknown")
+                    
+                    # Create detailed trade record for loss analysis
+                    trade_record = TradeRecord(
+                        trade_id=f"{symbol}_{position.entry_time}",
+                        symbol=symbol,
+                        entry_time=position.entry_time,
+                        entry_price=position.entry_price,
+                        entry_side=position.side,
+                        position_size_usd=position.capital,
+                        leverage=position.leverage,
+                        entry_score=entry_score,
+                        entry_grade=entry_grade,
+                        entry_confluence=entry_confluence,
+                        entry_volume_ratio=entry_volume_ratio,
+                        entry_market_structure=entry_structure,
+                        entry_near_sr=entry_near_sr,
+                        entry_rr_ratio=entry_rr,
+                        exit_time=exit_time,
+                        exit_price=limit_price,
+                        exit_reason=exit_reason,
+                        time_in_trade_seconds=time_in_trade,
+                        pnl_usd=position.unrealized_pnl,
+                        pnl_pct_capital=pnl_pct_capital,
+                        pnl_pct_price=pnl_pct_price,
+                        fees_paid=fees_paid,
+                        slippage_cost=0.0,  # Using limit orders so minimal slippage
+                        net_pnl=net_pnl,
+                        exit_market_structure=exit_structure,
+                        peak_pnl=position.peak_pnl_pct * position.capital / 100,
+                        drawdown_from_peak=max(0, (position.peak_pnl_pct - pnl_pct_capital * 100) * position.capital / 100),
+                        is_win=net_pnl > 0,
+                        is_loss=net_pnl <= 0,
+                        stopped_out="STOP-LOSS" in exit_reason,
+                        took_profit="TAKE-PROFIT" in exit_reason or "PROFIT" in exit_reason,
+                    )
+                    
+                    # Record for loss analysis
+                    self.loss_tracker.record_trade(trade_record)
+                    
+                    # Record trade (legacy format)
                     self.trades.append({
                         "symbol": symbol,
                         "side": position.side,
                         "entry_price": position.entry_price,
                         "entry_time": position.entry_time,
-                        "exit_time": datetime.now().isoformat(),
+                        "exit_time": exit_time,
                         "pnl": position.unrealized_pnl,
                         "peak_pnl_pct": position.peak_pnl_pct,
                     })
@@ -474,7 +550,18 @@ class LiveTrader:
             if success:
                 trades_successful += 1
                 
-                # Add to position manager with REGIME-BASED PARAMETERS
+                # Extract entry metadata for loss tracking
+                entry_metadata = {
+                    "grade": alloc.get("grade", "Unknown"),
+                    "score": alloc.get("score", 0.0),
+                    "confluence": alloc.get("confluence", 0.0),
+                    "volume_ratio": alloc.get("volume_ratio", 1.0),
+                    "entry_structure": alloc.get("market_structure", "unknown"),
+                    "near_sr": alloc.get("near_sr", False),
+                    "rr_ratio": alloc.get("rr_ratio", 0.0),
+                }
+                
+                # Add to position manager with REGIME-BASED PARAMETERS + METADATA
                 self.position_manager.add_position(
                     symbol=symbol,
                     side=signal_side,
@@ -486,10 +573,12 @@ class LiveTrader:
                     stop_loss_pct=regime_params["stop_loss_pct"],
                     take_profit_pct=regime_params["take_profit_pct"],
                     trailing_stop_pct=regime_params["trailing_stop_pct"],
+                    metadata=entry_metadata,
                 )
                 
                 logger.info(
-                    f"✅ Trade #{len(self.trades) + 1}: {signal_side.upper()} {symbol} @ ${price:.4f}"
+                    f"✅ Trade #{len(self.trades) + 1}: {signal_side.upper()} {symbol} @ ${price:.4f} | "
+                    f"Grade: {entry_metadata['grade']} | Structure: {entry_metadata['entry_structure']}"
                 )
             else:
                 logger.error(f"❌ Failed to place order for {symbol}")
@@ -639,10 +728,10 @@ class LiveTrader:
         # Discover universe
         logger.info("🔍 Discovering tradable symbols...")
         self.symbols = await self.universe_manager.get_tradeable_universe()
-        # Bitget has 300+ active futures - use MORE for better opportunities!
+        # USE ALL SYMBOLS - Maximum opportunity!
+        # Bitget API fetches all in one call anyway, so no speed penalty
         total_available = len(self.symbols)
-        self.symbols = self.symbols[:200]  # Increased from 100 to 200 (more opportunities!)
-        logger.info(f"✅ Using {len(self.symbols)} symbols (from {total_available} available)")
+        logger.info(f"✅ Using ALL {len(self.symbols)} symbols (maximum opportunities!)")
 
         # Initialize state with current market data
         logger.info("📊 Fetching initial market data...")

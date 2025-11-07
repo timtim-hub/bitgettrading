@@ -278,12 +278,30 @@ class EnhancedRanker:
         if final_score < 0.3:  # Realistic quality bar for fast scalping
             return 0.0, "neutral", {"reason": "low_score"}
         
+        # Build metadata with trade quality info for loss tracking
         metadata = {
             "regime": regime,
             "confluence": confluence_strength,
             "volume_ratio": volume_ratio,
             "funding_rate": funding_rate,
         }
+        
+        # Add pro trader metadata if available
+        if len(prices) >= 30:
+            metadata.update({
+                "grade": trade_grade["grade"],
+                "market_structure": market_structure["structure"],
+                "near_sr": near_sr,
+                "rr_ratio": rr_calc["risk_reward_ratio"],
+            })
+        else:
+            # Fallback if not enough data
+            metadata.update({
+                "grade": "C",  # Default to C grade
+                "market_structure": "unknown",
+                "near_sr": False,
+                "rr_ratio": 2.5,  # Default R:R
+            })
         
         return final_score, direction, metadata
 
@@ -394,6 +412,11 @@ class EnhancedRanker:
                 "volume_ratio": metadata["volume_ratio"],
                 "funding_rate": metadata["funding_rate"],
                 "volatility": volatility,
+                # Pro trader metadata for loss tracking
+                "grade": metadata.get("grade", "C"),
+                "market_structure": metadata.get("market_structure", "unknown"),
+                "near_sr": metadata.get("near_sr", False),
+                "rr_ratio": metadata.get("rr_ratio", 2.5),
             })
         
         # Sort by score

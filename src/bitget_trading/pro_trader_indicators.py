@@ -152,10 +152,13 @@ class ProTraderIndicators:
         swing_lows = []
         
         for i in range(2, len(recent_prices) - 2):
-            if recent_prices[i] > recent_prices[i-1] and recent_prices[i] > recent_prices[i+1]:
+            # BUG FIX: Check 2 bars before AND after (consistent with detect_support_resistance)
+            if recent_prices[i] > recent_prices[i-1] and recent_prices[i] > recent_prices[i-2] and \
+               recent_prices[i] > recent_prices[i+1] and recent_prices[i] > recent_prices[i+2]:
                 swing_highs.append((i, recent_prices[i]))
             
-            if recent_prices[i] < recent_prices[i-1] and recent_prices[i] < recent_prices[i+1]:
+            if recent_prices[i] < recent_prices[i-1] and recent_prices[i] < recent_prices[i-2] and \
+               recent_prices[i] < recent_prices[i+1] and recent_prices[i] < recent_prices[i+2]:
                 swing_lows.append((i, recent_prices[i]))
         
         if len(swing_highs) < 2 or len(swing_lows) < 2:
@@ -308,23 +311,20 @@ class ProTraderIndicators:
             else:
                 return current_price * 1.01
         
-        # Calculate True Range
-        high = prices
-        low = prices  # Simplified (would use high/low candles in reality)
-        prev_close = np.roll(prices, 1)[1:]  # Shift by 1
-        high = high[1:]
-        low = low[1:]
+        # BUG FIX: For close-only data, use standard deviation of returns as volatility
+        # (ATR requires separate high/low prices which we don't have)
+        returns = np.diff(prices) / prices[:-1]
         
-        tr = np.maximum(
-            high - low,
-            np.maximum(
-                np.abs(high - prev_close),
-                np.abs(low - prev_close)
-            )
-        )
+        if len(returns) < period:
+            # Fallback: use 1% of price as volatility estimate
+            volatility = current_price * 0.01
+        else:
+            # Calculate rolling volatility (std dev of returns)
+            volatility_pct = np.std(returns[-period:])
+            volatility = current_price * volatility_pct
         
-        # Calculate ATR (simple moving average of TR)
-        atr = np.mean(tr[-period:])
+        # Equivalent to ATR but for close prices
+        atr = volatility
         
         # Calculate stop
         if side == "long":
