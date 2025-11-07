@@ -233,41 +233,22 @@ class LiveTrader:
                     except Exception:
                         pass  # May already be set
                 
-                # 🚨 CRITICAL: Use MARKET orders for entries to GUARANTEE fills!
-                # Problem: LIMIT orders can get stuck if price moves away
-                # Solution: MARKET orders = instant fill, no stuck orders
-                # Trade-off: 0.06% taker fee instead of 0.02% maker fee
-                # BUT: No stuck orders blocking capital = worth the extra 0.04% fee!
-                
-                order_side = "buy" if side == "long" else "sell"
-                order = await self.rest_client.place_order(
-                    symbol=symbol,
-                    side=order_side,
-                    order_type="market",  # MARKET = GUARANTEED FILL! No stuck orders!
-                    size=size,
-                )
-
-                if order and order.get("code") == "00000":
-                    order_id = order.get('data', {}).get('orderId', 'N/A')
-                    logger.info(
-                        f"✅ [LIVE] MARKET {side.upper()} {symbol} | Size: {size:.4f} | "
-                        f"Order ID: {order_id} | Status: FILLED (market order)"
-                    )
-                    
-                    # 🚨 CRITICAL: Place EXCHANGE-SIDE TP/SL orders as STOP-MARKET!
-                    # These execute on Bitget servers INSTANTLY when price hits trigger
-                    # With 25x leverage, this prevents liquidations if bot crashes!
+                try:
+                    # 🚨 NEW STRATEGY: ATOMIC TP/SL on MARKET orders!
+                    # This places the TP/SL values in the SAME order request as the entry
+                    # Ensures TP/SL is active the MOMENT the position is opened
+                    # BUT: No stuck orders blocking capital = worth the extra 0.04% fee!
                     
                     # Calculate TP/SL prices from regime_params
                     if regime_params:
-                        sl_capital_pct = regime_params["stop_loss_pct"]  # e.g., 0.50 (50%)
-                        tp_capital_pct = regime_params["take_profit_pct"]  # e.g., 0.10 (10%)
-                        sl_price_pct = sl_capital_pct / self.leverage  # e.g., 0.50 / 25 = 0.02 (2%)
-                        tp_price_pct = tp_capital_pct / self.leverage  # e.g., 0.10 / 25 = 0.004 (0.4%)
+                        sl_capital_pct = regime_params["stop_loss_pct"]
+                        tp_capital_pct = regime_params["take_profit_pct"]
+                        sl_price_pct = sl_capital_pct / self.leverage
+                        tp_price_pct = tp_capital_pct / self.leverage
                     else:
                         # Fallback (should never happen)
-                        sl_price_pct = 0.02  # 2% price = 50% capital @ 25x
-                        tp_price_pct = 0.004  # 0.4% price = 10% capital @ 25x
+                        sl_price_pct = 0.02  # 50% capital @ 25x
+                        tp_price_pct = 0.004 # 10% capital @ 25x
                     
                     # Calculate actual prices
                     if side == "long":
@@ -283,59 +264,49 @@ class LiveTrader:
                         price_place = contract_info.get("price_place", 4)
                         stop_loss_price = round(stop_loss_price, price_place)
                         take_profit_price = round(take_profit_price, price_place)
-                    else:
-                        # Fallback rounding
-                        stop_loss_price = round(stop_loss_price, 4 if price < 10 else 2)
-                        take_profit_price = round(take_profit_price, 4 if price < 10 else 2)
                     
                     logger.info(
-                        f"📊 [TP/SL CALC] {symbol} | "
-                        f"SL: {sl_capital_pct*100:.0f}% capital (${stop_loss_price:.4f}) | "
-                        f"TP: {tp_capital_pct*100:.0f}% capital (${take_profit_price:.4f}) | "
-                        f"Entry: ${price:.4f}"
+                        f"📊 [TP/SL CALC] {symbol} | Entry: ${price:.4f} "
+                        f"| TP: ${take_profit_price:.4f} ({tp_capital_pct*100:.0f}%) "
+                        f"| SL: ${stop_loss_price:.4f} ({sl_capital_pct*100:.0f}%)"
+                    )
+
+                    # Place the actual MARKET order with atomic TP/SL
+                    order_response = await self.rest_client.place_order(
+                        symbol=symbol,
+                        side=side,
+                        size=size,
+                        order_type="market",
+                        take_profit_price=take_profit_price,
+                        stop_loss_price=stop_loss_price,
                     )
                     
-                    # Cancel old TP/SL orders first!
-                    try:
-                        await self.rest_client.cancel_all_tpsl_orders(symbol)
-                    except Exception as e:
-                        logger.warning(f"⚠️  Failed to cancel old TP/SL: {e}")
-                    
-                    # Place NEW exchange-side TP/SL orders as STOP-MARKET
-                    try:
-                        results = await self.rest_client.place_tpsl_order(
+                    if order_response and order_response.get("code") == "00000":
+                        order_id = order_response.get("data", {}).get("orderId")
+                        self.position_manager.add_position(
                             symbol=symbol,
-                            hold_side=side,  # "long" or "short"
-                            size=size,  # Position size
-                            stop_loss_price=stop_loss_price,
-                            take_profit_price=take_profit_price,
+                            side=side,
+                            size=size,
+                            entry_price=price,
+                            leverage=self.leverage,
+                            **regime_params,
+                            metadata=metadata
                         )
-                        
-                        # Check if successful
-                        sl_ok = results.get("sl_result", {}).get("code") == "00000"
-                        tp_ok = results.get("tp_result", {}).get("code") == "00000"
-                        
-                        if sl_ok and tp_ok:
-                            logger.info(f"✅ [EXCHANGE TP/SL] Both orders placed successfully!")
-                        elif sl_ok:
-                            logger.warning(f"⚠️  [EXCHANGE TP/SL] SL placed, TP failed (bot-side will handle TP)")
-                        elif tp_ok:
-                            logger.warning(f"⚠️  [EXCHANGE TP/SL] TP placed, SL failed (bot-side will handle SL)")
-                        else:
-                            logger.error(f"❌ [EXCHANGE TP/SL] Both failed! Relying on bot-side monitoring only")
-                    
-                    except Exception as e:
-                        logger.error(f"❌ [EXCHANGE TP/SL ERROR] {symbol}: {e}")
-                        logger.info("🛡️  Bot-side monitoring will handle exits (checking every 5ms)")
-                    
-                    return True
-                else:
-                    logger.error(f"❌ Failed to place order for {symbol}")
-                    return False
+                        logger.info(
+                            f"✅ [LIVE] MARKET {side.upper()} {symbol} | Size: {size:.4f} | "
+                            f"Order ID: {order_id} | TP/SL Placed Atomically"
+                        )
+                        return True
+                    else:
+                        logger.error(
+                            f"❌ Order placement failed for {symbol}: {order_response.get('msg')}"
+                        )
+                        return False
 
-            except Exception as e:
-                logger.error(f"❌ Order placement error: {e}")
-                return False
+                except Exception as e:
+                    logger.error(f"❌ Order placement error: {e}")
+                    return False
+        return False
 
     async def close_position(self, symbol: str, exit_reason: str = "MANUAL") -> bool:
         """Close an existing position."""
@@ -943,7 +914,8 @@ class LiveTrader:
                     # Each candle: [timestamp, open, high, low, close, volume, ...]
                     timestamp = int(candle[0])
                     price = float(candle[4])
-                    self.state_manager.add_price(symbol, price, timestamp, timeframe)
+                    volume = float(candle[5]) if len(candle) > 5 else 0.0
+                    self.state_manager.add_price_point(symbol, price, timestamp, volume)
             except Exception as e:
                 logger.warning(f"⚠️  Could not fetch history for {symbol} ({timeframe}): {e}")
 

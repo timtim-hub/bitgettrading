@@ -402,6 +402,45 @@ class MultiSymbolStateManager:
             self.symbols[symbol].add_trade(pnl, return_pct)
             self.total_selections += 1
 
+    def add_price_point(
+        self,
+        symbol: str,
+        price: float,
+        timestamp_ms: float,
+        volume: float = 0.0,
+    ) -> None:
+        """Inject a historical price point into the symbol state."""
+        if symbol not in self.symbols:
+            self.add_symbol(symbol)
+
+        state = self.symbols[symbol]
+
+        # Convert ms timestamp (Bitget) to seconds float
+        timestamp_sec = timestamp_ms / 1000 if timestamp_ms > 1e12 else timestamp_ms
+
+        state.price_history.append((timestamp_sec, price))
+
+        # Update last/ mid prices to ensure features have reasonable defaults
+        state.last_price = price
+        state.mid_price = price
+        state.bid_price = price
+        state.ask_price = price
+
+        # Maintain volume history (if provided)
+        state.volume_history.append((timestamp_sec, volume))
+
+        # Keep advanced indicators warm with historical data
+        try:
+            state.advanced_indicators.update(
+                price=price,
+                volume=volume,
+                timestamp=timestamp_sec,
+                bid_volume=0.0,
+                ask_volume=0.0,
+            )
+        except Exception as exc:
+            logger.debug("advanced_indicator_update_failed", symbol=symbol, error=str(exc))
+ 
     def get_all_features(self) -> dict[str, dict[str, float]]:
         """Get features for all symbols."""
         return {
