@@ -30,7 +30,7 @@ class Position:
     # OPTIMIZED for ultra-short-term scalping with fees in mind
     # With 25x leverage + 0.04% round-trip fees (SAFER than 50x!)
     trailing_stop_pct: float = 0.04  # 4% trailing from peak (0.16% price @ 25x) - ACTIVE!
-    stop_loss_pct: float = 0.15   # 15% hard stop-loss (0.6% price @ 25x) - MORE ROOM, fewer liquidations!
+    stop_loss_pct: float = 0.20   # 20% hard stop-loss (0.8% price @ 25x) - WIDER ROOM, NO liquidations!
     take_profit_pct: float = 0.14  # 14% take-profit (0.56% price @ 25x) - WITH trailing protection!
     
     # Regime info
@@ -189,9 +189,9 @@ class PositionManager:
         # CRITICAL: Targets are based on CAPITAL return, not price move!
         # With 25x leverage:
         # - 14% capital TP = 0.56% price move - WITH trailing protection!
-        # - 15% capital SL = 0.6% price move - MORE ROOM!
+        # - 20% capital SL = 0.8% price move - WIDER ROOM for volatility!
         
-        target_price_move_for_stop = position.stop_loss_pct / position.leverage  # e.g., 0.15 / 25 = 0.006 (0.6%)
+        target_price_move_for_stop = position.stop_loss_pct / position.leverage  # e.g., 0.20 / 25 = 0.008 (0.8%)
         target_price_move_for_tp = position.take_profit_pct / position.leverage  # e.g., 0.14 / 25 = 0.0056 (0.56%)
         target_price_move_for_trail = position.trailing_stop_pct / position.leverage  # e.g., 0.04 / 25 = 0.0016 (0.16%)
         

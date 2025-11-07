@@ -268,9 +268,9 @@ class LiveTrader:
                     # Wait a moment for order to fill
                     await asyncio.sleep(0.5)
                     
-                    # Calculate TP/SL prices (14% TP, 15% SL @ 25x)
-                    # Wider stops for 25x = MORE ROOM, fewer liquidations!
-                    sl_price_pct = 0.006  # 0.6% price move = 15% capital @ 25x
+                    # Calculate TP/SL prices (14% TP, 20% SL @ 25x)
+                    # WIDER stops for 25x = MUCH MORE ROOM, NO liquidations!
+                    sl_price_pct = 0.008  # 0.8% price move = 20% capital @ 25x - SUPER SAFE!
                     tp_price_pct = 0.0056  # 0.56% price move = 14% capital @ 25x - WITH trailing!
                     
                     if side == "long":
@@ -308,7 +308,7 @@ class LiveTrader:
                         if tpsl_order and tpsl_order.get("code") == "00000":
                             logger.info(
                                 f"🛡️  [EXCHANGE-SIDE TP/SL] {symbol} @ 25x | "
-                                f"SL: ${stop_loss_price:.4f} (-15% capital / 0.6% price) | "
+                                f"SL: ${stop_loss_price:.4f} (-20% capital / 0.8% price - WIDE!) | "
                                 f"TP: ${take_profit_price:.4f} (+14% capital / 0.56% price)"
                             )
                         else:
@@ -851,48 +851,65 @@ class LiveTrader:
                 })
         
         # 🚀 INSTANT DATA LOADING using Bitget's historical candles API!
-        # Instead of waiting 60 seconds, fetch 200 1-minute candles for each symbol
-        # This gives us INSTANT startup with 200 minutes (3+ hours) of data!
-        logger.info("⚡ INSTANT DATA LOADING - Fetching historical candles from Bitget API...")
-        logger.info(f"   🎯 Loading 200 1-minute candles per symbol (200 minutes of history)")
+        # Fetch MULTIPLE TIMEFRAMES for better multi-timeframe analysis
+        logger.info("⚡ INSTANT DATA LOADING - Fetching MULTIPLE timeframes from Bitget API...")
+        logger.info(f"   🎯 Loading 1m, 5m, 15m candles per symbol (MORE DATA!)")
         logger.info(f"   💪 Processing {len(self.symbols)} symbols in parallel...")
         
         # Fetch historical candles for all symbols in parallel
         async def load_symbol_history(symbol: str) -> tuple[str, bool]:
-            """Load historical data for one symbol."""
+            """Load historical data for one symbol across multiple timeframes."""
             try:
-                # Fetch last 200 1-minute candles (max allowed per request)
-                candles_response = await self.rest_client.get_historical_candles(
-                    symbol=symbol,
-                    granularity="1m",  # 1-minute candles
-                    limit=200,  # Maximum per request
-                )
+                # Fetch multiple timeframes for better analysis
+                timeframes = [
+                    ("1m", 200),   # 200 minutes = 3.3 hours
+                    ("5m", 200),   # 1000 minutes = 16.7 hours
+                    ("15m", 200),  # 3000 minutes = 50 hours
+                ]
                 
-                if candles_response.get("code") != "00000":
-                    return (symbol, False)
+                all_data_points = []
                 
-                candles = candles_response.get("data", [])
-                if not candles:
-                    return (symbol, False)
-                
-                # Each candle: [timestamp, open, high, low, close, volume, ...]
-                # Populate price history with close prices from candles
-                for candle in reversed(candles):  # Oldest first
-                    timestamp_ms = int(candle[0])
-                    close_price = float(candle[4])
-                    volume = float(candle[5]) if len(candle) > 5 else 0.0
+                for granularity, limit in timeframes:
+                    candles_response = await self.rest_client.get_historical_candles(
+                        symbol=symbol,
+                        granularity=granularity,
+                        limit=limit,
+                    )
                     
-                    # Create ticker-like data from candle
-                    ticker_data = {
-                        "last_price": close_price,
-                        "bid_price": close_price,  # Approximate
-                        "ask_price": close_price,  # Approximate
-                        "volume_24h": volume,
-                        "quote_volume_24h": 0.0,
-                        "open_interest": 0.0,
-                    }
+                    if candles_response.get("code") != "00000":
+                        continue
                     
-                    self.state_manager.update_ticker(symbol, ticker_data)
+                    candles = candles_response.get("data", [])
+                    if not candles:
+                        continue
+                    
+                    # Each candle: [timestamp, open, high, low, close, volume, ...]
+                    for candle in reversed(candles):  # Oldest first
+                        timestamp_ms = int(candle[0])
+                        close_price = float(candle[4])
+                        volume = float(candle[5]) if len(candle) > 5 else 0.0
+                        
+                        all_data_points.append((timestamp_ms, close_price, volume))
+                
+                # Sort by timestamp and remove duplicates
+                all_data_points.sort(key=lambda x: x[0])
+                seen_timestamps = set()
+                
+                # Populate price history with data from all timeframes
+                for timestamp_ms, close_price, volume in all_data_points:
+                    if timestamp_ms not in seen_timestamps:
+                        seen_timestamps.add(timestamp_ms)
+                        
+                        ticker_data = {
+                            "last_price": close_price,
+                            "bid_price": close_price,  # Approximate
+                            "ask_price": close_price,  # Approximate
+                            "volume_24h": volume,
+                            "quote_volume_24h": 0.0,
+                            "open_interest": 0.0,
+                        }
+                        
+                        self.state_manager.update_ticker(symbol, ticker_data)
                 
                 return (symbol, True)
                 
@@ -917,7 +934,8 @@ class LiveTrader:
             
             logger.info(f"   📊 Loaded {successful}/{successful+failed} symbols ({successful/(successful+failed)*100:.0f}%)")
         
-        logger.info(f"✅ INSTANT STARTUP COMPLETE! {successful} symbols loaded with 200 minutes of history!")
+        logger.info(f"✅ INSTANT STARTUP COMPLETE! {successful} symbols loaded with MULTI-TIMEFRAME data!")
+        logger.info(f"   📊 1m (3h) + 5m (17h) + 15m (50h) = RICH historical context!")
         logger.info(f"   ⚡ NO WAITING! Starting trading immediately...\n")
 
         # Start trading
