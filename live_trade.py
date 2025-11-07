@@ -2202,7 +2202,7 @@ class LiveTrader:
                 loop_count = getattr(self, '_loop_count', 0)
                 self._loop_count = loop_count + 1
                 if loop_count % 50 == 0:  # Every 0.25 seconds
-                    logger.debug(
+                    logger.info(  # Changed to info so it shows up
                         f"[LOOP] Iteration {loop_count} | "
                         f"Available slots: {available_slots} | "
                         f"Time since entry check: {time_since_entry_check:.1f}s | "
