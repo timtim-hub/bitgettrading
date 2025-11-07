@@ -2279,7 +2279,7 @@ class LiveTrader:
                     min_score = self.config.min_entry_score_short if signal_side == "short" else self.config.min_entry_score
                 
                 if signal_score < min_score:
-                    logger.debug(
+                    logger.info(  # Changed to info to see why trades are rejected
                         f"🚫 [ENTRY REJECTED] {symbol} | {signal_side.upper()} signal score ({signal_score:.2f}) below dynamic threshold ({min_score:.2f}) | "
                         f"Skipping to reduce trade frequency"
                     )
@@ -2319,6 +2319,7 @@ class LiveTrader:
 
                 # Skip if already have position
                 if symbol in self.position_manager.positions:
+                    logger.debug(f"🚫 [ENTRY REJECTED] {symbol} | Already have position for this symbol")
                     continue
 
                 # Skip if max positions reached
