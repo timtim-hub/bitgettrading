@@ -1565,6 +1565,51 @@ class LiveTrader:
                         except Exception as e:
                             logger.error(f"❌ [STOP-LOSS RE-PLACE EXCEPTION] {symbol} | Exception: {e}")
                     
+                    # 🚨 CRITICAL: Monitor liquidation price and close positions BEFORE liquidation!
+                    # Get position data from exchange to check liquidation price
+                    try:
+                        endpoint = "/api/v2/mix/position/all-position"
+                        params = {"productType": "USDT-FUTURES", "marginCoin": "USDT"}
+                        response = await self.rest_client._request("GET", endpoint, params=params)
+                        
+                        if response.get("code") == "00000" and "data" in response:
+                            for pos_data in response.get("data", []):
+                                if pos_data.get("symbol") == symbol:
+                                    liquidation_price = float(pos_data.get("liquidationPrice", 0))
+                                    margin_ratio = float(pos_data.get("marginRatio", 0))
+                                    mark_price = float(pos_data.get("markPrice", 0))
+                                    
+                                    if liquidation_price > 0 and mark_price > 0:
+                                        # Calculate distance to liquidation
+                                        if position.side == "long":
+                                            # For long: liquidation happens when price drops to liquidation_price
+                                            distance_to_liquidation_pct = ((mark_price - liquidation_price) / mark_price) * 100
+                                            # Emergency: close if within 1% of liquidation or margin ratio > 80%
+                                            if distance_to_liquidation_pct < 1.0 or margin_ratio > 0.80:
+                                                logger.error(
+                                                    f"🚨 [LIQUIDATION RISK!] {symbol} | "
+                                                    f"Price ${mark_price:.4f} is {distance_to_liquidation_pct:.2f}% from liquidation (${liquidation_price:.4f}) | "
+                                                    f"Margin ratio: {margin_ratio*100:.2f}% | "
+                                                    f"EMERGENCY CLOSURE to prevent liquidation!"
+                                                )
+                                                await self.close_position(symbol, exit_reason=f"EMERGENCY: Too close to liquidation (${liquidation_price:.4f}, margin: {margin_ratio*100:.1f}%)")
+                                                continue
+                                        else:  # short
+                                            # For short: liquidation happens when price rises to liquidation_price
+                                            distance_to_liquidation_pct = ((liquidation_price - mark_price) / mark_price) * 100
+                                            # Emergency: close if within 1% of liquidation or margin ratio > 80%
+                                            if distance_to_liquidation_pct < 1.0 or margin_ratio > 0.80:
+                                                logger.error(
+                                                    f"🚨 [LIQUIDATION RISK!] {symbol} | "
+                                                    f"Price ${mark_price:.4f} is {distance_to_liquidation_pct:.2f}% from liquidation (${liquidation_price:.4f}) | "
+                                                    f"Margin ratio: {margin_ratio*100:.2f}% | "
+                                                    f"EMERGENCY CLOSURE to prevent liquidation!"
+                                                )
+                                                await self.close_position(symbol, exit_reason=f"EMERGENCY: Too close to liquidation (${liquidation_price:.4f}, margin: {margin_ratio*100:.1f}%)")
+                                                continue
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to check liquidation price for {symbol}: {e}")
+                    
                     # Also check if price has hit stop-loss level (bot-side backup)
                     state = self.state_manager.get_state(symbol)
                     if state and state.last_price > 0:
@@ -1581,12 +1626,13 @@ class LiveTrader:
                         return_on_capital_pct = price_change_pct * position.leverage
                         pnl_pct = return_on_capital_pct * 100
                         
-                        # If price has hit stop-loss level but position is still open, close manually (backup)
-                        if hit_sl and pnl_pct < -25.0:  # Only if losing more than 25% (tighter than 50%)
+                        # 🚨 CRITICAL: Close positions earlier to prevent liquidations!
+                        # If price has hit stop-loss level OR loss exceeds -40%, close immediately
+                        if hit_sl or pnl_pct < -40.0:  # Trigger at -40% to prevent liquidations (was -25%)
                             logger.error(
                                 f"🚨 [BOT-SIDE STOP-LOSS] {symbol} | "
-                                f"Price hit stop-loss level (${sl_price:.4f}) but position still open! | "
-                                f"PnL: {pnl_pct:.2f}% | "
+                                f"Price hit stop-loss level (${sl_price:.4f}) or loss exceeded -40%! | "
+                                f"Current price: ${current_price:.4f} | PnL: {pnl_pct:.2f}% | "
                                 f"Closing manually as backup (exchange stop-loss may have failed!)"
                             )
                             await self.close_position(symbol, exit_reason=f"BOT-SIDE-STOP-LOSS (price hit ${sl_price:.4f}, PnL: {pnl_pct:.2f}%)")

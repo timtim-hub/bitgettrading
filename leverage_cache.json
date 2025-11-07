@@ -2560,5 +2560,425 @@
     "leverage": 25,
     "timestamp": 1762544424.9385788,
     "failed": false
+  },
+  "PHBUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544696.671577,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "PHBUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544697.268702,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "XVGUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544697.950751,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "XVGUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544698.548911,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "PORTALUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544699.155592,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "PORTALUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544699.9112809,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "ZKJUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544700.591733,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "ZKJUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544701.196393,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "CHESSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544701.769346,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "CHESSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544702.370513,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "OGUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544702.962655,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "OGUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544703.6718569,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "SWARMSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544704.542871,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "SWARMSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544706.1374688,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "PIPPINUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544706.860681,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "PIPPINUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544707.495724,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "VINEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544708.1306071,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "VINEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544708.756165,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "XCNUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544709.442951,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "XCNUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544710.032248,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "BROCCOLIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544710.687697,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "BROCCOLIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544711.284533,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "ELXUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544711.958379,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "ELXUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544712.6096792,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "TUTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544713.264274,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "TUTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544713.8697019,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "BIDUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544714.466109,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "BIDUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544715.076669,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "WALUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544715.709471,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "WALUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544716.321611,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "DOLOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544716.941,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "DOLOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544717.581612,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "HAEDALUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544718.16924,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "HAEDALUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544718.7934961,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "MYXUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544719.485201,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "MYXUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544720.133203,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "HUMAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544720.760185,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "HUMAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544721.326446,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "CUDISUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544721.915006,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "CUDISUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544722.600051,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "MUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544723.1703548,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "MUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544723.7915268,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "USELESSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544724.373266,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "USELESSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544725.034407,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "TAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544725.636959,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "TAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544726.313079,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "ESPORTSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544726.999382,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "ESPORTSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544727.634557,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "A2ZUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544728.339319,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "A2ZUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544729.01558,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "BASUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544729.618783,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "BASUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544730.340251,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "OPENUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544730.949734,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "OPENUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544731.600626,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "AVNTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544732.353585,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "AVNTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544733.203151,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "BLESSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544733.875341,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "BLESSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544734.6051168,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "COAIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544735.831477,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "COAIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544737.347425,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "MIRAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544738.77058,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "MIRAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544740.0569038,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "MONUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544741.29476,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "MONUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544742.6988769,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "RVVUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544743.713005,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "RVVUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544744.376977,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "CLANKERUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544745.2630851,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "CLANKERUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544745.924911,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "QQQUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544746.6977558,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "QQQUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544747.341808,
+    "failed": true,
+    "error_code": "40797"
   }
 }
