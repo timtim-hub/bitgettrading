@@ -643,17 +643,33 @@ class BitgetRestClient:
                         )
                         break  # Success, exit retry loop
                     else:
-                        logger.warning(
-                            f"⚠️  [EXCHANGE SL ERROR] {symbol} | Attempt {attempt + 1}/{max_retries} | "
-                            f"API returned error code: {code} | Message: {msg} | Full response: {results['sl']}"
-                        )
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(1.0)  # Wait before retry
-                        else:
-                            logger.error(
-                                f"❌ [EXCHANGE SL FAILED] {symbol} | "
-                                f"Failed after {max_retries} attempts! Code: {code} | Msg: {msg}"
+                        # Check for "Insufficient position" error (43023) - needs longer wait
+                        if code == "43023" or "Insufficient position" in msg:
+                            logger.warning(
+                                f"⚠️  [EXCHANGE SL ERROR 43023] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                                f"Insufficient position error - position may not be fully available yet. "
+                                f"Waiting longer before retry..."
                             )
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(3.0)  # Wait longer for position to become available
+                            else:
+                                logger.error(
+                                    f"❌ [EXCHANGE SL FAILED] {symbol} | "
+                                    f"Failed after {max_retries} attempts! Code: {code} | Msg: {msg} | "
+                                    f"Position may not be fully available on exchange yet."
+                                )
+                        else:
+                            logger.warning(
+                                f"⚠️  [EXCHANGE SL ERROR] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                                f"API returned error code: {code} | Message: {msg} | Full response: {results['sl']}"
+                            )
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(1.0)  # Wait before retry
+                            else:
+                                logger.error(
+                                    f"❌ [EXCHANGE SL FAILED] {symbol} | "
+                                    f"Failed after {max_retries} attempts! Code: {code} | Msg: {msg}"
+                                )
                 except Exception as e:
                     logger.warning(
                         f"⚠️  [EXCHANGE SL EXCEPTION] {symbol} | Attempt {attempt + 1}/{max_retries} | "
@@ -704,17 +720,33 @@ class BitgetRestClient:
                         )
                         break  # Success, exit retry loop
                     else:
-                        logger.warning(
-                            f"⚠️  [EXCHANGE TP ERROR] {symbol} | Attempt {attempt + 1}/{max_retries} | "
-                            f"API returned error code: {code} | Message: {msg} | Full response: {results['tp']}"
-                        )
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(1.0)  # Wait before retry
-                        else:
-                            logger.error(
-                                f"❌ [EXCHANGE TP FAILED] {symbol} | "
-                                f"Failed after {max_retries} attempts! Code: {code} | Msg: {msg}"
+                        # Check for "Insufficient position" error (43023) - needs longer wait
+                        if code == "43023" or "Insufficient position" in msg:
+                            logger.warning(
+                                f"⚠️  [EXCHANGE TP ERROR 43023] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                                f"Insufficient position error - position may not be fully available yet. "
+                                f"Waiting longer before retry..."
                             )
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(3.0)  # Wait longer for position to become available
+                            else:
+                                logger.error(
+                                    f"❌ [EXCHANGE TP FAILED] {symbol} | "
+                                    f"Failed after {max_retries} attempts! Code: {code} | Msg: {msg} | "
+                                    f"Position may not be fully available on exchange yet."
+                                )
+                        else:
+                            logger.warning(
+                                f"⚠️  [EXCHANGE TP ERROR] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                                f"API returned error code: {code} | Message: {msg} | Full response: {results['tp']}"
+                            )
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(1.0)  # Wait before retry
+                            else:
+                                logger.error(
+                                    f"❌ [EXCHANGE TP FAILED] {symbol} | "
+                                    f"Failed after {max_retries} attempts! Code: {code} | Msg: {msg}"
+                                )
                 except Exception as e:
                     logger.warning(
                         f"⚠️  [EXCHANGE TP EXCEPTION] {symbol} | Attempt {attempt + 1}/{max_retries} | "

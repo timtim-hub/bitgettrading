@@ -341,7 +341,8 @@ class LiveTrader:
                             # The calculated size might not match the actual filled size
                             # This prevents "Insufficient position" errors (code 43023)
                             # Market orders should fill instantly, but position query might lag
-                            await asyncio.sleep(2.0)  # Wait 2 seconds for market order to fill and position to update
+                            # Increased wait time to ensure position is fully available on exchange
+                            await asyncio.sleep(3.0)  # Wait 3 seconds for market order to fill and position to update
                             
                             # Query actual position from exchange with retry
                             # Sometimes the position query returns 0 or wrong size immediately after fill
@@ -462,6 +463,11 @@ class LiveTrader:
                                 await self.rest_client.cancel_all_tpsl_orders(symbol)
                             except Exception:
                                 pass  # Ignore if no orders exist
+                            
+                            # 🚨 CRITICAL: Additional wait after position query to ensure position is fully available
+                            # Sometimes position query returns size but position isn't fully available for TP/SL yet
+                            # This helps prevent "Insufficient position" errors (code 43023)
+                            await asyncio.sleep(1.0)  # Additional wait before placing TP/SL
                             
                             # Place TP/SL plan orders with market execution
                             # Get contract info to determine size precision
