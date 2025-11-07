@@ -357,19 +357,42 @@ class LiveTrader:
                                 )
                     except Exception as e:
                         error_str = str(e)
+                        error_repr = repr(e)
                         # 🚨 CRITICAL: Check if it's a "not supported" error in the exception message
-                        if "40797" in error_str or "40798" in error_str or "maximum settable leverage" in error_str.lower() or "exceeded the maximum" in error_str.lower():
+                        # Check both str(e) and repr(e) to catch all formats
+                        is_not_supported = (
+                            "40797" in error_str or "40798" in error_str or
+                            "40797" in error_repr or "40798" in error_repr or
+                            "maximum settable leverage" in error_str.lower() or
+                            "exceeded the maximum" in error_str.lower() or
+                            "maximum settable leverage" in error_repr.lower() or
+                            "exceeded the maximum" in error_repr.lower()
+                        )
+                        
+                        if is_not_supported:
                             # Cache as failed to prevent retrying
                             self.leverage_cache.mark_failed(symbol, self.leverage, hold_side, "40797")
                             logger.warning(
                                 f"🚫 [LEVERAGE SET ERROR] {symbol} {hold_side}: Leverage {self.leverage}x not supported (from exception) | "
-                                f"Cached to skip future attempts"
+                                f"Cached to skip future attempts | Error: {error_str[:100]}"
                             )
                             leverage_set_success = True  # Consider it "success" (we won't retry)
                         else:
-                            logger.error(
-                                f"❌ [LEVERAGE SET ERROR] {symbol} {hold_side}: {self.leverage}x | Error: {e}"
-                            )
+                            # For other exceptions, check if we should cache as failed based on error type
+                            # Network errors shouldn't be cached, but API errors should
+                            if "API error" in error_str or "400" in error_str or "403" in error_str:
+                                # Likely an API error - might be a permanent failure
+                                # But don't cache unless we're sure it's a "not supported" error
+                                logger.error(
+                                    f"❌ [LEVERAGE SET ERROR] {symbol} {hold_side}: {self.leverage}x | "
+                                    f"Error: {error_str[:200]}"
+                                )
+                            else:
+                                # Network/timeout errors - don't cache
+                                logger.error(
+                                    f"❌ [LEVERAGE SET ERROR] {symbol} {hold_side}: {self.leverage}x | "
+                                    f"Error: {error_str[:200]} (network/timeout - not caching)"
+                                )
                         # Don't pass silently - log the error!
                 
                 # 🚨 CRITICAL: Wait 1 second after setting leverage to ensure it's applied
@@ -2103,9 +2126,30 @@ class LiveTrader:
                                     )
                     except Exception as e:
                         leverage_failed_count += 1
-                        # Don't cache exceptions as failures (might be network issues)
-                        if i <= 10:  # Log errors for first 10
-                            logger.warning(f"⚠️ [STARTUP] {symbol} {hold_side}: Error setting leverage: {e}")
+                        error_str = str(e)
+                        error_repr = repr(e)
+                        # 🚨 CRITICAL: Check if it's a "not supported" error in the exception message
+                        is_not_supported = (
+                            "40797" in error_str or "40798" in error_str or
+                            "40797" in error_repr or "40798" in error_repr or
+                            "maximum settable leverage" in error_str.lower() or
+                            "exceeded the maximum" in error_str.lower() or
+                            "maximum settable leverage" in error_repr.lower() or
+                            "exceeded the maximum" in error_repr.lower()
+                        )
+                        
+                        if is_not_supported:
+                            # Cache as failed to prevent retrying
+                            self.leverage_cache.mark_failed(symbol, self.leverage, hold_side, "40797")
+                            if i <= 10:  # Log failures for first 10
+                                logger.warning(
+                                    f"🚫 [STARTUP] {symbol} {hold_side}: Leverage {self.leverage}x not supported (from exception) | "
+                                    f"Cached to skip future attempts"
+                                )
+                        else:
+                            # Don't cache exceptions as failures (might be network issues)
+                            if i <= 10:  # Log errors for first 10
+                                logger.warning(f"⚠️ [STARTUP] {symbol} {hold_side}: Error setting leverage: {e}")
             
             # Save cache to disk
             self.leverage_cache.save()
