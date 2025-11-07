@@ -624,25 +624,24 @@ class BitgetRestClient:
         # Place STOP-LOSS order (separate order #1)
         # Place STOP-LOSS order with retry logic
         if stop_loss_price is not None:
-            #  🚨 CRITICAL: Size IS REQUIRED (API returns error 40019 if omitted)!
+            # 🎯 USE pos_loss FOR FULL POSITION STOP-LOSS (Gesamter TP/SL)!
             sl_data = {
                 "symbol": symbol,
                 "productType": product_type,  # "usdt-futures" (lowercase)
                 "marginMode": "isolated",  # Match our trading mode
                 "marginCoin": "USDT",
-                "planType": "loss_plan",  # STOP-LOSS type
+                "planType": "pos_loss",  # 🚨 CRITICAL: pos_loss for FULL POSITION stop-loss!
                 "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
                 "triggerPrice": str(stop_loss_price),
-                "executePrice": "0",  # MARKET on trigger
-                "size": str(rounded_size),  # MUST match position size EXACTLY!
-                # NOTE: reduceOnly is NOT supported for plan orders - removed
+                "triggerType": "mark_price",  # Trigger type for pos_loss
+                # 🚨 NO size parameter for pos_loss = applies to ENTIRE position!
+                # 🚨 NO executePrice for pos_loss = executes at market automatically!
             }
             logger.info(
-                f"📋 [STOP-LOSS ORDER] {symbol} | "
-                f"symbol={symbol}, productType={product_type}, "
-                f"marginMode=isolated, planType=loss_plan, "
+                f"📋 [STOP-LOSS ORDER - GESAMTER TP/SL MODE!] {symbol} | "
+                f"planType=pos_loss (FULL POSITION - no size needed!) | "
                 f"holdSide={api_hold_side}, triggerPrice={stop_loss_price}, "
-                f"executePrice=0 (market), size={rounded_size} (MUST match position EXACTLY!)"
+                f"App will show 'Gesamter TP/SL' for SL!"
             )
             # Retry logic for SL placement
             max_retries = 3
@@ -654,9 +653,11 @@ class BitgetRestClient:
                     data = results["sl"].get("data") if results["sl"] else None
                     if code == "00000":
                         logger.info(
-                            f"✅ [EXCHANGE SL] {symbol} @ ${stop_loss_price:.4f} | "
-                            f"Size: {size:.4f} | holdSide: {api_hold_side} | "
-                            f"Code: {code} | Msg: {msg} | Data: {data}"
+                            f"✅ [GESAMTER SL PLACED!] {symbol} @ ${stop_loss_price:.4f} | "
+                            f"planType=pos_loss (FULL POSITION!) | "
+                            f"holdSide: {api_hold_side} | "
+                            f"✨ App will show 'Gesamter TP/SL' for SL! | "
+                            f"Code: {code} | Msg: {msg} | Order ID: {data.get('orderId', 'N/A') if data else 'N/A'}"
                         )
                         break  # Success, exit retry loop
                     else:
