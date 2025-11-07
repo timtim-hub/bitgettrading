@@ -76,7 +76,7 @@ class BacktestScheduler:
         if config.dynamic_params_enabled:
             dynamic_params = DynamicParams(
                 performance_tracker=performance_tracker,
-                config=config,
+                enabled=config.dynamic_params_enabled,
             )
         
         self.backtester = SymbolBacktester(
