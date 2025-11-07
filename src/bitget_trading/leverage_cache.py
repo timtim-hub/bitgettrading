@@ -74,6 +74,13 @@ class LeverageCache:
         
         entry = self.cache[cache_key]
         
+        # 🚨 CRITICAL: Check if this was a failure (don't retry!)
+        if entry.get("failed", False):
+            logger.debug(
+                f"🚫 [LEVERAGE CACHE] {symbol} {hold_side}: Cached as failed (not supported by Bitget) - skipping"
+            )
+            return True  # Return True to skip API call (but it's not actually set)
+        
         # Check if cache is expired
         age = time.time() - entry["timestamp"]
         if age > self.cache_expiry_seconds:
@@ -106,7 +113,38 @@ class LeverageCache:
         self.cache[cache_key] = {
             "leverage": leverage,
             "timestamp": time.time(),
+            "failed": False,  # Successfully set
         }
+        
+        # Save to disk periodically (every 50 symbols)
+        if len(self.cache) % 50 == 0:
+            self._save_cache()
+    
+    def mark_failed(self, symbol: str, leverage: int, hold_side: str, error_code: str = None) -> None:
+        """
+        Mark leverage as failed (not supported by Bitget).
+        
+        This prevents retrying the same failed request.
+        
+        Args:
+            symbol: Trading symbol
+            leverage: Desired leverage (that failed)
+            hold_side: "long" or "short"
+            error_code: Error code from API (e.g., "40797" for max leverage exceeded)
+        """
+        cache_key = f"{symbol}_{hold_side}"
+        
+        self.cache[cache_key] = {
+            "leverage": leverage,
+            "timestamp": time.time(),
+            "failed": True,  # Mark as failed
+            "error_code": error_code,  # Store error code for debugging
+        }
+        
+        logger.debug(
+            f"🚫 [LEVERAGE CACHE] {symbol} {hold_side}: Marked as failed "
+            f"(error: {error_code or 'unknown'}) - will skip in future"
+        )
         
         # Save to disk periodically (every 50 symbols)
         if len(self.cache) % 50 == 0:

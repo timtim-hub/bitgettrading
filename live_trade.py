@@ -303,9 +303,28 @@ class LiveTrader:
                     pass  # May already be set, ignore error
                 
                 # 🚨 CRITICAL: Set leverage to 25x for both sides (MUST BE SET!)
+                # 🚀 OPTIMIZATION: Check cache first to avoid retrying failed tokens!
                 leverage_set_success = False
                 for hold_side in ["long", "short"]:
                     try:
+                        # Check cache first - if already set or failed, skip API call!
+                        if self.leverage_cache.is_set(symbol, self.leverage, hold_side):
+                            # Check if it was a failure (cached as failed)
+                            cache_key = f"{symbol}_{hold_side}"
+                            entry = self.leverage_cache.cache.get(cache_key, {})
+                            if entry.get("failed", False):
+                                logger.debug(
+                                    f"🚫 [LEVERAGE CACHE] {symbol} {hold_side}: Cached as failed (not supported) - skipping"
+                                )
+                                leverage_set_success = True  # Consider it "success" (we won't retry)
+                            else:
+                                logger.debug(
+                                    f"💾 [LEVERAGE CACHE] {symbol} {hold_side}: Already set in cache - skipping"
+                                )
+                                leverage_set_success = True
+                            continue
+                        
+                        # Not in cache - try to set via API
                         response = await self.rest_client.set_leverage(
                             symbol=symbol,
                             leverage=self.leverage,
@@ -316,12 +335,26 @@ class LiveTrader:
                                 f"✅ [LEVERAGE SET] {symbol} {hold_side}: {self.leverage}x | "
                                 f"Response: {response.get('msg', 'OK')}"
                             )
+                            # Cache success
+                            self.leverage_cache.mark_set(symbol, self.leverage, hold_side)
                             leverage_set_success = True
                         else:
-                            logger.error(
-                                f"❌ [LEVERAGE SET FAILED] {symbol} {hold_side}: {self.leverage}x | "
-                                f"Code: {response.get('code')} | Msg: {response.get('msg', 'Unknown error')}"
-                            )
+                            error_code = response.get('code', 'unknown')
+                            error_msg = response.get('msg', 'Unknown error')
+                            
+                            # 🚨 CRITICAL: Mark as failed in cache if it's a "not supported" error
+                            if error_code in ["40797", "40798"] or "maximum settable leverage" in error_msg.lower() or "not supported" in error_msg.lower():
+                                self.leverage_cache.mark_failed(symbol, self.leverage, hold_side, error_code)
+                                logger.warning(
+                                    f"🚫 [LEVERAGE SET FAILED] {symbol} {hold_side}: Leverage {self.leverage}x not supported | "
+                                    f"Code: {error_code} | Cached to skip future attempts"
+                                )
+                                leverage_set_success = True  # Consider it "success" (we won't retry)
+                            else:
+                                logger.error(
+                                    f"❌ [LEVERAGE SET FAILED] {symbol} {hold_side}: {self.leverage}x | "
+                                    f"Code: {error_code} | Msg: {error_msg}"
+                                )
                     except Exception as e:
                         logger.error(
                             f"❌ [LEVERAGE SET ERROR] {symbol} {hold_side}: {self.leverage}x | Error: {e}"
@@ -2032,19 +2065,34 @@ class LiveTrader:
                         )
                         if response.get("code") == "00000":
                             leverage_set_count += 1
-                            # Update cache
+                            # Update cache with success
                             self.leverage_cache.mark_set(symbol, self.leverage, hold_side)
                             if i <= 10 or i % 50 == 0:  # Log first 10 and every 50th
                                 logger.info(f"✅ [STARTUP] {symbol} {hold_side}: {self.leverage}x ({i}/{len(self.symbols)})")
                         else:
                             leverage_failed_count += 1
-                            if i <= 10:  # Log failures for first 10
-                                logger.warning(
-                                    f"⚠️ [STARTUP] {symbol} {hold_side}: Failed to set {self.leverage}x | "
-                                    f"Code: {response.get('code')} | Msg: {response.get('msg', 'Unknown')}"
-                                )
+                            error_code = response.get('code', 'unknown')
+                            error_msg = response.get('msg', 'Unknown')
+                            
+                            # 🚨 CRITICAL: Mark as failed in cache to prevent retrying!
+                            # Check if it's a "not supported" error (e.g., 40797 = max leverage exceeded)
+                            if error_code in ["40797", "40798"] or "maximum settable leverage" in error_msg.lower() or "not supported" in error_msg.lower():
+                                self.leverage_cache.mark_failed(symbol, self.leverage, hold_side, error_code)
+                                if i <= 10:  # Log failures for first 10
+                                    logger.warning(
+                                        f"🚫 [STARTUP] {symbol} {hold_side}: Leverage {self.leverage}x not supported by Bitget | "
+                                        f"Code: {error_code} | Cached to skip future attempts"
+                                    )
+                            else:
+                                # Other error - don't cache as failed (might be temporary)
+                                if i <= 10:  # Log failures for first 10
+                                    logger.warning(
+                                        f"⚠️ [STARTUP] {symbol} {hold_side}: Failed to set {self.leverage}x | "
+                                        f"Code: {error_code} | Msg: {error_msg}"
+                                    )
                     except Exception as e:
                         leverage_failed_count += 1
+                        # Don't cache exceptions as failures (might be network issues)
                         if i <= 10:  # Log errors for first 10
                             logger.warning(f"⚠️ [STARTUP] {symbol} {hold_side}: Error setting leverage: {e}")
             
