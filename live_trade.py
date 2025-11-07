@@ -268,10 +268,10 @@ class LiveTrader:
                     # Wait a moment for order to fill
                     await asyncio.sleep(0.5)
                     
-                    # Calculate TP/SL prices (15% capital = 0.6% price @ 25x)
+                    # Calculate TP/SL prices (14% TP, 15% SL @ 25x)
                     # Wider stops for 25x = MORE ROOM, fewer liquidations!
                     sl_price_pct = 0.006  # 0.6% price move = 15% capital @ 25x
-                    tp_price_pct = 0.008  # 0.8% price move = 20% capital @ 25x
+                    tp_price_pct = 0.0056  # 0.56% price move = 14% capital @ 25x - WITH trailing!
                     
                     if side == "long":
                         stop_loss_price = price * (1 - sl_price_pct)
@@ -309,7 +309,7 @@ class LiveTrader:
                             logger.info(
                                 f"🛡️  [EXCHANGE-SIDE TP/SL] {symbol} @ 25x | "
                                 f"SL: ${stop_loss_price:.4f} (-15% capital / 0.6% price) | "
-                                f"TP: ${take_profit_price:.4f} (+20% capital / 0.8% price)"
+                                f"TP: ${take_profit_price:.4f} (+14% capital / 0.56% price)"
                             )
                         else:
                             logger.warning(
@@ -603,14 +603,32 @@ class LiveTrader:
                 # Base position size with smart multiplier
                 base_position_value = self.equity * self.position_size_pct
                 adjusted_position_value = base_position_value * position_size_multiplier
+                
+                # CRITICAL: Ensure minimum order value of 5 USDT (Bitget requirement)
+                # Notional value = adjusted_position_value * leverage
+                notional_value = adjusted_position_value * self.leverage
+                min_order_value = 5.0  # Minimum 5 USDT per Bitget
+                
+                if notional_value < min_order_value:
+                    # Adjust position value to meet minimum
+                    adjusted_position_value = min_order_value / self.leverage
+                    logger.info(
+                        f"⚠️  {symbol} order too small ({notional_value:.2f} USDT) - "
+                        f"increased to minimum {min_order_value:.2f} USDT"
+                    )
+                
                 size = (adjusted_position_value * self.leverage) / price
 
                 # Get regime-specific parameters
                 regime_params = self.regime_detector.get_regime_parameters(regime)
 
+                # Calculate final notional value for logging
+                final_notional_value = adjusted_position_value * self.leverage
+                
                 logger.info(
                     f"📈 {signal_side.upper()} {symbol} | "
-                    f"Price: ${price:.4f} | Size: {size:.4f} (×{position_size_multiplier:.2f}) | "
+                    f"Price: ${price:.4f} | Size: {size:.4f} | "
+                    f"Notional: ${final_notional_value:.2f} USDT | "
                     f"Regime: {regime} | TP: {regime_params['take_profit_pct']*100:.1f}%"
                 )
 
@@ -666,7 +684,7 @@ class LiveTrader:
     async def trading_loop(self) -> None:
         """
         HOLD-AND-FILL trading loop (NO REBALANCING!):
-        - ULTRA-FAST: Check exits every 50ms (0.05s) - TP/SL/trailing only
+        - HYPER-FAST: Check exits every 5ms (0.005s) - TP/SL/trailing only - 10x FASTER!
         - FAST: Look for new entries every 5 seconds when slots available
         
         KEY: Hold winners until TP/SL hit. No churning = minimal fees!
@@ -674,7 +692,7 @@ class LiveTrader:
         iteration = 0
         last_entry_check_time = datetime.now()
         entry_check_interval_sec = 5  # Check for new entries every 5 seconds (SCALPING SPEED!)
-        position_check_interval_sec = 0.05  # Check exits every 0.05 seconds (50ms - LIGHTNING FAST!)
+        position_check_interval_sec = 0.005  # Check exits every 0.005 seconds (5ms - HYPER FAST! 10x faster!)
 
         while self.running:
             try:
