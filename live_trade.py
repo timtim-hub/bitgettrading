@@ -30,6 +30,7 @@ from src.bitget_trading.position_manager import PositionManager
 from src.bitget_trading.loss_tracker import LossTracker, TradeRecord
 from src.bitget_trading.regime_detector import RegimeDetector
 from src.bitget_trading.universe import UniverseManager
+from src.bitget_trading.leverage_cache import LeverageCache
 
 logger = setup_logging()
 
@@ -69,6 +70,7 @@ class LiveTrader:
         self.position_manager = PositionManager()  # Position persistence + trailing stops
         self.loss_tracker = LossTracker()  # Comprehensive loss analysis
         self.regime_detector = RegimeDetector()  # Market regime detection
+        self.leverage_cache = LeverageCache()  # Cache to avoid redundant leverage API calls
         self.use_enhanced = False  # Start with simple, upgrade to enhanced after data accumulates
 
         # State
@@ -1572,14 +1574,24 @@ class LiveTrader:
         logger.info(f"✅ Using ALL {len(self.symbols)} symbols (maximum opportunities!)")
         
         # 🚨 CRITICAL: Set leverage to 25x for ALL symbols at startup (300+ tokens!)
-        logger.info(f"🔧 [STARTUP] Setting leverage to {self.leverage}x for ALL {len(self.symbols)} symbols...")
+        # ✨ BUT use cache to avoid redundant API calls (leverage persists on Bitget!)
+        logger.info(f"🔧 [STARTUP] Checking leverage for {len(self.symbols)} symbols (using cache)...")
         leverage_set_count = 0
+        leverage_cached_count = 0
         leverage_failed_count = 0
         try:
-            # Set leverage for ALL symbols (not just top 50!)
+            # Set leverage for ALL symbols (not just top 50!) - but use cache to skip already-set ones
             for i, symbol in enumerate(self.symbols, 1):
                 for hold_side in ["long", "short"]:
                     try:
+                        # Check cache first - if already set, skip API call!
+                        if self.leverage_cache.is_set(symbol, self.leverage, hold_side):
+                            leverage_cached_count += 1
+                            if i <= 5:  # Log first 5 cached ones
+                                logger.debug(f"💾 [CACHE HIT] {symbol} {hold_side}: {self.leverage}x already set")
+                            continue
+                        
+                        # Not in cache or expired - set leverage via API
                         response = await self.rest_client.set_leverage(
                             symbol=symbol,
                             leverage=self.leverage,
@@ -1587,6 +1599,8 @@ class LiveTrader:
                         )
                         if response.get("code") == "00000":
                             leverage_set_count += 1
+                            # Update cache
+                            self.leverage_cache.mark_set(symbol, self.leverage, hold_side)
                             if i <= 10 or i % 50 == 0:  # Log first 10 and every 50th
                                 logger.info(f"✅ [STARTUP] {symbol} {hold_side}: {self.leverage}x ({i}/{len(self.symbols)})")
                         else:
@@ -1601,9 +1615,13 @@ class LiveTrader:
                         if i <= 10:  # Log errors for first 10
                             logger.warning(f"⚠️ [STARTUP] {symbol} {hold_side}: Error setting leverage: {e}")
             
+            # Save cache to disk
+            self.leverage_cache.save()
+            
             logger.info(
-                f"✅ [STARTUP] Leverage setting complete: {leverage_set_count} successful, "
-                f"{leverage_failed_count} failed (out of {len(self.symbols) * 2} attempts)"
+                f"✅ [STARTUP] Leverage check complete: {leverage_set_count} set via API, "
+                f"{leverage_cached_count} from cache, {leverage_failed_count} failed "
+                f"(out of {len(self.symbols) * 2} total)"
             )
         except Exception as e:
             logger.error(f"❌ [STARTUP] Failed to set leverage at startup: {e}")
