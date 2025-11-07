@@ -2462,5 +2462,13 @@
   "CHILLGUYUSDT_short": {
     "leverage": 25,
     "timestamp": 1762534911.620867
+  },
+  "FLUXUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762535493.902705
+  },
+  "FLUXUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762535494.534821
   }
 }

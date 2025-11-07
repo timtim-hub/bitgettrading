@@ -1000,47 +1000,47 @@ class BitgetRestClient:
         self,
         symbol: str,
         hold_side: str,  # "long" or "short" - which position we're closing
-        callback_ratio: float,  # Callback rate as decimal (e.g., 0.10 = 10%)
+        callback_ratio: float,  # Callback rate as decimal (e.g., 0.10 = 10%, MAX 0.10!)
         trigger_price: float,  # Activation price
-        size: float,  # NOT USED for pos_profit (kept for API compatibility)
-        size_precision: int | None = None,  # NOT USED
-        product_type: str = "usdt-futures",
+        size: float,  # Position size in contracts
+        size_precision: int | None = None,
+        product_type: str = "USDT-FUTURES",  # UPPERCASE for place-plan-order!
     ) -> dict[str, Any]:
         """
-        Place FULL POSITION TRAILING take-profit using pos_profit.
+        Place NORMAL TRAILING order using track_plan (shows in "Trailing" tab).
         
-        🎯 USER DISCOVERY: Use pos_profit (SAME as pos_loss for SL!)
+        🎯 DEFINITIVE ANSWER from Bitget API documentation:
         
-        This ensures TP shows in "Entire TP/SL" section (same as SL):
-        - planType: "pos_profit" with rangeRate = TRAILING full position ✅
-        - planType: "moving_plan" = Shows in different section ❌
+        - Endpoint: /api/v2/mix/order/place-plan-order (NOT place-tpsl-order!)
+        - planType: "track_plan" (Bitget's official "trailing stop order")
+        - callbackRatio: Max 10% (0.10), sent as percentage string
+        - Shows in: "Trailing" tab in Bitget app (NOT "Entire TP/SL")
+        - Behavior: TRUE trailing that closes FULL position
         
-        By using pos_profit with rangeRate, we get:
-        - ✅ Trailing capability (rangeRate makes it trail!)
-        - ✅ Full position (no size parameter)
-        - ✅ Shows in "Entire TP/SL" tab (same as SL!)
+        This is Bitget's "Normal Trailing TP" that you see in the app!
         
         Args:
             symbol: Trading pair
-            hold_side: "long" or "short" - which position to protect
-            callback_ratio: Trailing callback rate as decimal (e.g., 0.10 = 10%)
+            hold_side: "long" or "short" - position to protect
+            callback_ratio: Trailing callback (0.01-0.10 = 1-10%)
             trigger_price: Activation price
-            size: NOT USED (kept for backwards compatibility)
-            size_precision: NOT USED
-            product_type: Product type
+            size: Position size in contracts
+            size_precision: Size precision
+            product_type: "USDT-FUTURES" (uppercase for this endpoint!)
             
         Returns:
             API response
         """
-        endpoint = "/api/v2/mix/order/place-tpsl-order"
+        endpoint = "/api/v2/mix/order/place-plan-order"
         
-        # Format callback ratio (rangeRate) as percentage string with 2 decimals
-        formatted_range_rate = f"{callback_ratio * 100:.2f}"
+        # Validate callback ratio (max 10% per Bitget docs)
+        if callback_ratio <= 0 or callback_ratio > 0.10:
+            raise ValueError(f"callbackRatio must be between 0 and 0.10 (0%-10%). Got: {callback_ratio}")
         
-        # Convert "long"/"short" to "buy"/"sell" for API
-        api_hold_side = "buy" if hold_side == "long" else "sell"
+        # Format as percentage string
+        callback_str = f"{callback_ratio * 100:.2f}"
         
-        # Round size to correct precision (needed for moving_plan)
+        # Round size to correct precision
         if size_precision is None:
             size_str = f"{size:.10f}".rstrip('0').rstrip('.')
             if '.' in size_str:
@@ -1049,30 +1049,34 @@ class BitgetRestClient:
                 size_precision = 0
         rounded_size = round(size, size_precision)
         
-        # 🚨 FINAL ANSWER: moving_plan is the ONLY planType that supports trailing!
-        # pos_profit does NOT support rangeRate (gets rejected or ignored)
-        # We MUST use moving_plan + exact size for true trailing behavior
+        # Side to CLOSE the position (opposite of held position)
+        side = "sell" if hold_side == "long" else "buy"
+        
         data = {
+            "planType": "track_plan",  # 🚨 Bitget's official trailing stop order!
             "symbol": symbol,
-            "productType": product_type,
+            "productType": product_type,  # UPPERCASE for this endpoint
             "marginMode": "isolated",
             "marginCoin": "USDT",
-            "planType": "moving_plan",  # 🚨 ONLY moving_plan supports rangeRate trailing!
-            "holdSide": api_hold_side,  # "buy" or "sell"
+            "size": str(rounded_size),
+            "orderType": "market",  # REQUIRED for track_plan
+            "price": "",  # MUST be empty for track_plan
+            "callbackRatio": callback_str,  # e.g. "10.00" for 10%
             "triggerPrice": str(trigger_price),
             "triggerType": "mark_price",
-            "size": str(rounded_size),  # EXACT size required for moving_plan
-            "rangeRate": formatted_range_rate,  # Trailing callback rate
+            "side": side,  # "buy" or "sell" to close
+            "reduceOnly": "YES",  # Only close/reduce position
         }
         
         logger.info(
-            f"🎯 [TRAILING TP - moving_plan!] {symbol} | "
-            f"planType=moving_plan (ONLY type that supports rangeRate!) | "
-            f"holdSide={hold_side} → API: {api_hold_side} | "
-            f"size={size} → rounded={rounded_size} (EXACT for full position close!) | "
-            f"callback_ratio={callback_ratio*100:.2f}% → rangeRate: {formatted_range_rate} (TRAILS!) | "
-            f"trigger_price={trigger_price} | "
-            f"NOTE: App may show 'partial' but will close FULL position when size matches!"
+            f"🎯 [NORMAL TRAILING TP - track_plan!] {symbol} | "
+            f"Endpoint: place-plan-order | "
+            f"planType=track_plan (Official Bitget trailing!) | "
+            f"side={side} (closes {hold_side} position) | "
+            f"size={size} → rounded={rounded_size} | "
+            f"callbackRatio={callback_str}% (TRAILS!) | "
+            f"trigger={trigger_price} | "
+            f"Shows in: 'Trailing' tab (NOT 'TP/SL' tab!)"
         )
         
         # 🚨 RETRY LOGIC: Try up to 3 times to ensure it places!
@@ -1087,16 +1091,16 @@ class BitgetRestClient:
                 if code == "00000":
                     order_id = data_resp.get('orderId', 'N/A')
                     logger.info(
-                        f"✅ [TRAILING TP PLACED!] {symbol} | "
-                        f"planType=moving_plan + rangeRate={callback_ratio*100:.2f}% | "
-                        f"size={rounded_size} (full position) | "
+                        f"✅ [NORMAL TRAILING TP PLACED!] {symbol} | "
+                        f"planType=track_plan + callbackRatio={callback_str}% | "
+                        f"size={rounded_size} (FULL position) | "
                         f"Trigger: {trigger_price} | "
                         f"Order ID: {order_id} | "
                         f"Attempt: {attempt + 1}/{max_retries}"
                     )
                     logger.warning(
-                        f"✨ [SUCCESS] {symbol} TP will TRAIL with {callback_ratio*100:.1f}% callback! "
-                        f"May show as 'partial' in app but closes FULL position (size={rounded_size})"
+                        f"✨ [CHECK APP] {symbol} trailing TP in 'Trailing' tab (NOT TP/SL tab!) "
+                        f"with {callback_ratio*100:.1f}% callback!"
                     )
                     return response  # Success, return immediately
                 else:
