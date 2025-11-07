@@ -2272,8 +2272,10 @@ class LiveTrader:
                 # Tier4 (poor): 3.5 threshold OR skip entirely
                 if self.dynamic_params:
                     # Use dynamic threshold based on token performance
-                    dynamic_threshold = self.dynamic_params.get_entry_threshold(symbol, default_threshold=2.5)
-                    min_score = dynamic_threshold
+                    # Note: get_entry_threshold returns multipliers (0.65-1.25), so apply to base threshold
+                    base_threshold = self.config.min_entry_score_short if signal_side == "short" else self.config.min_entry_score
+                    threshold_multiplier = self.dynamic_params.get_entry_threshold(symbol, default_threshold=1.0)
+                    min_score = base_threshold * threshold_multiplier
                 else:
                     # Fallback to fixed thresholds
                     min_score = self.config.min_entry_score_short if signal_side == "short" else self.config.min_entry_score
