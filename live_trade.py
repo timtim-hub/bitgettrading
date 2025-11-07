@@ -804,16 +804,52 @@ class LiveTrader:
                                 # 🚨 CRITICAL: Place trailing TP with robust retry logic
                                 # Keep retrying until it succeeds or we exhaust all attempts
                                 trailing_tp_placed = False
-                                max_trailing_tp_retries = 5  # More retries for trailing TP
-                                trailing_tp_retry_delay = 2.0  # Wait longer between retries
+                                max_trailing_tp_retries = 10  # Increased retries for trailing TP
+                                trailing_tp_retry_delay = 1.0  # Wait between retries
                                 
                                 for trailing_attempt in range(max_trailing_tp_retries):
-                                    # 🎯 USE NORMAL TRAILING MODE (moving_plan + exact size)!
+                                    # 🚨 CRITICAL: ALWAYS fetch fresh price RIGHT BEFORE placing order!
+                                    # Price can move between calculation and placement, causing error 43035
+                                    try:
+                                        fresh_ticker = await self.rest_client.get_ticker(symbol)
+                                        if fresh_ticker and fresh_ticker.get("code") == "00000":
+                                            fresh_ticker_list = fresh_ticker.get("data", [])
+                                            if fresh_ticker_list and len(fresh_ticker_list) > 0:
+                                                fresh_current_price = float(fresh_ticker_list[0].get("lastPr", current_market_price))
+                                                # Recalculate trigger price with fresh price to ensure it's valid
+                                                if side == "long":
+                                                    # For long: trigger must be ≥ current price
+                                                    if fresh_current_price < take_profit_price:
+                                                        # Price hasn't reached TP yet - set trigger at TP or slightly above current
+                                                        trailing_trigger_price = max(take_profit_price, fresh_current_price * 1.001)
+                                                    else:
+                                                        # Price already at/above TP - set trigger 0.2% above current
+                                                        trailing_trigger_price = fresh_current_price * 1.002
+                                                else:  # short
+                                                    # For short: trigger must be ≤ current price
+                                                    if fresh_current_price > take_profit_price:
+                                                        # Price hasn't reached TP yet - set trigger at TP or slightly below current
+                                                        trailing_trigger_price = min(take_profit_price, fresh_current_price * 0.999)
+                                                    else:
+                                                        # Price already at/below TP - set trigger 0.2% below current
+                                                        trailing_trigger_price = fresh_current_price * 0.998
+                                                
+                                                # Round to correct precision
+                                                trailing_trigger_price = round(trailing_trigger_price, price_precision)
+                                                current_market_price = fresh_current_price  # Update for logging
+                                            else:
+                                                logger.warning(f"⚠️ [TRAILING TP] {symbol} | Could not get fresh price, using calculated trigger")
+                                        else:
+                                            logger.warning(f"⚠️ [TRAILING TP] {symbol} | Could not get fresh price, using calculated trigger")
+                                    except Exception as e:
+                                        logger.warning(f"⚠️ [TRAILING TP] {symbol} | Error fetching fresh price: {e} | Using calculated trigger")
+                                    
+                                    # 🎯 USE NORMAL TRAILING MODE (track_plan)!
                                     tp_results = await self.rest_client.place_trailing_stop_full_position(
                                         symbol=symbol,
                                         hold_side=side,  # "long" or "short"
-                                        callback_ratio=trailing_range_rate,  # LOOSE trailing (5-12%)
-                                        trigger_price=trailing_trigger_price,  # Activate at TP threshold
+                                        callback_ratio=trailing_range_rate,  # Trailing callback rate
+                                        trigger_price=trailing_trigger_price,  # Freshly calculated trigger price
                                         size=actual_position_size,  # EXACT size for full position
                                         size_precision=size_precision,
                                     )
@@ -823,7 +859,8 @@ class LiveTrader:
                                         logger.info(
                                             f"✅ [TRAILING TP PLACED] {symbol} | "
                                             f"Order ID: {tp_results.get('data', {}).get('orderId', 'N/A')} | "
-                                            f"Attempt: {trailing_attempt + 1}/{max_trailing_tp_retries}"
+                                            f"Attempt: {trailing_attempt + 1}/{max_trailing_tp_retries} | "
+                                            f"Trigger: ${trailing_trigger_price:.4f} | Current: ${current_market_price:.4f}"
                                         )
                                         trailing_tp_placed = True
                                         break  # Success! Exit retry loop
@@ -844,52 +881,16 @@ class LiveTrader:
                                                 continue
                                         # Check for "trigger price should be ≥ current market price" error (43035)
                                         elif code == "43035" or "trigger price should be" in str(msg).lower():
-                                            # 🚨 CRITICAL: Fetch fresh current market price and recalculate trigger price
+                                            # 🚨 CRITICAL: Price moved! Wait a bit and retry with fresh price
                                             logger.warning(
                                                 f"⚠️ [TRAILING TP ERROR 43035] {symbol} | "
                                                 f"Attempt {trailing_attempt + 1}/{max_trailing_tp_retries} | "
-                                                f"Trigger price too low - fetching fresh market price and recalculating..."
+                                                f"Trigger price (${trailing_trigger_price:.4f}) invalid - price moved! | "
+                                                f"Will fetch fresh price and retry..."
                                             )
-                                            try:
-                                                # Fetch fresh ticker data
-                                                ticker_data = await self.rest_client.get_ticker(symbol)
-                                                if ticker_data and ticker_data.get("code") == "00000":
-                                                    ticker_list = ticker_data.get("data", [])
-                                                    if ticker_list and len(ticker_list) > 0:
-                                                        fresh_current_price = float(ticker_list[0].get("lastPr", current_market_price))
-                                                        # Recalculate trigger price with fresh price
-                                                        if side == "long":
-                                                            trailing_trigger_price = max(take_profit_price, fresh_current_price * 1.001)  # 0.1% above
-                                                        else:  # short
-                                                            trailing_trigger_price = min(take_profit_price, fresh_current_price * 0.999)  # 0.1% below
-                                                        logger.info(
-                                                            f"🔄 [TRAILING TP RECALC] {symbol} | "
-                                                            f"Fresh Price: ${fresh_current_price:.4f} | "
-                                                            f"New Trigger: ${trailing_trigger_price:.4f}"
-                                                        )
-                                                    else:
-                                                        # If can't get fresh price, just increase/decrease trigger price
-                                                        if side == "long":
-                                                            trailing_trigger_price = trailing_trigger_price * 1.001  # Increase by 0.1%
-                                                        else:  # short
-                                                            trailing_trigger_price = trailing_trigger_price * 0.999  # Decrease by 0.1%
-                                                else:
-                                                    # If can't get fresh price, just increase/decrease trigger price
-                                                    if side == "long":
-                                                        trailing_trigger_price = trailing_trigger_price * 1.001  # Increase by 0.1%
-                                                    else:  # short
-                                                        trailing_trigger_price = trailing_trigger_price * 0.999  # Decrease by 0.1%
-                                            except Exception as e:
-                                                logger.warning(f"⚠️ [PRICE FETCH ERROR] {symbol} | Error: {e} | Adjusting trigger price")
-                                                # If can't get fresh price, just increase/decrease trigger price
-                                                if side == "long":
-                                                    trailing_trigger_price = trailing_trigger_price * 1.001  # Increase by 0.1%
-                                                else:  # short
-                                                    trailing_trigger_price = trailing_trigger_price * 0.999  # Decrease by 0.1%
-                                            
                                             if trailing_attempt < max_trailing_tp_retries - 1:
-                                                await asyncio.sleep(1.0)  # Short wait before retry
-                                                continue
+                                                await asyncio.sleep(0.5)  # Short wait for price to stabilize
+                                                continue  # Retry with fresh price (fetched at start of loop)
                                         else:
                                             logger.error(
                                                 f"❌ [TRAILING TP FAILED] {symbol} | "
