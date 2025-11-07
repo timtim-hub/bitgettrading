@@ -133,40 +133,40 @@ class RegimeDetector:
         """
         if regime == MarketRegime.TRENDING:
             return {
-                "stop_loss_pct": 0.15,      # TIGHTER: 15% capital (0.3% price @ 50x) - prevent liquidations!
-                "take_profit_pct": 0.20,    # OPTIMIZED: 20% capital (0.4% price @ 50x)
-                "trailing_stop_pct": 0.04,  # OPTIMIZED: 4% capital (0.08% price @ 50x)
+                "stop_loss_pct": 0.15,      # 15% capital (0.6% price @ 25x) - SAFER, fewer liquidations!
+                "take_profit_pct": 0.20,    # 20% capital (0.8% price @ 25x)
+                "trailing_stop_pct": 0.04,  # 4% capital (0.16% price @ 25x)
                 "position_size_multiplier": 1.5,  # 50% larger for trending (was 1.2)
             }
         
         elif regime == MarketRegime.RANGING:
             return {
-                "stop_loss_pct": 0.15,      # TIGHTER: 15% capital (prevent liquidations!)
-                "take_profit_pct": 0.10,    # OPTIMIZED: 10% in ranging (tighter TP)
-                "trailing_stop_pct": 0.04,  # OPTIMIZED: Same 4% trailing
+                "stop_loss_pct": 0.15,      # 15% capital (0.6% price @ 25x) - prevent liquidations!
+                "take_profit_pct": 0.10,    # 10% in ranging (0.4% price @ 25x) - tighter TP
+                "trailing_stop_pct": 0.04,  # 4% trailing (0.16% price @ 25x)
                 "position_size_multiplier": 1.0,  # Normal size for ranging (was 0.8)
             }
         
         elif regime == MarketRegime.BREAKOUT:
             return {
-                "stop_loss_pct": 0.15,      # TIGHTER: 15% capital (prevent liquidations!)
-                "take_profit_pct": 0.25,    # OPTIMIZED: 25% for breakouts (high potential)
-                "trailing_stop_pct": 0.04,  # OPTIMIZED: Same 4% trailing
+                "stop_loss_pct": 0.15,      # 15% capital (0.6% price @ 25x) - prevent liquidations!
+                "take_profit_pct": 0.25,    # 25% for breakouts (1.0% price @ 25x) - high potential
+                "trailing_stop_pct": 0.04,  # 4% trailing (0.16% price @ 25x)
                 "position_size_multiplier": 1.3,  # 30% larger for breakouts (high conviction)
             }
         
         elif regime == MarketRegime.VOLATILE:
             return {
-                "stop_loss_pct": 0.15,      # TIGHTER: 15% capital (prevent liquidations!)
-                "take_profit_pct": 0.15,    # OPTIMIZED: 15% in volatile (was 8%)
-                "trailing_stop_pct": 0.04,  # OPTIMIZED: Same 4% trailing
-                "position_size_multiplier": 0.8,  # 20% smaller in volatile (not 40%) (risk reduction)
+                "stop_loss_pct": 0.15,      # 15% capital (0.6% price @ 25x) - prevent liquidations!
+                "take_profit_pct": 0.15,    # 15% in volatile (0.6% price @ 25x)
+                "trailing_stop_pct": 0.04,  # 4% trailing (0.16% price @ 25x)
+                "position_size_multiplier": 0.8,  # 20% smaller in volatile (risk reduction)
             }
         
         else:  # Default
             return {
-                "stop_loss_pct": 0.15,      # TIGHTER: 15% capital for all regimes (prevent liquidations!)
-                "take_profit_pct": 0.20,    # OPTIMIZED: 20% default
+                "stop_loss_pct": 0.15,      # 15% capital (0.6% price @ 25x) - prevent liquidations!
+                "take_profit_pct": 0.20,    # 20% default (0.8% price @ 25x)
                 "trailing_stop_pct": 0.04,  # OPTIMIZED: Same 4% trailing
                 "position_size_multiplier": 1.0,
             }

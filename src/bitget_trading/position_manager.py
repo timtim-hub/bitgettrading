@@ -28,10 +28,10 @@ class Position:
     lowest_price: float = 0.0   # For short positions
     
     # OPTIMIZED for ultra-short-term scalping with fees in mind
-    # With 50x leverage + 0.04% round-trip fees
-    trailing_stop_pct: float = 0.04  # 4% trailing from peak (0.08% price @ 50x)
-    stop_loss_pct: float = 0.15   # 15% hard stop-loss (0.3% price @ 50x) - TIGHTER to prevent liquidations!
-    take_profit_pct: float = 0.20  # 20% take-profit (0.4% price @ 50x) - let winners run!
+    # With 25x leverage + 0.04% round-trip fees (SAFER than 50x!)
+    trailing_stop_pct: float = 0.04  # 4% trailing from peak (0.16% price @ 25x)
+    stop_loss_pct: float = 0.15   # 15% hard stop-loss (0.6% price @ 25x) - MORE ROOM, fewer liquidations!
+    take_profit_pct: float = 0.20  # 20% take-profit (0.8% price @ 25x) - let winners run!
     
     # Regime info
     regime: str = "ranging"  # Market regime at entry

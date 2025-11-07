@@ -43,8 +43,8 @@ class LiveTrader:
         secret_key: str,
         passphrase: str,
         initial_capital: float = 50.0,
-        leverage: int = 50,
-        position_size_pct: float = 0.10,
+        leverage: int = 25,  # REDUCED to 25x for safety (was 50x) - prevents liquidations!
+        position_size_pct: float = 0.20,  # DOUBLED to 0.20 (was 0.10) to maintain same exposure
         max_positions: int = 10,
         daily_loss_limit: float = 0.15,
         paper_mode: bool = True,
@@ -263,15 +263,15 @@ class LiveTrader:
                     
                     # 🚨 CRITICAL: Place EXCHANGE-SIDE stop-loss/take-profit orders!
                     # These execute on Bitget's servers instantly when price hits trigger
-                    # With 50x leverage, this prevents liquidation from bot-side delays
+                    # With 25x leverage, this prevents liquidation from bot-side delays
                     
                     # Wait a moment for order to fill
                     await asyncio.sleep(0.5)
                     
-                    # Calculate TP/SL prices (15% capital = 0.3% price @ 50x)
-                    # TIGHTER for liquidation protection!
-                    sl_price_pct = 0.003  # 0.3% price move = 15% capital @ 50x (TIGHTER!)
-                    tp_price_pct = 0.004  # 0.4% price move = 20% capital @ 50x
+                    # Calculate TP/SL prices (15% capital = 0.6% price @ 25x)
+                    # Wider stops for 25x = MORE ROOM, fewer liquidations!
+                    sl_price_pct = 0.006  # 0.6% price move = 15% capital @ 25x
+                    tp_price_pct = 0.008  # 0.8% price move = 20% capital @ 25x
                     
                     if side == "long":
                         stop_loss_price = price * (1 - sl_price_pct)
@@ -307,9 +307,9 @@ class LiveTrader:
                         
                         if tpsl_order and tpsl_order.get("code") == "00000":
                             logger.info(
-                                f"🛡️  [EXCHANGE-SIDE TP/SL] {symbol} | "
-                                f"SL: ${stop_loss_price:.4f} (-15% capital / 0.3% price) | "
-                                f"TP: ${take_profit_price:.4f} (+20% capital / 0.4% price)"
+                                f"🛡️  [EXCHANGE-SIDE TP/SL] {symbol} @ 25x | "
+                                f"SL: ${stop_loss_price:.4f} (-15% capital / 0.6% price) | "
+                                f"TP: ${take_profit_price:.4f} (+20% capital / 0.8% price)"
                             )
                         else:
                             logger.warning(
@@ -346,7 +346,7 @@ class LiveTrader:
                 state = self.state_manager.get_state(symbol)
                 
                 # CRITICAL: Use MARKET orders for exits to guarantee fill!
-                # With 50x leverage, can't risk limit not filling and getting liquidated
+                # With 25x leverage, can't risk limit not filling and getting liquidated
                 order = await self.rest_client.place_order(
                     symbol=symbol,
                     side=side,
@@ -666,14 +666,14 @@ class LiveTrader:
     async def trading_loop(self) -> None:
         """
         HOLD-AND-FILL trading loop (NO REBALANCING!):
-        - FAST: Check exits every 2-3 seconds (TP/SL/trailing only)
-        - SLOW: Look for new entries every 60 seconds when slots available
+        - ULTRA-FAST: Check exits every 50ms (0.05s) - TP/SL/trailing only
+        - FAST: Look for new entries every 5 seconds when slots available
         
         KEY: Hold winners until TP/SL hit. No churning = minimal fees!
         """
         iteration = 0
         last_entry_check_time = datetime.now()
-        entry_check_interval_sec = 60  # Check for new entries every 60 seconds
+        entry_check_interval_sec = 5  # Check for new entries every 5 seconds (SCALPING SPEED!)
         position_check_interval_sec = 0.05  # Check exits every 0.05 seconds (50ms - LIGHTNING FAST!)
 
         while self.running:
@@ -832,13 +832,14 @@ class LiveTrader:
                     "asks": [[mid + spread/2, 1000], [mid + spread, 500]],
                 })
         
-        # CRITICAL: Accumulate 180 seconds (3 minutes) for FULL multi-timeframe analysis
-        # This ensures ALL timeframes (1s, 3s, 5s, 10s, 15s, 30s, 1min, 3min) have complete data
-        logger.info("⏳ Accumulating price history (180 seconds for FULL multi-timeframe confluence)...")
+        # CRITICAL: Accumulate 60 seconds for FAST startup (1 minute)
+        # This covers ultra-short-term timeframes (1s, 3s, 5s, 10s, 15s, 30s, 1min)
+        # For SCALPING (seconds to minutes), we don't need 3+ minute history!
+        logger.info("⏳ Accumulating price history (60 seconds for FAST startup)...")
         logger.info(f"   💪 Using all device power for 100 symbols in parallel...")
-        logger.info(f"   🎯 Why 3 minutes? Complete 3-minute trend context = better signals!")
+        logger.info(f"   ⚡ SCALPING MODE: 1 minute is enough for ultra-short-term timeframes!")
         
-        for i in range(180):  # 180 iterations = 3 minutes
+        for i in range(60):  # 60 iterations = 1 minute (FAST!)
             await asyncio.sleep(1)
             # Fetch ALL tickers in ONE API call (Bitget returns all symbols at once - FAST!)
             ticker_dict = await self.universe_manager.fetch_tickers()
@@ -848,12 +849,12 @@ class LiveTrader:
                 if symbol in self.symbols:
                     self.state_manager.update_ticker(symbol, ticker)
             
-            # Log progress every 30 seconds
-            if (i + 1) % 30 == 0:
+            # Log progress every 15 seconds
+            if (i + 1) % 15 == 0:
                 active_count = len([s for s in self.symbols if s in ticker_dict])
-                logger.info(f"   📊 {i+1}/180s complete ({(i+1)/180:.0%}) | {active_count} symbols active")
+                logger.info(f"   📊 {i+1}/60s complete ({(i+1)/60:.0%}) | {active_count} symbols active")
 
-        logger.info("✅ 180 seconds of data ready! ALL timeframes fully loaded. Starting trading...\n")
+        logger.info("✅ 60 seconds of data ready! Ultra-short-term timeframes loaded. Starting trading...\n")
 
         # Start trading
         await self.trading_loop()
@@ -961,8 +962,8 @@ async def main() -> None:
         secret_key=secret_key,
         passphrase=passphrase,
         initial_capital=initial_capital,  # USE ACTUAL BALANCE!
-        leverage=int(os.getenv("LEVERAGE", "50")),
-        position_size_pct=float(os.getenv("POSITION_SIZE_PCT", "0.10")),
+        leverage=int(os.getenv("LEVERAGE", "25")),  # 25x for safety (was 50x)
+        position_size_pct=float(os.getenv("POSITION_SIZE_PCT", "0.20")),  # Doubled (was 0.10)
         max_positions=int(os.getenv("MAX_POSITIONS", "10")),
         daily_loss_limit=float(os.getenv("DAILY_LOSS_LIMIT", "0.15")),
         paper_mode=paper_mode,
