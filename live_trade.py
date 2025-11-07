@@ -219,56 +219,32 @@ class LiveTrader:
                     except Exception:
                         pass  # May already be set
                 
-                # SMART LIMIT ORDERS: Place 2bps INSIDE spread for:
-                # - Better entry price (0.02% improvement)
-                # - High fill probability
-                # - Guaranteed maker fee (0.02% vs 0.06%)
-                state = self.state_manager.get_state(symbol)
-                if state and state.bid_price > 0 and state.ask_price > 0:
-                    if side == "long":
-                        # Buy 2bps BELOW ask = better price + likely fill
-                        limit_price = state.ask_price * 0.9998  # 0.02% better
-                    else:  # short
-                        # Sell 2bps ABOVE bid = better price + likely fill
-                        limit_price = state.bid_price * 1.0002  # 0.02% better
-                else:
-                    limit_price = price
+                # 🚨 CRITICAL: Use MARKET orders for entries to GUARANTEE fills!
+                # Problem: LIMIT orders can get stuck if price moves away
+                # Solution: MARKET orders = instant fill, no stuck orders
+                # Trade-off: 0.06% taker fee instead of 0.02% maker fee
+                # BUT: No stuck orders blocking capital = worth the extra 0.04% fee!
                 
-                # CRITICAL: Round to Bitget's required price precision
-                contract_info = self.universe_manager.get_contract_info(symbol)
-                if contract_info:
-                    price_place = contract_info.get("price_place", 2)
-                    limit_price = round(limit_price, price_place)
-                else:
-                    # Default rounding based on price magnitude
-                    if limit_price > 1000:
-                        limit_price = round(limit_price, 1)  # BTC: 0.1 precision
-                    elif limit_price > 10:
-                        limit_price = round(limit_price, 2)  # ETH: 0.01 precision
-                    else:
-                        limit_price = round(limit_price, 4)  # Altcoins: 0.0001 precision
-                
-                # Place LIMIT order AT best price = instant fill + maker fee!
                 order_side = "buy" if side == "long" else "sell"
                 order = await self.rest_client.place_order(
                     symbol=symbol,
                     side=order_side,
-                    order_type="limit",  # LIMIT at bid/ask = maker fee + instant fill!
+                    order_type="market",  # MARKET = GUARANTEED FILL! No stuck orders!
                     size=size,
-                    price=limit_price,
                 )
 
                 if order and order.get("code") == "00000":
+                    order_id = order.get('data', {}).get('orderId', 'N/A')
                     logger.info(
-                        f"✅ [LIVE] {side.upper()} {symbol} | Size: {size:.4f} | "
-                        f"Order: {order.get('data', {}).get('orderId', 'N/A')}"
+                        f"✅ [LIVE] MARKET {side.upper()} {symbol} | Size: {size:.4f} | "
+                        f"Order ID: {order_id} | Status: FILLED (market order)"
                     )
                     
                     # 🚨 CRITICAL: Place EXCHANGE-SIDE stop-loss/take-profit orders!
                     # These execute on Bitget's servers instantly when price hits trigger
                     # With 25x leverage, this prevents liquidation from bot-side delays
                     
-                    # Wait a moment for order to fill
+                    # Wait a moment for order to fully process on exchange
                     await asyncio.sleep(0.5)
                     
                     # Calculate TP/SL prices from regime_params (SINGLE SOURCE OF TRUTH!)
