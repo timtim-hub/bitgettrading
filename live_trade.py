@@ -896,37 +896,25 @@ class LiveTrader:
             if current_price == 0:
                 continue
 
-            # Update position price and trailing stop levels
+            # Update position price and trailing stop levels (for tracking only)
             self.position_manager.update_position_price(symbol, current_price)
-
-            # Check exit conditions (stop-loss, take-profit, trailing stop)
-            should_close, reason = self.position_manager.check_exit_conditions(
-                symbol, current_price
-            )
             
             positions_checked += 1
 
-            if should_close:
-                position = self.position_manager.get_position(symbol)
-                if position:
-                    pnl_pct = position.unrealized_pnl / position.capital * 100 if position.capital > 0 else 0
-                    
-                    if "STOP-LOSS" in reason:
-                        logger.warning(
-                            f"🛑 {reason} for {symbol} | PnL: {pnl_pct:.2f}%"
-                        )
-                    elif "TRAILING" in reason:
-                        logger.info(
-                            f"📈 {reason} for {symbol} | PnL: {pnl_pct:.2f}% | Peak: {position.peak_pnl_pct:.2f}%"
-                        )
-                    else:
-                        logger.info(
-                            f"💰 {reason} for {symbol} | PnL: {pnl_pct:.2f}%"
-                        )
-                
-                # Pass the reason to close_position for comprehensive logging
-                await self.close_position(symbol, exit_reason=reason)
-                continue
+            # 🚨 CRITICAL: DISABLED bot-side exit checking!
+            # We now use EXCHANGE-SIDE TP/SL orders (static SL + trailing TP via moving_plan)
+            # The exchange will automatically close positions when TP/SL triggers
+            # We only need to:
+            # 1. Update prices for tracking (done above)
+            # 2. Detect when exchange closes positions (done in sync logic above, lines 847-867)
+            # 
+            # Bot-side exit checking was causing premature closes before exchange TP/SL could trigger!
+            # 
+            # OLD CODE (DISABLED):
+            # should_close, reason = self.position_manager.check_exit_conditions(symbol, current_price)
+            # if should_close:
+            #     await self.close_position(symbol, exit_reason=reason)
+            #     continue
 
     async def execute_trades(self, allocations: list[dict[str, Any]]) -> None:
         """Execute trades based on allocations."""
