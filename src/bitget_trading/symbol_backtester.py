@@ -85,17 +85,17 @@ class SymbolBacktester:
             BacktestResult or None if insufficient data
         """
         try:
-            # 🚀 ULTRA-FAST OPTIMIZATION: Use 1H candles for maximum speed
-            # 1H candles = 1 per hour, 24 per day
-            # 50 * 1H = 50 hours = ~2 days (more than enough for 1-day lookback)
-            # This is MUCH faster than 15m (50 candles vs 200 candles = 4x fewer to process!)
+            # 🚀 CORRECT: Use 1m candles for ultra-short-term scalping strategy
+            # Our strategy operates on 1s, 3s, 5s, 10s, 15s, 30s, 1min timeframes
+            # Using 1m candles is the minimum granularity that makes sense
+            # 200 * 1m = 200 minutes = ~3.3 hours (enough for 1-day lookback with parallel processing)
             all_candles = []
             
-            # Fetch 1H candles (ultra-fast: 50 candles = ~2 days)
+            # Fetch 1m candles (correct for scalping strategy)
             response = await self.rest_client.get_historical_candles(
                 symbol=symbol,
-                granularity="1H",  # Changed to 1H for maximum speed (4x fewer candles!)
-                limit=50,  # 50 * 1H = 50 hours = ~2 days of data (plenty for 1-day lookback)
+                granularity="1m",  # 1-minute candles for scalping strategy
+                limit=200,  # 200 * 1m = 200 minutes = ~3.3 hours of data
             )
             
             if response.get("code") != "00000":
