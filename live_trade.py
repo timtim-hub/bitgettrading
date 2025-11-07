@@ -2149,13 +2149,13 @@ class LiveTrader:
         """
         HOLD-AND-FILL trading loop (NO REBALANCING!):
         - HYPER-FAST: Check exits every 5ms (0.005s) - TP/SL/trailing only - 10x FASTER!
-        - FAST: Look for new entries every 5 seconds when slots available
+        - INSTANT ENTRY: Check for new entries every 0.1s (100ms) when slots available - PLACE TRADES IMMEDIATELY!
         
         KEY: Hold winners until TP/SL hit. No churning = minimal fees!
         """
         iteration = 0
         last_entry_check_time = datetime.now()
-        entry_check_interval_sec = 5  # Check for new entries every 5 seconds (SCALPING SPEED!)
+        entry_check_interval_sec = 0.1  # Check for new entries every 0.1 seconds (100ms - INSTANT SIGNAL RESPONSE!)
         position_check_interval_sec = 0.005  # Check exits every 0.005 seconds (5ms - HYPER FAST! 10x faster!)
 
         logger.info("🚀 [TRADING LOOP] Starting trading loop...")
@@ -2220,7 +2220,8 @@ class LiveTrader:
 
                 # Daily loss limit check removed - let positions use full SL (25%)
 
-                # SOMETIMES: Look for new entries ONLY if we have empty slots (NO REBALANCING!)
+                # 🚀 INSTANT ENTRY: Check for new entries IMMEDIATELY when slots available (NO WAITING!)
+                # This ensures we place trades as soon as signals come in
                 available_slots = self.max_positions - len(self.position_manager.positions)
                 time_since_entry_check = (datetime.now() - last_entry_check_time).total_seconds()
                 should_check_entries = time_since_entry_check >= entry_check_interval_sec
@@ -2232,12 +2233,13 @@ class LiveTrader:
                     logger.info(  # Changed to info so it shows up
                         f"[LOOP] Iteration {loop_count} | "
                         f"Available slots: {available_slots} | "
-                        f"Time since entry check: {time_since_entry_check:.1f}s | "
+                        f"Time since entry check: {time_since_entry_check:.3f}s | "
                         f"Should check: {should_check_entries} | "
                         f"Positions: {len(self.position_manager.positions)}/{self.max_positions}"
                     )
 
-                if should_check_entries and available_slots > 0:
+                # 🚀 INSTANT ENTRY: Check immediately when slots available (don't wait for interval)
+                if available_slots > 0 and should_check_entries:
                     iteration += 1
                     last_entry_check_time = datetime.now()
                     

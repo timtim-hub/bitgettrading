@@ -110,16 +110,16 @@ class BacktestScheduler:
             "duration_sec": 0.0,
         }
         
-        # 🚀 OPTIMIZATION: Skip symbols with recent backtest data (within last 2 hours)
+        # 🚀 OPTIMIZATION: Skip symbols with recent backtest data (within last 72 hours)
         # This avoids re-backtesting symbols that were just tested
         symbols_to_backtest = []
         skip_count = 0
         for symbol in self.symbols:
             perf = self.performance_tracker.get_performance(symbol)
             if perf and perf.last_backtest:
-                # Check if backtest is recent (within 2 hours)
+                # Check if backtest is recent (within 72 hours = 3 days)
                 time_since_backtest = (datetime.now() - perf.last_backtest).total_seconds() / 3600
-                if time_since_backtest < 2.0:  # Skip if backtested within last 2 hours
+                if time_since_backtest < 72.0:  # Skip if backtested within last 72 hours
                     skip_count += 1
                     continue
             symbols_to_backtest.append(symbol)
@@ -127,7 +127,7 @@ class BacktestScheduler:
         if skip_count > 0:
             logger.info(
                 f"⏭️ [BACKTEST] Skipping {skip_count} symbols with recent backtest data "
-                f"(backtested within last 2 hours)"
+                f"(backtested within last 72 hours)"
             )
         
         # Process symbols in batches
@@ -143,7 +143,7 @@ class BacktestScheduler:
                 f"{len(batch)} symbols"
             )
             
-            # Process batch in parallel
+            # Process batch in parallel (with rate limiting to avoid 429 errors)
             tasks = [
                 self.backtester.backtest_symbol(
                     symbol=symbol,
@@ -154,6 +154,11 @@ class BacktestScheduler:
             ]
             
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # 🚀 RATE LIMITING: Add delay between batches to avoid 429 errors
+            # Wait 0.5 seconds between batches to slow down backtesting
+            if batch_idx < len(batches) - 1:  # Don't wait after last batch
+                await asyncio.sleep(0.5)
             
             # Process results
             for symbol, result in zip(batch, batch_results):
@@ -205,10 +210,30 @@ class BacktestScheduler:
             f"Symbols: {len(self.symbols)}"
         )
         
-        # Run initial backtest immediately (synchronously to ensure it completes)
-        logger.info("🔄 [BACKTEST] Running initial backtest for all tokens...")
-        await self.run_backtest()
-        logger.info("✅ [BACKTEST] Initial backtest completed! Stats file generated at: data/symbol_performance_stats.txt")
+        # 🚀 OPTIMIZATION: Skip initial backtest if recent data exists (within 72 hours)
+        # Check if we have recent backtest data for any symbols
+        symbols_with_recent_data = 0
+        for symbol in self.symbols:
+            perf = self.performance_tracker.get_performance(symbol)
+            if perf and perf.last_backtest:
+                time_since_backtest = (datetime.now() - perf.last_backtest).total_seconds() / 3600
+                if time_since_backtest < 72.0:
+                    symbols_with_recent_data += 1
+        
+        if symbols_with_recent_data > 0:
+            logger.info(
+                f"⏭️ [BACKTEST] Skipping initial backtest - {symbols_with_recent_data}/{len(self.symbols)} "
+                f"symbols have recent data (within 72 hours). Starting trading immediately!"
+            )
+            logger.info(
+                f"📊 [BACKTEST] Next backtest will run in {self.interval_hours} hours "
+                f"(or when symbols need fresh data)"
+            )
+        else:
+            # Run initial backtest only if no recent data exists
+            logger.info("🔄 [BACKTEST] Running initial backtest for all tokens (no recent data found)...")
+            await self.run_backtest()
+            logger.info("✅ [BACKTEST] Initial backtest completed! Stats file generated at: data/symbol_performance_stats.txt")
         
         # Schedule periodic backtests
         while self.running:
