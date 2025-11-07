@@ -93,7 +93,7 @@ class LiveTrader:
 
         Criteria:
         - Total open positions < self.max_positions
-        - Daily loss limit not breached (equity drawdown)
+        - Daily loss limit DISABLED (user requested removal for maximum profit!)
         """
         # Max positions check
         if len(self.position_manager.positions) >= self.max_positions:
@@ -104,21 +104,10 @@ class LiveTrader:
             )
             return False
 
-        # Daily loss limit check (optional safety)
-        try:
-            if self.daily_loss_limit > 0:
-                drawdown = (self.initial_equity - self.equity) / max(self.initial_equity, 1e-9)
-                if drawdown >= self.daily_loss_limit:
-                    logger.warning(
-                        "daily_loss_limit_reached",
-                        drawdown=f"{drawdown*100:.2f}%",
-                        limit=f"{self.daily_loss_limit*100:.2f}%",
-                    )
-                    return False
-        except Exception:
-            # If equity not initialized yet, allow
-            pass
-
+        # 🚨 DAILY LOSS LIMIT DISABLED BY USER REQUEST!
+        # User priority: MAXIMUM PROFIT > risk limits
+        # We rely on exchange-side stop-loss for protection
+        
         return True
 
     async def verify_api_credentials(self) -> bool:
@@ -651,13 +640,13 @@ class LiveTrader:
                                 trailing_tp_retry_delay = 2.0  # Wait longer between retries
                                 
                                 for trailing_attempt in range(max_trailing_tp_retries):
-                                    tp_results = await self.rest_client.place_trailing_take_profit_order(
+                                    # 🎯 USE NEW GESAMTER TP/SL MODE (track_plan + tradeSide=close)!
+                                    tp_side = "sell" if side == "long" else "buy"  # Opposite side to close
+                                    tp_results = await self.rest_client.place_trailing_stop_full_position(
                                         symbol=symbol,
-                                        hold_side=side,
-                                        size=actual_position_size,
-                                        range_rate=trailing_range_rate,  # 1% trailing distance
-                                        trigger_price=trailing_trigger_price,  # Activate at TP threshold (Rückrufpreis)
-                                        size_precision=size_precision,
+                                        side=tp_side,  # "sell" to close long, "buy" to close short
+                                        callback_ratio=trailing_range_rate,  # 1.5% trailing distance
+                                        trigger_price=trailing_trigger_price,  # Activate at TP threshold
                                     )
                                     
                                     # Verify trailing TP was placed successfully
@@ -809,13 +798,12 @@ class LiveTrader:
                                         logger.info(f"🔄 [TP/SL RETRY] {symbol} | Retrying trailing TP order...")
                                         try:
                                             trailing_range_rate = regime_params.get("trailing_stop_pct", 0.015) if regime_params else 0.015  # 1.5% callback rate (Rückrufquote)
-                                            retry_tp = await self.rest_client.place_trailing_take_profit_order(
+                                            tp_side = "sell" if side == "long" else "buy"  # Opposite side to close
+                                            retry_tp = await self.rest_client.place_trailing_stop_full_position(
                                                 symbol=symbol,
-                                                hold_side=side,
-                                                size=actual_position_size,
-                                                range_rate=trailing_range_rate,
+                                                side=tp_side,
+                                                callback_ratio=trailing_range_rate,
                                                 trigger_price=take_profit_price,
-                                                size_precision=size_precision,
                                             )
                                             retry_tp_code = retry_tp.get('code', 'N/A') if retry_tp else 'N/A'
                                             if retry_tp_code == "00000":
@@ -853,15 +841,14 @@ class LiveTrader:
                                     )
                                     retry_sl_code = retry_sl_results.get('sl', {}).get('code', 'N/A') if retry_sl_results and retry_sl_results.get('sl') else 'N/A'
                                     
-                                    # Retry trailing TP
+                                    # Retry trailing TP using GESAMTER TP/SL mode
                                     trailing_range_rate = regime_params.get("trailing_stop_pct", 0.01) if regime_params else 0.01
-                                    retry_tp_results = await self.rest_client.place_trailing_take_profit_order(
+                                    tp_side = "sell" if side == "long" else "buy"  # Opposite side to close
+                                    retry_tp_results = await self.rest_client.place_trailing_stop_full_position(
                                         symbol=symbol,
-                                        hold_side=side,
-                                        size=actual_position_size,
-                                        range_rate=trailing_range_rate,
+                                        side=tp_side,
+                                        callback_ratio=trailing_range_rate,
                                         trigger_price=take_profit_price,
-                                        size_precision=size_precision,
                                     )
                                     retry_tp_code = retry_tp_results.get('code', 'N/A') if retry_tp_results else 'N/A'
                                     

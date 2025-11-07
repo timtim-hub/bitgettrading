@@ -800,14 +800,14 @@ class BitgetRestClient:
         """
         Place exchange-side trailing take profit order using Bitget's moving_plan API.
 
-        🚨 CRITICAL: This uses planType="moving_plan" with EXACT position size!
-        - size parameter IS REQUIRED (API error 40019 if omitted) ✅
-        - size=0 → API rejects with error 43011 ❌
-        - size MUST EXACTLY match current position for "Gesamter TP/SL" display in app
+        🚨 WARNING: This uses place-tpsl-order endpoint which may show as "Partial" in Bitget app!
         
-        The Bitget app displays:
-        - "Gesamter TP/SL" (Entire) → when size EXACTLY matches position
-        - "Teilweise TP/SL" (Partial) → when size doesn't match or is less than position
+        For TRUE "Gesamter TP/SL" (Full) mode, use place_trailing_stop_full_position() instead!
+        
+        This method uses:
+        - Endpoint: /api/v2/mix/order/place-tpsl-order
+        - planType: "moving_plan"
+        - May display as "Teilweise TP/SL" (Partial) in app even with exact size
         
         The trailing take profit will automatically adjust as price moves in your favor!
 
@@ -990,6 +990,94 @@ class BitgetRestClient:
 
         response = await self._request("GET", endpoint, params=params)
         return response
+
+    async def place_trailing_stop_full_position(
+        self,
+        symbol: str,
+        side: str,  # "buy" (close short) or "sell" (close long)
+        callback_ratio: float,  # Callback rate as decimal (e.g., 0.015 = 1.5%)
+        trigger_price: float,  # Activation price
+        product_type: str = "usdt-futures",
+    ) -> dict[str, Any]:
+        """
+        Place FULL POSITION trailing stop using place-plan-order endpoint.
+        
+        🎯 THIS IS THE "GESAMTER TP/SL" (ENTIRE TP/SL) MODE!
+        
+        This uses a DIFFERENT API endpoint than place-tpsl-order:
+        - Endpoint: /api/v2/mix/order/place-plan-order
+        - planType: "track_plan" (NOT "moving_plan"!)
+        - tradeSide: "close" (closes position)
+        - NO size parameter = applies to ENTIRE position!
+        
+        Args:
+            symbol: Trading pair
+            side: "buy" (close short) or "sell" (close long)
+            callback_ratio: Trailing callback rate as decimal (e.g., 0.015 = 1.5%)
+            trigger_price: Activation price
+            product_type: Product type
+            
+        Returns:
+            API response
+        """
+        endpoint = "/api/v2/mix/order/place-plan-order"
+        
+        # Format callback ratio as percentage string with 2 decimals
+        formatted_callback = f"{callback_ratio * 100:.2f}"
+        
+        data = {
+            "symbol": symbol,
+            "productType": product_type,
+            "marginMode": "isolated",
+            "marginCoin": "USDT",
+            "planType": "track_plan",  # 🚨 CRITICAL: track_plan for full position trailing!
+            "triggerPrice": str(trigger_price),
+            "triggerType": "mark_price",
+            "side": side,  # "buy" or "sell"
+            "tradeSide": "close",  # 🚨 CRITICAL: "close" = close position (Gesamter TP/SL)!
+            "orderType": "market",  # Execute as market order when triggered
+            "callbackRatio": formatted_callback,  # Trailing callback rate as percentage
+            # 🚨 NO size parameter = applies to ENTIRE position!
+        }
+        
+        logger.info(
+            f"🎯 [GESAMTER TP/SL - FULL POSITION TRAILING] {symbol} | "
+            f"Endpoint: place-plan-order | "
+            f"planType=track_plan | "
+            f"tradeSide=close (ENTIRE position!) | "
+            f"side={side} | "
+            f"callback_ratio={callback_ratio*100:.2f}% → API: {formatted_callback} | "
+            f"trigger_price={trigger_price}"
+        )
+        
+        try:
+            response = await self._request("POST", endpoint, data=data)
+            code = response.get("code", "N/A")
+            msg = response.get("msg", "N/A")
+            data_resp = response.get("data", {})
+            
+            if code == "00000":
+                logger.info(
+                    f"✅ [GESAMTER TP/SL PLACED!] {symbol} | "
+                    f"track_plan with tradeSide=close | "
+                    f"Callback: {callback_ratio*100:.2f}% | "
+                    f"Trigger: {trigger_price} | "
+                    f"Order ID: {data_resp.get('orderId', 'N/A')} | "
+                    f"App should show 'Gesamter TP/SL' (FULL mode)!"
+                )
+            else:
+                logger.error(
+                    f"❌ [GESAMTER TP/SL FAILED] {symbol} | "
+                    f"Code: {code} | Msg: {msg}"
+                )
+            
+            return response
+        except Exception as e:
+            logger.error(
+                f"❌ [GESAMTER TP/SL EXCEPTION] {symbol} | "
+                f"Exception: {e}"
+            )
+            raise
 
     async def get_historical_candles(
         self,
