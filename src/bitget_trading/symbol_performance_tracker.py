@@ -74,10 +74,20 @@ class SymbolPerformanceTracker:
                 
                 # Convert live results
                 live_results = perf_data.get("live_results")
-                if live_results and live_results.get("last_updated"):
-                    live_results["last_updated"] = datetime.fromisoformat(
-                        live_results["last_updated"]
-                    )
+                if live_results:
+                    if isinstance(live_results, dict) and live_results.get("last_updated"):
+                        # Convert string to datetime
+                        if isinstance(live_results["last_updated"], str):
+                            live_results["last_updated"] = datetime.fromisoformat(
+                                live_results["last_updated"]
+                            )
+                        # Convert dict to LiveResult dataclass
+                        live_results = LiveResult(
+                            win_rate=live_results.get("win_rate", 0.0),
+                            total_trades=live_results.get("total_trades", 0),
+                            total_pnl=live_results.get("total_pnl", 0.0),
+                            last_updated=live_results.get("last_updated", datetime.now()),
+                        )
                 
                 # Convert last_backtest
                 last_backtest = perf_data.get("last_backtest")
@@ -114,9 +124,15 @@ class SymbolPerformanceTracker:
                 }
                 
                 # Convert live results
-                if perf.live_results:
+                if perf.live_results and isinstance(perf.live_results, LiveResult):
                     live_dict = asdict(perf.live_results)
                     if live_dict.get("last_updated"):
+                        live_dict["last_updated"] = live_dict["last_updated"].isoformat()
+                    perf_dict["live_results"] = live_dict
+                elif perf.live_results:
+                    # Already a dict
+                    live_dict = perf.live_results.copy()
+                    if live_dict.get("last_updated") and isinstance(live_dict["last_updated"], datetime):
                         live_dict["last_updated"] = live_dict["last_updated"].isoformat()
                     perf_dict["live_results"] = live_dict
                 

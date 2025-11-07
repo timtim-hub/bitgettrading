@@ -63,6 +63,10 @@ class StatsGenerator:
                 # Check if filtered
                 should_filter, reason = self.performance_tracker.should_filter_symbol(symbol)
                 if should_filter:
+                    # Token should be filtered (excluded from trading)
+                    filtered.append((symbol, perf, reason))
+                else:
+                    # Token passed filter (can be traded)
                     tier = perf.tier or "tier3"
                     if tier == "tier1":
                         tier1.append((symbol, perf))
@@ -72,8 +76,6 @@ class StatsGenerator:
                         tier4.append((symbol, perf))
                     else:
                         tier3.append((symbol, perf))
-                else:
-                    filtered.append((symbol, perf, reason))
             
             # Generate stats
             lines = []
@@ -206,9 +208,15 @@ class StatsGenerator:
         
         # Add live results if available
         if perf.live_results:
+            if isinstance(perf.live_results, dict):
+                live_win_rate = perf.live_results.get("win_rate", 0.0)
+                live_pnl = perf.live_results.get("total_pnl", 0.0)
+            else:
+                live_win_rate = perf.live_results.win_rate
+                live_pnl = perf.live_results.total_pnl
             line += (
-                f" | Live: WR {perf.live_results.win_rate:.1%} | "
-                f"PnL ${perf.live_results.total_pnl:.2f}"
+                f" | Live: WR {live_win_rate:.1%} | "
+                f"PnL ${live_pnl:.2f}"
             )
         
         # Add dynamic parameters
