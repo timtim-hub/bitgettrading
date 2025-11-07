@@ -6,6 +6,7 @@ from bitget_trading.logger import get_logger
 from bitget_trading.multi_symbol_state import MultiSymbolStateManager, SymbolState
 from bitget_trading.regime_detector import MarketRegime, RegimeDetector
 from bitget_trading.pro_trader_indicators import ProTraderIndicators, is_near_level
+from bitget_trading.technical_indicators import TechnicalIndicators
 
 logger = get_logger()
 
@@ -43,6 +44,9 @@ class EnhancedRanker:
         # NEW: PRO TRADER indicators (S/R, market structure, trade grading)
         self.pro_indicators = ProTraderIndicators()
         
+        # NEW: TECHNICAL INDICATORS (RSI, MACD, Bollinger, EMA, VWAP)
+        self.technical_indicators = TechnicalIndicators()
+        
         # NEW: BTC correlation tracking (for diversification)
         self.btc_correlations: dict[str, float] = {}
 
@@ -79,13 +83,13 @@ class EnhancedRanker:
         
         total_timeframes = len(available_timeframes)
         
-        # RELAXED: Ultra-short-term scalping needs faster signals
+        # STRICTER: Require more agreement for higher quality signals
         if total_timeframes == 1:
             required_agreement = 1  # Accept single strong signal
         elif total_timeframes == 2:
-            required_agreement = 1  # Accept 1 out of 2 (50% agreement - fast entry!)
+            required_agreement = 2  # Require 2 out of 2 (100% agreement - stricter!)
         else:
-            required_agreement = 2  # Accept 2 out of 3+ (60%+ agreement)
+            required_agreement = 3  # Require 3 out of 4+ (75%+ agreement - much stricter!)
         
         if bullish_count >= required_agreement:
             # Bullish confluence
@@ -121,7 +125,7 @@ class EnhancedRanker:
         # ULTRA-SHORT-TERM: Adjust for faster timeframes (1s-30s)
         # With 1s-30s timeframes, most moves are 0.03-0.1%
         # Target: 0.03%+ on ultra-short = scalping opportunity (1.5%+ capital @ 50x)
-        if confluence_strength < 0.0008:  # STRICTER: 0.08% average return = 2.0% capital @ 25x
+        if confluence_strength < 0.0012:  # STRICTER: 0.12% average return = 3.0% capital @ 25x
             return 0.0, "neutral", {"reason": "weak_confluence"}
         
         # 1.5. FEE-ADJUSTED FILTER: Expected profit must exceed fees
@@ -136,9 +140,9 @@ class EnhancedRanker:
         if expected_capital_return < min_expected_return:
             return 0.0, "neutral", {"reason": "profit_below_fees"}
         
-        # 2. Volume filter CHECK (MINIMAL: Just avoid dead symbols)
+        # 2. Volume filter CHECK (STRICTER: Need strong volume!)
         volume_ratio = features.get("volume_ratio", 1.0)
-        if volume_ratio < 1.5:  # STRICTER: need at least 150% of average volume
+        if volume_ratio < 2.0:  # STRICTER: need at least 200% of average volume
             return 0.0, "neutral", {"reason": "insufficient_volume"}
         
         # 3. Detect market regime
@@ -170,14 +174,14 @@ class EnhancedRanker:
         
         # 7. Liquidity score (STRICT: Need tight spreads for quality)
         spread_bps = features.get("spread_bps", 100.0)
-        if spread_bps > 40.0:  # Skip if spread > 40 bps (want tight spreads!)
+        if spread_bps > 30.0:  # Skip if spread > 30 bps (want tighter spreads!)
             return 0.0, "neutral", {"reason": "wide_spread"}
         spread_score = max(0, 1 - spread_bps / 30.0)
         
         # 8. Momentum threshold (STRICT: Need strong momentum!)
         # For quality trades, need meaningful price movement
         return_5s = features.get("return_5s", 0.0)
-        if abs(return_5s) < 0.0008 and abs(return_15s) < 0.0012:  # STRICTER: Need even stronger momentum!
+        if abs(return_5s) < 0.0012 and abs(return_15s) < 0.0018:  # STRICTER: Need even stronger momentum!
             return 0.0, "neutral", {"reason": "weak_momentum"}
         
         # 9. Funding rate bias (EXPLOIT FUNDING!)
@@ -188,7 +192,106 @@ class EnhancedRanker:
         elif direction == "short" and funding_rate > 0:  # Shorts get paid
             funding_bias = 0.2  # Boost short score
         
-        # Combine all scores
+        # 10. TECHNICAL INDICATORS (RSI, MACD, Bollinger, EMA, VWAP)
+        prices = np.array([p for _, p in state.price_history]) if state.price_history else np.array([])
+        indicator_scores = {}
+        indicator_confluence = []
+        
+        if len(prices) >= 20:
+            # Calculate RSI
+            rsi = self.technical_indicators.calculate_rsi(prices, period=14)
+            if direction == "long":
+                rsi_score = 1.0 if rsi < 30 else (0.5 if rsi < 50 else 0.0)  # Oversold = bullish
+            else:  # short
+                rsi_score = 1.0 if rsi > 70 else (0.5 if rsi > 50 else 0.0)  # Overbought = bearish
+            indicator_scores["rsi"] = rsi_score
+            if rsi_score > 0.5:
+                indicator_confluence.append("rsi")
+            
+            # Calculate MACD
+            macd_data = self.technical_indicators.calculate_macd(prices, fast_period=3, slow_period=7, signal_period=2)
+            if direction == "long":
+                macd_score = 1.0 if macd_data["is_bullish"] else 0.0
+            else:  # short
+                macd_score = 1.0 if macd_data["is_bearish"] else 0.0
+            indicator_scores["macd"] = macd_score
+            if macd_score > 0.5:
+                indicator_confluence.append("macd")
+            
+            # Calculate Bollinger Bands
+            bb_data = self.technical_indicators.calculate_bollinger_bands(prices, period=20, std_dev=2.0)
+            current_price = state.last_price
+            if direction == "long":
+                # Buy when price touches lower band (oversold)
+                bb_score = 1.0 if current_price <= bb_data["lower_band"] * 1.001 else (0.5 if current_price < bb_data["middle_band"] else 0.0)
+            else:  # short
+                # Sell when price touches upper band (overbought)
+                bb_score = 1.0 if current_price >= bb_data["upper_band"] * 0.999 else (0.5 if current_price > bb_data["middle_band"] else 0.0)
+            indicator_scores["bollinger"] = bb_score
+            if bb_score > 0.5:
+                indicator_confluence.append("bollinger")
+            
+            # Calculate EMA Crossovers
+            ema_data = self.technical_indicators.calculate_ema_crossovers(prices, fast_period=3, slow_period=7)
+            if direction == "long":
+                ema_score = 1.0 if ema_data["is_bullish"] else 0.0
+            else:  # short
+                ema_score = 1.0 if ema_data["is_bearish"] else 0.0
+            indicator_scores["ema"] = ema_score
+            if ema_score > 0.5:
+                indicator_confluence.append("ema")
+            
+            # Calculate VWAP
+            vwap_data = self.technical_indicators.calculate_vwap(prices, period=20)
+            if direction == "long":
+                vwap_score = 1.0 if vwap_data["is_above"] else 0.0  # Price above VWAP = bullish
+            else:  # short
+                vwap_score = 1.0 if vwap_data["is_below"] else 0.0  # Price below VWAP = bearish
+            indicator_scores["vwap"] = vwap_score
+            if vwap_score > 0.5:
+                indicator_confluence.append("vwap")
+        else:
+            # Not enough data for technical indicators
+            indicator_scores = {"rsi": 0.0, "macd": 0.0, "bollinger": 0.0, "ema": 0.0, "vwap": 0.0}
+        
+        # 11. Multi-Indicator Confluence Check
+        # Require at least 4 out of 6 indicators to agree (momentum + 5 technical indicators)
+        momentum_agrees = (momentum_score > 0) if direction == "long" else (momentum_score < 0)
+        if momentum_agrees:
+            indicator_confluence.append("momentum")
+        
+        total_indicators = 6  # momentum + 5 technical indicators
+        confluence_count = len(indicator_confluence)
+        required_confluence = 4  # At least 4 out of 6 must agree
+        
+        if confluence_count < required_confluence:
+            logger.debug(
+                f"trade_rejected_insufficient_confluence",
+                symbol=state.symbol,
+                confluence_count=confluence_count,
+                required=required_confluence,
+                indicators=indicator_confluence
+            )
+            return 0.0, "neutral", {"reason": "insufficient_indicator_confluence", "confluence_count": confluence_count}
+        
+        # Combine all scores with new technical indicators
+        composite_score = (
+            self.momentum_weight * momentum_score * 0.20 +
+            indicator_scores.get("rsi", 0.0) * 0.15 +
+            indicator_scores.get("macd", 0.0) * 0.15 +
+            indicator_scores.get("bollinger", 0.0) * 0.10 +
+            indicator_scores.get("ema", 0.0) * 0.10 +
+            indicator_scores.get("vwap", 0.0) * 0.10 +
+            self.imbalance_weight * ob_imbalance * 0.15 +
+            self.volatility_weight * volatility_score * 0.05 +
+            self.liquidity_weight * spread_score * 0.05 +
+            funding_bias * 0.05
+        )
+        
+        # Normalize composite score to 0-100 range
+        composite_score_normalized = np.clip(composite_score * 100, 0, 100)
+        
+        # Combine all scores (legacy base_score for backward compatibility)
         base_score = (
             self.momentum_weight * momentum_score +
             self.imbalance_weight * ob_imbalance +
@@ -197,27 +300,39 @@ class EnhancedRanker:
             funding_bias
         )
         
-        # 10. Boost by confluence strength
+        # 12. Boost by confluence strength
         base_score *= (1 + confluence_strength * 100)  # AMPLIFY confluence impact!
         
-        # 11. Boost by volume ratio
+        # 13. Boost by volume ratio
         base_score *= (1 + (volume_ratio - 1) * 0.5)  # 50% of excess volume
         
-        # 12. UCB bandit overlay
+        # 14. Boost by technical indicator confluence
+        if len(prices) >= 20:
+            indicator_confluence_bonus = (confluence_count / total_indicators) * 0.5  # Up to 50% bonus
+            base_score *= (1 + indicator_confluence_bonus)
+        
+        # 15. UCB bandit overlay
         bandit_score = state.get_ucb_score(1000, c=self.ucb_exploration)
         if np.isfinite(bandit_score):
             bandit_norm = np.clip(bandit_score, -100, 100) / 100.0
         else:
             bandit_norm = 1.0
         
-        # Combined final score
-        final_score = (
-            self.bandit_alpha * np.clip(base_score, -5, 5) / 5.0 +
-            (1 - self.bandit_alpha) * bandit_norm
-        )
+        # Combined final score (use composite score if available, otherwise base_score)
+        if len(prices) >= 20:
+            # Use composite score with technical indicators
+            final_score = (
+                self.bandit_alpha * (composite_score_normalized / 100.0) +
+                (1 - self.bandit_alpha) * bandit_norm
+            )
+        else:
+            # Fallback to base_score if not enough data
+            final_score = (
+                self.bandit_alpha * np.clip(base_score, -5, 5) / 5.0 +
+                (1 - self.bandit_alpha) * bandit_norm
+            )
         
         # PRO TRADER QUALITY CHECK: Analyze market structure and trade quality
-        prices = np.array([p for _, p in state.price_history]) if state.price_history else np.array([])
         
         if len(prices) >= 30:
             # 1. Detect support/resistance
@@ -243,11 +358,41 @@ class EnhancedRanker:
                 current_price, estimated_stop, estimated_tp, direction
             )
             
-            # 4. Grade the trade (A/B/C/D/F)
+            # 4. Add technical indicator data to features for trade grading
+            enhanced_features = features.copy()
+            if len(prices) >= 20:
+                rsi = self.technical_indicators.calculate_rsi(prices, period=14)
+                macd_data = self.technical_indicators.calculate_macd(prices, fast_period=3, slow_period=7, signal_period=2)
+                bb_data = self.technical_indicators.calculate_bollinger_bands(prices, period=20, std_dev=2.0)
+                ema_data = self.technical_indicators.calculate_ema_crossovers(prices, fast_period=3, slow_period=7)
+                vwap_data = self.technical_indicators.calculate_vwap(prices, period=20)
+                
+                enhanced_features.update({
+                    "rsi": rsi,
+                    "macd_bullish": macd_data["is_bullish"],
+                    "macd_bearish": macd_data["is_bearish"],
+                    "bb_extreme": (current_price <= bb_data["lower_band"] * 1.001) or (current_price >= bb_data["upper_band"] * 0.999),
+                    "ema_aligned": (direction == "long" and ema_data["is_bullish"]) or (direction == "short" and ema_data["is_bearish"]),
+                    "vwap_favorable": (direction == "long" and vwap_data["is_above"]) or (direction == "short" and vwap_data["is_below"]),
+                })
+            
+            # 5. Grade the trade (A/B/C/D/F) - now with 10 factors (5+ required for A-grade)
             trade_grade = self.pro_indicators.grade_trade_quality(
-                features, direction, rr_calc["risk_reward_ratio"], 
+                enhanced_features, direction, rr_calc["risk_reward_ratio"], 
                 market_structure, near_sr
             )
+            
+            # 🚨 LOGGING: Log all indicator values for debugging
+            if len(prices) >= 20:
+                logger.debug(
+                    f"📊 [INDICATORS] {state.symbol} | "
+                    f"RSI: {enhanced_features.get('rsi', 50):.1f} | "
+                    f"MACD: {'bullish' if enhanced_features.get('macd_bullish') else 'bearish' if enhanced_features.get('macd_bearish') else 'neutral'} | "
+                    f"BB: {'extreme' if enhanced_features.get('bb_extreme') else 'normal'} | "
+                    f"EMA: {'aligned' if enhanced_features.get('ema_aligned') else 'not aligned'} | "
+                    f"VWAP: {'favorable' if enhanced_features.get('vwap_favorable') else 'not favorable'} | "
+                    f"Confluence: {confluence_count}/{total_indicators} indicators agree"
+                )
             
             # 🚨 CRITICAL: Check if trading AGAINST market structure - INSTANT REJECTION!
             # This is the #1 cause of losses - NEVER trade against the trend!
@@ -262,7 +407,7 @@ class EnhancedRanker:
                 )
                 return 0.0, "neutral", {"reason": "against_structure", "structure": market_structure["structure"]}
             
-            # PRO RULE: ONLY A-grade trades! (4+ factors required)
+            # PRO RULE: ONLY A-grade trades! (5+ factors required out of 10)
             # B-grade and below are causing too many losses!
             if trade_grade["grade"] != "A":
                 logger.debug(
@@ -288,7 +433,7 @@ class EnhancedRanker:
             )
         
         # ULTRA-STRICT: Only take PERFECT signals (A-grade + very high score)
-        if final_score < 1.2:  # STRICTER: Even higher quality bar for 80%+ win rate
+        if final_score < 1.5:  # STRICTER: Even higher quality bar for 80%+ win rate (25% stricter)
             return 0.0, "neutral", {"reason": "low_score"}
         
         # Build metadata with trade quality info for loss tracking

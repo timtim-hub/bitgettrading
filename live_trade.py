@@ -517,16 +517,49 @@ class LiveTrader:
                                 # Calculate trailing TP parameters
                                 trailing_range_rate = regime_params.get("trailing_stop_pct", 0.01) if regime_params else 0.01  # 1% trailing
                                 # Trigger price is the TP threshold price (when trailing TP becomes active)
+                                # "Rückrufpreis" (callback price) = trigger_price - this is when trailing activates
                                 trailing_trigger_price = take_profit_price  # Activate trailing TP at TP threshold
+                                
+                                logger.info(
+                                    f"🧵 [TRAILING TP SETUP] {symbol} | "
+                                    f"Trigger Price (Rückrufpreis): ${trailing_trigger_price:.4f} | "
+                                    f"Range Rate: {trailing_range_rate*100:.2f}% | "
+                                    f"TP Threshold: ${take_profit_price:.4f}"
+                                )
                                 
                                 tp_results = await self.rest_client.place_trailing_take_profit_order(
                                     symbol=symbol,
                                     hold_side=side,
                                     size=actual_position_size,
                                     range_rate=trailing_range_rate,  # 1% trailing distance
-                                    trigger_price=trailing_trigger_price,  # Activate at TP threshold
+                                    trigger_price=trailing_trigger_price,  # Activate at TP threshold (Rückrufpreis)
                                     size_precision=size_precision,
                                 )
+                                
+                                # 🚨 CRITICAL: Verify trailing TP was placed successfully
+                                if tp_results and tp_results.get("code") == "00000":
+                                    logger.info(f"✅ [TRAILING TP PLACED] {symbol} | Order ID: {tp_results.get('data', {}).get('orderId', 'N/A')}")
+                                else:
+                                    logger.error(
+                                        f"❌ [TRAILING TP FAILED] {symbol} | "
+                                        f"Code: {tp_results.get('code', 'N/A') if tp_results else 'N/A'} | "
+                                        f"Msg: {tp_results.get('msg', 'N/A') if tp_results else 'N/A'} | "
+                                        f"Retrying..."
+                                    )
+                                    # Retry trailing TP placement
+                                    await asyncio.sleep(1.0)
+                                    retry_tp_results = await self.rest_client.place_trailing_take_profit_order(
+                                        symbol=symbol,
+                                        hold_side=side,
+                                        size=actual_position_size,
+                                        range_rate=trailing_range_rate,
+                                        trigger_price=trailing_trigger_price,
+                                        size_precision=size_precision,
+                                    )
+                                    if retry_tp_results and retry_tp_results.get("code") == "00000":
+                                        logger.info(f"✅ [TRAILING TP RETRY SUCCESS] {symbol}")
+                                    else:
+                                        logger.error(f"❌ [TRAILING TP RETRY FAILED] {symbol} | Code: {retry_tp_results.get('code', 'N/A') if retry_tp_results else 'N/A'}")
                                 
                                 # Handle results safely (check for None)
                                 if sl_results is None:
@@ -861,7 +894,29 @@ class LiveTrader:
                 # Remove positions from tracking if not on exchange anymore
                 for symbol in list(self.position_manager.positions.keys()):
                     if symbol not in exchange_open_symbols:
-                        logger.warning(f"⚠️ {symbol} closed on exchange (TP/SL hit or manual close) - removing from tracking")
+                        position = self.position_manager.get_position(symbol)
+                        if position:
+                            # Calculate PnL at closure
+                            from datetime import datetime
+                            pnl_pct = (position.unrealized_pnl / position.capital) * 100 if position.capital > 0 else 0
+                            entry_time = datetime.fromisoformat(position.entry_time.replace('Z', '+00:00'))
+                            time_held_min = (datetime.now(entry_time.tzinfo) - entry_time).total_seconds() / 60
+                            logger.warning(
+                                f"⚠️ [POSITION CLOSED] {symbol} closed on exchange | "
+                                f"PnL: {pnl_pct:.2f}% | "
+                                f"Reason: TP/SL hit or manual close | "
+                                f"Entry: ${position.entry_price:.4f} | "
+                                f"Time held: {time_held_min:.1f}min"
+                            )
+                            
+                            # 🚨 INVESTIGATION: Log if closure was premature (<1% profit/loss)
+                            if abs(pnl_pct) < 1.0:
+                                logger.error(
+                                    f"🚨 [PREMATURE CLOSURE] {symbol} closed with {pnl_pct:.2f}% PnL! | "
+                                    f"This should NOT happen with TP/SL set! | "
+                                    f"Possible causes: Exchange auto-liquidation, margin call, or TP/SL order issue"
+                                )
+                        
                         self.position_manager.remove_position(symbol)
             except Exception as e:
                 logger.error(f"Failed to sync positions with exchange: {e}")
@@ -954,8 +1009,29 @@ class LiveTrader:
                 if price == 0:
                     continue
 
-                # Base position size with smart multiplier
-                base_position_value = self.equity * self.position_size_pct
+                # 🚨 CRITICAL: Use CURRENT AVAILABLE BALANCE (not initial capital) for position sizing
+                # Fetch current balance from exchange to ensure we use 20% of available capital
+                try:
+                    balance = await self.rest_client.get_account_balance()
+                    if balance and balance.get("code") == "00000":
+                        data = balance.get("data", [{}])[0]
+                        available_balance = float(data.get("available", 0))
+                        # Use available balance for position sizing (20% of available capital)
+                        base_position_value = available_balance * self.position_size_pct
+                        logger.info(
+                            f"💰 [BALANCE CHECK] {symbol} | Available: ${available_balance:.2f} | "
+                            f"20% Position Size: ${base_position_value:.2f}"
+                        )
+                    else:
+                        # Fallback to equity if balance fetch fails
+                        base_position_value = self.equity * self.position_size_pct
+                        logger.warning(f"⚠️ [BALANCE FALLBACK] {symbol} | Using equity: ${self.equity:.2f}")
+                except Exception as e:
+                    # Fallback to equity if balance fetch fails
+                    logger.warning(f"⚠️ [BALANCE ERROR] {symbol} | Error: {e} | Using equity: ${self.equity:.2f}")
+                    base_position_value = self.equity * self.position_size_pct
+                
+                # Apply position size multiplier (but ensure we still use 20% base)
                 adjusted_position_value = base_position_value * position_size_multiplier
                 
                 # 🚨 VERBOSE LOGGING FOR POSITION SIZING

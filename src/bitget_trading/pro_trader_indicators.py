@@ -370,12 +370,12 @@ class ProTraderIndicators:
         factors_met = 0
         reasons = []
         
-        # Factor 1: R:R >= 5:1 (STRICTER - need even better risk/reward!)
-        if risk_reward >= 5.0:
+        # Factor 1: R:R >= 6:1 (STRICTER - need even better risk/reward!)
+        if risk_reward >= 6.0:
             factors_met += 1
             reasons.append(f"✓ Excellent R:R ({risk_reward:.1f}:1)")
         else:
-            reasons.append(f"✗ Poor R:R ({risk_reward:.1f}:1 - need 5:1+)")
+            reasons.append(f"✗ Poor R:R ({risk_reward:.1f}:1 - need 6:1+)")
         
         # Factor 2: With market structure
         structure = market_structure.get("structure", "ranging")
@@ -393,35 +393,76 @@ class ProTraderIndicators:
         else:
             reasons.append("✗ No S/R confluence")
         
-        # Factor 4: Strong volume (STRICTER - need 2.5x above average!)
+        # Factor 4: Strong volume (STRICTER - need 3.0x above average!)
         volume_ratio = features.get("volume_ratio", 1.0)
-        if volume_ratio >= 2.5:
+        if volume_ratio >= 3.0:
             factors_met += 1
             reasons.append(f"✓ Strong volume ({volume_ratio:.2f}x)")
         else:
-            reasons.append(f"✗ Weak volume ({volume_ratio:.2f}x - need 2.5x+)")
+            reasons.append(f"✗ Weak volume ({volume_ratio:.2f}x - need 3.0x+)")
         
-        # Factor 5: Strong momentum (STRICTER - need 0.15%+ in 15s!)
+        # Factor 5: Strong momentum (STRICTER - need 0.20%+ in 15s!)
         return_15s = abs(features.get("return_15s", 0.0))
-        if return_15s >= 0.0015:  # 0.15%+ move in 15s
+        if return_15s >= 0.0020:  # 0.20%+ move in 15s
             factors_met += 1
             reasons.append(f"✓ Strong momentum ({return_15s*100:.3f}%)")
         else:
-            reasons.append(f"✗ Weak momentum ({return_15s*100:.3f}% - need 0.15%+)")
+            reasons.append(f"✗ Weak momentum ({return_15s*100:.3f}% - need 0.20%+)")
         
-        # Calculate grade
-        score = factors_met * 20  # Each factor = 20 points
-        
-        if factors_met >= 4:
-            grade = "A"  # Take this trade!
-        elif factors_met == 3:
-            grade = "B"  # Good trade
-        elif factors_met == 2:
-            grade = "C"  # Marginal
-        elif factors_met == 1:
-            grade = "D"  # Weak
+        # Factor 6: RSI in favorable zone (NEW)
+        rsi = features.get("rsi", 50.0)
+        if (side == "long" and rsi < 30) or (side == "short" and rsi > 70):
+            factors_met += 1
+            reasons.append(f"✓ RSI favorable ({rsi:.1f})")
         else:
-            grade = "F"  # Skip
+            reasons.append(f"✗ RSI not favorable ({rsi:.1f})")
+        
+        # Factor 7: MACD bullish/bearish (NEW)
+        macd_bullish = features.get("macd_bullish", False)
+        macd_bearish = features.get("macd_bearish", False)
+        if (side == "long" and macd_bullish) or (side == "short" and macd_bearish):
+            factors_met += 1
+            reasons.append("✓ MACD aligned")
+        else:
+            reasons.append("✗ MACD not aligned")
+        
+        # Factor 8: Price at Bollinger Band extreme (NEW)
+        bb_extreme = features.get("bb_extreme", False)
+        if bb_extreme:
+            factors_met += 1
+            reasons.append("✓ Bollinger Band extreme")
+        else:
+            reasons.append("✗ Not at Bollinger Band extreme")
+        
+        # Factor 9: EMA crossovers aligned (NEW)
+        ema_aligned = features.get("ema_aligned", False)
+        if ema_aligned:
+            factors_met += 1
+            reasons.append("✓ EMA crossovers aligned")
+        else:
+            reasons.append("✗ EMA crossovers not aligned")
+        
+        # Factor 10: Price above/below VWAP (NEW)
+        vwap_favorable = features.get("vwap_favorable", False)
+        if vwap_favorable:
+            factors_met += 1
+            reasons.append("✓ VWAP favorable")
+        else:
+            reasons.append("✗ VWAP not favorable")
+        
+        # Calculate grade (now 10 factors total, require 5+ for A-grade)
+        score = factors_met * 10  # Each factor = 10 points (out of 100)
+        
+        if factors_met >= 5:
+            grade = "A"  # Take this trade! (5+ out of 10 factors)
+        elif factors_met >= 4:
+            grade = "B"  # Good trade (4 out of 10)
+        elif factors_met >= 3:
+            grade = "C"  # Marginal (3 out of 10)
+        elif factors_met >= 2:
+            grade = "D"  # Weak (2 out of 10)
+        else:
+            grade = "F"  # Skip (0-1 out of 10)
         
         return {
             "grade": grade,
