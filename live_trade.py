@@ -2164,10 +2164,24 @@ class LiveTrader:
         logger.info(f"   Max positions: {self.max_positions}")
         logger.info(f"   Current positions: {len(self.position_manager.positions)}")
 
+        # Rate limit ticker fetching to avoid 429 errors
+        last_ticker_fetch = datetime.now()
+        ticker_fetch_interval_sec = 1.0  # Fetch tickers every 1 second (not every 5ms!)
+
         while self.running:
             try:
                 # ALWAYS: Update market data and check positions (FAST LOOP)
-                ticker_dict = await self.universe_manager.fetch_tickers()
+                # But rate-limit ticker fetching to avoid 429 errors
+                time_since_ticker_fetch = (datetime.now() - last_ticker_fetch).total_seconds()
+                if time_since_ticker_fetch >= ticker_fetch_interval_sec:
+                    ticker_dict = await self.universe_manager.fetch_tickers()
+                    last_ticker_fetch = datetime.now()
+                else:
+                    # Use cached ticker data if available
+                    ticker_dict = getattr(self, '_cached_tickers', {})
+                
+                # Cache ticker data for next iteration
+                self._cached_tickers = ticker_dict
                 for symbol, ticker in ticker_dict.items():
                     if symbol not in self.symbols:
                         continue
