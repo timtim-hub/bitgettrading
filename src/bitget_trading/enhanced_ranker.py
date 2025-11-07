@@ -256,10 +256,17 @@ class EnhancedRanker:
             # If we have strong bearish confluence (>=60% agreement), allow shorts even with neutral/weak orderbook
             strong_bearish_confluence = bearish_count >= int(total_timeframes * 0.60)  # Relaxed from 0.75
             
+            logger.info(
+                f"🔍 [SHORT SIGNAL DETECTED] Bearish confluence! | "
+                f"bearish_count={bearish_count}, required={required_agreement_short}, "
+                f"ob_imbalance={ob_imbalance:.4f}, ob_threshold={orderbook_threshold}, "
+                f"strong_confluence={strong_bearish_confluence}, orderbook_validated={orderbook_validated}"
+            )
+            
             # Allow short if:
             # 1. Orderbook validated (simulated data) OR
             # 2. Orderbook shows ask pressure (bearish) OR
-            # 3. Strong bearish confluence (>=75% agreement) AND orderbook is not strongly bullish (not > 0.1)
+            # 3. Strong bearish confluence (>=60% agreement) AND orderbook is not strongly bullish (not > 0.1)
             if (
                 orderbook_validated 
                 or ob_imbalance > orderbook_threshold
@@ -268,6 +275,11 @@ class EnhancedRanker:
                 # Orderbook shows ask pressure (bearish) OR using simulated data OR strong confluence overrides
                 direction = "short"
                 strength = weighted_avg_bearish
+                
+                logger.info(
+                    f"✅ [SHORT CONFIRMED] Symbol will get SHORT direction | "
+                    f"strength={strength:.4f}, orderbook_validated={orderbook_validated}"
+                )
 
                 # Boost strength if momentum accelerating
                 if momentum_accelerating:
@@ -284,6 +296,11 @@ class EnhancedRanker:
                     metadata["confluence_override"] = True  # Mark that confluence overrode orderbook
             else:
                 # Orderbook doesn't confirm (potential trap)
+                logger.warning(
+                    f"❌ [SHORT REJECTED - ORDERBOOK] Bearish confluence but orderbook conflict | "
+                    f"ob_imbalance={ob_imbalance:.4f}, threshold={orderbook_threshold}, "
+                    f"strong_confluence={strong_bearish_confluence}"
+                )
                 return (
                     False,
                     "neutral",
