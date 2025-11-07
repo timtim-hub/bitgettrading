@@ -1133,26 +1133,44 @@ class LiveTrader:
                 if price == 0:
                     continue
 
-                # 🚨 CRITICAL: Use CURRENT AVAILABLE BALANCE (not initial capital) for position sizing
-                # Fetch current balance from exchange to ensure we use 20% of available capital
+                # 🚨 CRITICAL: Use TOTAL EQUITY (available + margin in positions + unrealized PnL) for position sizing
+                # This ensures each trade gets 20% of TOTAL capital, not just remaining available balance
+                # After first trade, available decreases but equity stays the same (includes locked margin)
                 try:
                     balance = await self.rest_client.get_account_balance()
                     if balance and balance.get("code") == "00000":
                         data = balance.get("data", [{}])[0]
+                        # Use EQUITY (total capital) not available (remaining balance)
+                        # Equity = available + margin in positions + unrealized PnL
+                        total_equity = float(data.get("equity", 0))
                         available_balance = float(data.get("available", 0))
-                        # Use available balance for position sizing (20% of available capital)
-                        base_position_value = available_balance * self.position_size_pct
+                        frozen = float(data.get("frozen", 0))
+                        unrealized_pnl = float(data.get("unrealizedPL", 0))
+                        
+                        # If equity field exists, use it. Otherwise calculate from components
+                        if total_equity > 0:
+                            base_position_value = total_equity * self.position_size_pct
+                        else:
+                            # Fallback: calculate equity manually
+                            total_equity = available_balance + frozen + unrealized_pnl
+                            base_position_value = total_equity * self.position_size_pct
+                        
+                        # Update self.equity for consistency
+                        self.equity = total_equity
+                        
                         logger.info(
-                            f"💰 [BALANCE CHECK] {symbol} | Available: ${available_balance:.2f} | "
+                            f"💰 [EQUITY CHECK] {symbol} | Total Equity: ${total_equity:.2f} | "
+                            f"Available: ${available_balance:.2f} | Frozen: ${frozen:.2f} | "
+                            f"Unrealized PnL: ${unrealized_pnl:+.2f} | "
                             f"20% Position Size: ${base_position_value:.2f}"
                         )
                     else:
-                        # Fallback to equity if balance fetch fails
+                        # Fallback to tracked equity if balance fetch fails
                         base_position_value = self.equity * self.position_size_pct
-                        logger.warning(f"⚠️ [BALANCE FALLBACK] {symbol} | Using equity: ${self.equity:.2f}")
+                        logger.warning(f"⚠️ [BALANCE FALLBACK] {symbol} | Using tracked equity: ${self.equity:.2f}")
                 except Exception as e:
-                    # Fallback to equity if balance fetch fails
-                    logger.warning(f"⚠️ [BALANCE ERROR] {symbol} | Error: {e} | Using equity: ${self.equity:.2f}")
+                    # Fallback to tracked equity if balance fetch fails
+                    logger.warning(f"⚠️ [BALANCE ERROR] {symbol} | Error: {e} | Using tracked equity: ${self.equity:.2f}")
                     base_position_value = self.equity * self.position_size_pct
                 
                 # Apply position size multiplier (but ensure we still use 20% base)
