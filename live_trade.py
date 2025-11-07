@@ -525,9 +525,16 @@ class LiveTrader:
                                             logger.warning(
                                                 f"⚠️  [POSITION WARNING] {symbol} | "
                                                 f"No position found on exchange after {max_retries} attempts! "
-                                                f"Order might not have filled yet. Skipping TP/SL."
+                                                f"Order might not have filled yet. Will retry TP/SL placement later."
                                             )
-                                            return True  # Order placed, but position not filled yet
+                                            # 🚨 CRITICAL: Don't skip TP/SL! Use calculated size and continue
+                                            # The position might be available but query is slow
+                                            actual_position_size = size  # Use calculated size
+                                            logger.info(
+                                                f"🔄 [TP/SL CONTINUE] {symbol} | "
+                                                f"Using calculated size {actual_position_size} to place TP/SL"
+                                            )
+                                            break  # Continue to TP/SL placement with calculated size
                                 except Exception as e:
                                     if attempt < max_retries - 1:
                                         logger.warning(
@@ -986,6 +993,11 @@ class LiveTrader:
                                     f"❌ [TP/SL FAILED] {symbol} | "
                                     f"Exception: {e} | Type: {type(e).__name__} | "
                                     f"Traceback: {traceback.format_exc()}"
+                                )
+                                # 🚨 CRITICAL: Log this to ensure we see it!
+                                logger.error(
+                                    f"🚨 [CRITICAL] {symbol} | "
+                                    f"TP/SL placement failed with exception! Position may not have trailing TP protection!"
                                 )
                                 # Retry entire TP/SL placement
                                 logger.info(f"🔄 [TP/SL RETRY] {symbol} | Retrying entire TP/SL placement...")
