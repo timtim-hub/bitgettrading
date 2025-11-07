@@ -2438,5 +2438,13 @@
   "BSVUSDT_short": {
     "leverage": 25,
     "timestamp": 1762533001.678539
+  },
+  "SYSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762533675.5456908
+  },
+  "SYSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762533676.315737
   }
 }
