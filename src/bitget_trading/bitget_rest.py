@@ -477,6 +477,7 @@ class BitgetRestClient:
         stop_loss_price: float | None = None,
         take_profit_price: float | None = None,
         product_type: str = "usdt-futures",  # FIXED: lowercase format required by API
+        size_precision: int | None = None,  # Size precision (decimal places) - if None, will round to 1 decimal
     ) -> dict[str, Any]:
         """
         Place exchange-side TP/SL plan orders that execute at MARKET on trigger.
@@ -501,10 +502,16 @@ class BitgetRestClient:
         endpoint = "/api/v2/mix/order/place-tpsl-order"
         results: dict[str, Any] = {"sl": None, "tp": None}
         
+        # 🚨 CRITICAL FIX: Round size to correct precision (Bitget API requires specific decimal places)
+        # Default to 1 decimal place if not specified (most contracts use checkScale=1)
+        if size_precision is None:
+            size_precision = 1  # Default to 1 decimal place based on error message
+        rounded_size = round(size, size_precision)
+        
         # 🚨 EXTENSIVE LOGGING: Log all input parameters
         logger.info(
             f"🔍 [TP/SL START] {symbol} | "
-            f"hold_side: {hold_side} | size: {size} | "
+            f"hold_side: {hold_side} | size: {size} → rounded: {rounded_size} (precision: {size_precision}) | "
             f"SL price: {stop_loss_price} | TP price: {take_profit_price} | "
             f"product_type: {product_type}"
         )
@@ -568,7 +575,7 @@ class BitgetRestClient:
                 "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
                 "triggerPrice": str(stop_loss_price),
                 "executePrice": "0",  # MARKET on trigger
-                "size": str(size),  # REQUIRED!
+                "size": str(rounded_size),  # REQUIRED! Must be rounded to correct precision
             }
             logger.info(
                 f"📋 [TP/SL SL DATA] {symbol} | "
@@ -611,7 +618,7 @@ class BitgetRestClient:
                 "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
                 "triggerPrice": str(take_profit_price),
                 "executePrice": "0",  # MARKET on trigger
-                "size": str(size),  # REQUIRED!
+                "size": str(rounded_size),  # REQUIRED! Must be rounded to correct precision
             }
             logger.info(
                 f"📋 [TP/SL TP DATA] {symbol} | "

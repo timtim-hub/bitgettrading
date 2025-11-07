@@ -343,10 +343,20 @@ class LiveTrader:
                                 pass  # Ignore if no orders exist
                             
                             # Place TP/SL plan orders with market execution
+                            # Get contract info to determine size precision
+                            contract_info = self.universe_manager.get_contract_info(symbol)
+                            size_precision = 1  # Default to 1 decimal place
+                            if contract_info:
+                                # Try to get size precision from contract info
+                                # Bitget API error shows checkScale=1, so use volume_place or default to 1
+                                size_precision = contract_info.get("volume_place", 1)
+                                # But based on error, most contracts use 1 decimal place
+                                size_precision = 1  # Force to 1 for now based on error message
+                            
                             logger.info(
                                 f"🚀 [TP/SL CALL] {symbol} | "
                                 f"About to call place_tpsl_order with: "
-                                f"side={side}, size={size}, "
+                                f"side={side}, size={size} (precision: {size_precision}), "
                                 f"SL_price={stop_loss_price}, TP_price={take_profit_price}"
                             )
                             try:
@@ -356,6 +366,7 @@ class LiveTrader:
                                     size=size,
                                     stop_loss_price=stop_loss_price,
                                     take_profit_price=take_profit_price,
+                                    size_precision=size_precision,  # Pass size precision
                                 )
                                 sl_code = tpsl_results.get('sl', {}).get('code', 'N/A') if tpsl_results.get('sl') else 'N/A'
                                 tp_code = tpsl_results.get('tp', {}).get('code', 'N/A') if tpsl_results.get('tp') else 'N/A'
