@@ -1176,7 +1176,7 @@ class LiveTrader:
                     continue
 
                 # 🚨 CRITICAL: Use TOTAL EQUITY (available + margin in positions + unrealized PnL) for position sizing
-                # This ensures each trade gets 20% of TOTAL capital, not just remaining available balance
+                # This ensures each trade gets 10% of TOTAL capital, not just remaining available balance
                 # After first trade, available decreases but equity stays the same (includes locked margin)
                 try:
                     balance = await self.rest_client.get_account_balance()
@@ -1215,7 +1215,7 @@ class LiveTrader:
                     logger.warning(f"⚠️ [BALANCE ERROR] {symbol} | Error: {e} | Using tracked equity: ${self.equity:.2f}")
                     base_position_value = self.equity * self.position_size_pct
                 
-                # Apply position size multiplier (but ensure we still use 20% base)
+                # Apply position size multiplier (but ensure we still use 10% base)
                 adjusted_position_value = base_position_value * position_size_multiplier
                 
                 # 🚨 VERBOSE LOGGING FOR POSITION SIZING
