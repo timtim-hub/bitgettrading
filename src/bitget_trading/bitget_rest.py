@@ -729,35 +729,35 @@ class BitgetRestClient:
                         )
                         results["tp"] = {"code": "error", "msg": str(e)}
         
-    async def place_trailing_stop_order(
+    async def place_trailing_take_profit_order(
         self,
         symbol: str,
         hold_side: str,  # "long" or "short" - which position to protect (converted to "buy"/"sell")
         size: float,  # Position size in contracts
-        callback_ratio: float,  # Trailing stop callback ratio (e.g., 0.01 = 1%)
-        trigger_price: float | None = None,  # Optional: price at which trailing stop becomes active
+        range_rate: float,  # Trailing take profit range rate (e.g., 0.01 = 1%)
+        trigger_price: float,  # Price at which trailing take profit becomes active
         product_type: str = "usdt-futures",  # FIXED: lowercase format required by API
         size_precision: int | None = None,  # Size precision (decimal places)
     ) -> dict[str, Any]:
         """
-        Place exchange-side trailing stop order using Bitget's track_plan API.
+        Place exchange-side trailing take profit order using Bitget's moving_plan API.
         
-        🚨 CRITICAL: This uses the place-plan-order endpoint with planType="track_plan"
-        The trailing stop will automatically adjust as price moves in your favor!
+        🚨 CRITICAL: This uses the place-tpsl-order endpoint with planType="moving_plan"
+        The trailing take profit will automatically adjust as price moves in your favor!
         
         Args:
             symbol: Trading pair (e.g., "BTCUSDT")
             hold_side: "long" or "short" - which position to protect (converted to "buy"/"sell" for API)
             size: Position size in contracts (must match position size!)
-            callback_ratio: Trailing stop callback ratio (e.g., 0.01 = 1%, max 0.10 = 10%)
-            trigger_price: Optional price at which trailing stop becomes active (if None, uses current price)
+            range_rate: Trailing take profit range rate (e.g., 0.01 = 1%)
+            trigger_price: Price at which trailing take profit becomes active
             product_type: Product type (default: "usdt-futures" - lowercase required!)
             size_precision: Size precision (decimal places) - if None, will infer from size
         
         Returns:
             Dict with order result
         """
-        endpoint = "/api/v2/mix/order/place-plan-order"
+        endpoint = "/api/v2/mix/order/place-tpsl-order"
         
         # Round size to correct precision
         if size_precision is None:
@@ -769,36 +769,25 @@ class BitgetRestClient:
         
         # Convert "long"/"short" to "buy"/"sell" for one-way mode
         api_hold_side = "buy" if hold_side == "long" else "sell"
-        # For trailing stop, side is opposite of hold_side (to close position)
-        order_side = "sell" if hold_side == "long" else "buy"
-        
-        # Ensure callback_ratio is within Bitget's limits (max 10%)
-        callback_ratio = min(callback_ratio, 0.10)
         
         data = {
             "symbol": symbol,
             "productType": product_type,  # "usdt-futures" (lowercase)
             "marginMode": "isolated",
             "marginCoin": "USDT",
-            "planType": "track_plan",  # Trailing stop order type
+            "planType": "moving_plan",  # Trailing take profit order type
             "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
             "size": str(rounded_size),
-            "callbackRatio": str(callback_ratio),  # Trailing stop callback ratio (e.g., "0.01" = 1%)
-            "orderType": "market",  # Must be market for trailing stop
-            "side": order_side,  # "sell" for long, "buy" for short (to close position)
+            "rangeRate": str(range_rate),  # Trailing take profit range rate (e.g., "0.01" = 1%)
+            "triggerPrice": str(trigger_price),  # Price at which trailing TP becomes active
             "triggerType": "mark_price",  # Use mark price for triggering
-            "reduceOnly": "yes",  # Only reduce position
         }
         
-        # Add triggerPrice if provided
-        if trigger_price is not None:
-            data["triggerPrice"] = str(trigger_price)
-        
         logger.info(
-            f"🧵 [TRAILING STOP ORDER] {symbol} | "
+            f"🧵 [TRAILING TAKE PROFIT ORDER] {symbol} | "
             f"hold_side: {hold_side} → API holdSide: {api_hold_side} | "
-            f"order_side: {order_side} | size: {size} → rounded: {rounded_size} | "
-            f"callback_ratio: {callback_ratio*100:.2f}% | "
+            f"size: {size} → rounded: {rounded_size} | "
+            f"range_rate: {range_rate*100:.2f}% | "
             f"trigger_price: {trigger_price} | product_type: {product_type}"
         )
         
@@ -810,20 +799,21 @@ class BitgetRestClient:
             
             if code == "00000":
                 logger.info(
-                    f"✅ [TRAILING STOP PLACED] {symbol} | "
-                    f"Callback ratio: {callback_ratio*100:.2f}% | "
+                    f"✅ [TRAILING TAKE PROFIT PLACED] {symbol} | "
+                    f"Range rate: {range_rate*100:.2f}% | "
+                    f"Trigger price: {trigger_price} | "
                     f"Size: {rounded_size} | Response: {response}"
                 )
             else:
                 logger.error(
-                    f"❌ [TRAILING STOP FAILED] {symbol} | "
+                    f"❌ [TRAILING TAKE PROFIT FAILED] {symbol} | "
                     f"Code: {code} | Msg: {msg} | Full response: {response}"
                 )
             
             return response
         except Exception as e:
             logger.error(
-                f"❌ [TRAILING STOP EXCEPTION] {symbol} | "
+                f"❌ [TRAILING TAKE PROFIT EXCEPTION] {symbol} | "
                 f"Exception: {e} | Type: {type(e).__name__}"
             )
             return {"code": "error", "msg": str(e)}
