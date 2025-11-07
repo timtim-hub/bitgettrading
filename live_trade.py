@@ -141,6 +141,18 @@ class LiveTrader:
                     equity = float(data.get("equity", 0))
                     available = float(data.get("available", 0))
                     logger.info(f"💰 Account balance: ${equity:.2f} USDT (Available: ${available:.2f})")
+                    
+                    # 🚨 Log account margin mode for hedge mode debugging
+                    margin_mode = data.get("marginMode", "unknown").lower()
+                    if margin_mode == "cross":
+                        logger.warning(f"⚠️  Account is in CROSS margin mode! Consider ISOLATED for better risk control.")
+                    elif margin_mode == "isolated":
+                        logger.info(f"✅ Account is in ISOLATED margin mode.")
+                    elif margin_mode == "hedge_mode":
+                        logger.warning(f"⚠️  Account is in HEDGE margin mode! This might affect TP/SL visibility.")
+                    else:
+                        logger.info(f"ℹ️  Account margin mode: {margin_mode}")
+                        
                 else:
                     logger.info(f"💰 Account balance: Verified (details parsed at startup)")
 
@@ -314,6 +326,8 @@ class LiveTrader:
                             side=order_side,
                             size=size,
                             order_type="market",
+                            take_profit_price=take_profit_price,
+                            stop_loss_price=stop_loss_price,
                         )
                         
                         if order_response and order_response.get("code") == "00000":
@@ -322,25 +336,6 @@ class LiveTrader:
                                 f"✅ [LIVE] MARKET {side.upper()} {symbol} | Size: {size:.4f} | "
                                 f"Order ID: {order_id} | TP/SL Placed Atomically"
                             )
-
-                            # Ensure EXCHANGE-SIDE TP/SL exist as STOP-MARKET (executePrice=0)
-                            try:
-                                await self.rest_client.cancel_all_tpsl_orders(symbol)
-                            except Exception:
-                                pass
-                            try:
-                                _hold_side = side  # "long" or "short"
-                                results = await self.rest_client.place_tpsl_order(
-                                    symbol=symbol,
-                                    hold_side=_hold_side,
-                                    size=size,
-                                    stop_loss_price=stop_loss_price,
-                                    take_profit_price=take_profit_price,
-                                    market_execute=True,
-                                )
-                                logger.info(f"🛡️  [TP/SL CONFIRMED] {symbol} | results={results}")
-                            except Exception as e:
-                                logger.error(f"❌ TP/SL ensure failed for {symbol}: {e}")
 
                             return True
                         else:
@@ -676,6 +671,14 @@ class LiveTrader:
                 # Base position size with smart multiplier
                 base_position_value = self.equity * self.position_size_pct
                 adjusted_position_value = base_position_value * position_size_multiplier
+                
+                # 🚨 VERBOSE LOGGING FOR POSITION SIZING
+                logger.info(
+                    f"📊 [POS_SIZE_CALC] {symbol} | Equity: ${self.equity:.2f} | "
+                    f"Pos Size Pct: {self.position_size_pct*100:.1f}% | "
+                    f"Base Value: ${base_position_value:.2f} | "
+                    f"Adjusted Value (Multiplier {position_size_multiplier:.2f}x): ${adjusted_position_value:.2f}"
+                )
                 
                 # CRITICAL: Ensure minimum order value of 5 USDT (Bitget requirement)
                 # Notional value = adjusted_position_value * leverage
