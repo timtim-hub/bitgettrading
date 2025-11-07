@@ -771,7 +771,7 @@ class BitgetRestClient:
         symbol: str,
         hold_side: str,  # "long" or "short" - which position to protect (converted to "buy"/"sell")
         size: float,  # Position size in contracts
-        range_rate: float,  # Trailing take profit range rate (e.g., 0.01 = 1%)
+        range_rate: float,  # Trailing take profit range rate as decimal (e.g., 0.015 = 1.5%, will be converted to "1.50")
         trigger_price: float,  # Price at which trailing take profit becomes active
         product_type: str = "usdt-futures",  # FIXED: lowercase format required by API
         size_precision: int | None = None,  # Size precision (decimal places)
@@ -786,7 +786,7 @@ class BitgetRestClient:
             symbol: Trading pair (e.g., "BTCUSDT")
             hold_side: "long" or "short" - which position to protect (converted to "buy"/"sell" for API)
             size: Position size in contracts (must match position size!)
-            range_rate: Trailing take profit range rate (e.g., 0.01 = 1%)
+            range_rate: Trailing take profit range rate as decimal (e.g., 0.015 = 1.5%, will be converted to "1.50")
             trigger_price: Price at which trailing take profit becomes active
             product_type: Product type (default: "usdt-futures" - lowercase required!)
             size_precision: Size precision (decimal places) - if None, will infer from size
@@ -807,9 +807,9 @@ class BitgetRestClient:
         # Convert "long"/"short" to "buy"/"sell" for one-way mode
         api_hold_side = "buy" if hold_side == "long" else "sell"
         
-        # 🚨 CRITICAL: Bitget API requires rangeRate to have exactly 2 decimal places
-        # Format range_rate to exactly 2 decimal places (e.g., 0.015 → "0.02", 0.02 → "0.02")
-        formatted_range_rate = f"{range_rate:.2f}"  # Format to 2 decimal places
+        # 🚨 CRITICAL: Bitget API requires rangeRate as percentage with exactly 2 decimal places
+        # Convert decimal to percentage: 0.015 → "1.50", 0.02 → "2.00", 0.001 → "0.10"
+        formatted_range_rate = f"{range_rate * 100:.2f}"  # Convert to percentage and format to 2 decimal places
         
         data = {
             "symbol": symbol,
@@ -819,7 +819,7 @@ class BitgetRestClient:
             "planType": "moving_plan",  # Trailing take profit order type
             "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
             "size": str(rounded_size),
-            "rangeRate": formatted_range_rate,  # Trailing take profit range rate (e.g., "0.02" = 2%, must be 2 decimal places!)
+            "rangeRate": formatted_range_rate,  # Trailing take profit range rate as percentage (e.g., "2.00" = 2%, "1.50" = 1.5%, must be 2 decimal places!)
             "triggerPrice": str(trigger_price),  # Price at which trailing TP becomes active
             "triggerType": "mark_price",  # Use mark price for triggering
         }
@@ -828,7 +828,7 @@ class BitgetRestClient:
             f"🧵 [TRAILING TAKE PROFIT ORDER] {symbol} | "
             f"hold_side: {hold_side} → API holdSide: {api_hold_side} | "
             f"size: {size} → rounded: {rounded_size} | "
-            f"range_rate: {range_rate*100:.2f}% → formatted: {formatted_range_rate} (2 decimal places) | "
+            f"range_rate: {range_rate*100:.2f}% → formatted API value: {formatted_range_rate} (2 decimal places) | "
             f"trigger_price: {trigger_price} | product_type: {product_type}"
         )
         
@@ -867,8 +867,8 @@ class BitgetRestClient:
                             f"rangeRate format error - should be 2 decimal places. Current: {formatted_range_rate} | "
                             f"Original: {range_rate} | Reformatting..."
                         )
-                        # Reformat range_rate to exactly 2 decimal places
-                        formatted_range_rate = f"{range_rate:.2f}"
+                        # Reformat range_rate as percentage to exactly 2 decimal places
+                        formatted_range_rate = f"{range_rate * 100:.2f}"
                         data["rangeRate"] = formatted_range_rate
                         logger.info(f"🔄 [TRAILING TP REFORMAT] {symbol} | New rangeRate: {formatted_range_rate}")
                         if attempt < max_retries - 1:
