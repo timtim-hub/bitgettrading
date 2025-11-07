@@ -1247,6 +1247,57 @@ class LiveTrader:
             except Exception as e:
                 logger.error(f"Failed to sync positions with exchange: {e}")
         
+        # 🚨 TIME-BASED EXIT FOR LOSING POSITIONS: Prevent small losses from becoming large!
+        # Check every position for time-based exit conditions
+        from datetime import datetime
+        current_time = datetime.now()
+        
+        for symbol, position in list(self.position_manager.positions.items()):
+            try:
+                # Get current price and calculate PnL
+                state = self.state_manager.get_state(symbol)
+                if not state or state.last_price <= 0:
+                    continue
+                
+                current_price = state.last_price
+                
+                # Calculate PnL
+                if position.side == "long":
+                    price_change_pct = ((current_price - position.entry_price) / position.entry_price)
+                else:
+                    price_change_pct = ((position.entry_price - current_price) / position.entry_price)
+                
+                return_on_capital_pct = price_change_pct * position.leverage
+                pnl_pct = return_on_capital_pct * 100
+                
+                # Calculate time in position
+                entry_time = datetime.fromisoformat(position.entry_time.replace('Z', '+00:00'))
+                time_in_position_sec = (current_time - entry_time).total_seconds()
+                time_in_position_min = time_in_position_sec / 60
+                
+                # 🚨 TIME-BASED EXIT: Close losing positions after 3-5 minutes to prevent large losses!
+                # This prevents small losses from becoming massive losses like SAPIENUSDT (-42%!)
+                if pnl_pct < -10.0:  # Losing more than 10% capital
+                    if time_in_position_min >= 3.0:  # After 3 minutes
+                        logger.warning(
+                            f"⏰ [TIME-BASED EXIT] {symbol} | "
+                            f"Losing {pnl_pct:.2f}% after {time_in_position_min:.1f}min | "
+                            f"Closing to prevent larger loss (like SAPIENUSDT -42%!)"
+                        )
+                        await self.close_position(symbol, exit_reason=f"TIME-BASED-EXIT (losing {pnl_pct:.2f}% after {time_in_position_min:.1f}min)")
+                        continue
+                    elif time_in_position_min >= 5.0 and pnl_pct < -5.0:  # After 5 minutes, even smaller losses
+                        logger.warning(
+                            f"⏰ [TIME-BASED EXIT] {symbol} | "
+                            f"Losing {pnl_pct:.2f}% after {time_in_position_min:.1f}min | "
+                            f"Closing to prevent larger loss"
+                        )
+                        await self.close_position(symbol, exit_reason=f"TIME-BASED-EXIT (losing {pnl_pct:.2f}% after {time_in_position_min:.1f}min)")
+                        continue
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to check time-based exit for {symbol}: {e}")
+        
         # Now check exit conditions for remaining positions
         positions_checked = 0
         positions_to_check = list(self.position_manager.positions.keys())
