@@ -500,23 +500,51 @@ class LiveTrader:
                                 f"SL_price={stop_loss_price}, TP_price={take_profit_price}"
                             )
                             try:
-                                tpsl_results = await self.rest_client.place_tpsl_order(
+                                # 🚨 NEW: Place static SL + trailing TP (not static TP!)
+                                # Static SL is OK, but TP should be trailing for better profit capture
+                                
+                                # 1. Place static SL order
+                                sl_results = await self.rest_client.place_tpsl_order(
                                     symbol=symbol,
-                                    hold_side=side,  # "long" or "short"
-                                    size=actual_position_size,  # 🚨 USE ACTUAL POSITION SIZE!
+                                    hold_side=side,
+                                    size=actual_position_size,
                                     stop_loss_price=stop_loss_price,
-                                    take_profit_price=take_profit_price,
-                                    size_precision=size_precision,  # Pass size precision
+                                    take_profit_price=None,  # No static TP - we'll use trailing TP
+                                    size_precision=size_precision,
                                 )
-                                sl_code = tpsl_results.get('sl', {}).get('code', 'N/A') if tpsl_results.get('sl') else 'N/A'
-                                tp_code = tpsl_results.get('tp', {}).get('code', 'N/A') if tpsl_results.get('tp') else 'N/A'
-                                sl_msg = tpsl_results.get('sl', {}).get('msg', 'N/A') if tpsl_results.get('sl') else 'N/A'
-                                tp_msg = tpsl_results.get('tp', {}).get('msg', 'N/A') if tpsl_results.get('tp') else 'N/A'
+                                
+                                # 2. Place trailing take profit order (moving_plan)
+                                # Calculate trailing TP parameters
+                                trailing_range_rate = regime_params.get("trailing_stop_pct", 0.01) if regime_params else 0.01  # 1% trailing
+                                # Trigger price is the TP threshold price (when trailing TP becomes active)
+                                trailing_trigger_price = take_profit_price  # Activate trailing TP at TP threshold
+                                
+                                tp_results = await self.rest_client.place_trailing_take_profit_order(
+                                    symbol=symbol,
+                                    hold_side=side,
+                                    size=actual_position_size,
+                                    range_rate=trailing_range_rate,  # 1% trailing distance
+                                    trigger_price=trailing_trigger_price,  # Activate at TP threshold
+                                    size_precision=size_precision,
+                                )
+                                
+                                # Handle results safely (check for None)
+                                if sl_results is None:
+                                    sl_results = {}
+                                if tp_results is None:
+                                    tp_results = {}
+                                
+                                sl_code = sl_results.get('sl', {}).get('code', 'N/A') if sl_results.get('sl') else 'N/A'
+                                tp_code = tp_results.get('code', 'N/A') if tp_results else 'N/A'
+                                sl_msg = sl_results.get('sl', {}).get('msg', 'N/A') if sl_results.get('sl') else 'N/A'
+                                tp_msg = tp_results.get('msg', 'N/A') if tp_results else 'N/A'
+                                
                                 logger.info(
                                     f"✅ [TP/SL PLACED] {symbol} | "
-                                    f"SL: code={sl_code}, msg={sl_msg} | "
-                                    f"TP: code={tp_code}, msg={tp_msg} | "
-                                    f"Full results: {tpsl_results}"
+                                    f"SL (static): code={sl_code}, msg={sl_msg} | "
+                                    f"TP (trailing): code={tp_code}, msg={tp_msg} | "
+                                    f"Trailing range: {trailing_range_rate*100:.2f}% | "
+                                    f"Trigger price: ${trailing_trigger_price:.4f}"
                                 )
                                 
                                 # Verify both orders were placed successfully
@@ -551,28 +579,29 @@ class LiveTrader:
                                             logger.error(f"❌ [TP/SL RETRY EXCEPTION] {symbol} | SL retry exception: {e2}")
                                     
                                     if not tp_success and take_profit_price is not None:
-                                        logger.info(f"🔄 [TP/SL RETRY] {symbol} | Retrying TP order...")
+                                        logger.info(f"🔄 [TP/SL RETRY] {symbol} | Retrying trailing TP order...")
                                         try:
-                                            retry_tp = await self.rest_client.place_tpsl_order(
+                                            trailing_range_rate = regime_params.get("trailing_stop_pct", 0.01) if regime_params else 0.01
+                                            retry_tp = await self.rest_client.place_trailing_take_profit_order(
                                                 symbol=symbol,
                                                 hold_side=side,
                                                 size=actual_position_size,
-                                                stop_loss_price=None,  # Only retry TP
-                                                take_profit_price=take_profit_price,
+                                                range_rate=trailing_range_rate,
+                                                trigger_price=take_profit_price,
                                                 size_precision=size_precision,
                                             )
-                                            retry_tp_code = retry_tp.get('tp', {}).get('code', 'N/A') if retry_tp.get('tp') else 'N/A'
+                                            retry_tp_code = retry_tp.get('code', 'N/A') if retry_tp else 'N/A'
                                             if retry_tp_code == "00000":
-                                                logger.info(f"✅ [TP/SL RETRY SUCCESS] {symbol} | TP order placed successfully!")
+                                                logger.info(f"✅ [TP/SL RETRY SUCCESS] {symbol} | Trailing TP order placed successfully!")
                                             else:
-                                                logger.error(f"❌ [TP/SL RETRY FAILED] {symbol} | TP retry failed: {retry_tp_code}")
+                                                logger.error(f"❌ [TP/SL RETRY FAILED] {symbol} | Trailing TP retry failed: {retry_tp_code}")
                                         except Exception as e2:
-                                            logger.error(f"❌ [TP/SL RETRY EXCEPTION] {symbol} | TP retry exception: {e2}")
+                                            logger.error(f"❌ [TP/SL RETRY EXCEPTION] {symbol} | Trailing TP retry exception: {e2}")
                                 else:
                                     logger.info(
                                         f"✅ [TP/SL VERIFIED] {symbol} | "
-                                        f"Both SL and TP orders placed successfully! "
-                                        f"SL: ${stop_loss_price:.4f} | TP: ${take_profit_price:.4f}"
+                                        f"Both SL (static) and TP (trailing) orders placed successfully! "
+                                        f"SL: ${stop_loss_price:.4f} | TP (trailing): {trailing_range_rate*100:.2f}% trailing from ${trailing_trigger_price:.4f}"
                                     )
                             except Exception as e:
                                 import traceback
@@ -585,16 +614,30 @@ class LiveTrader:
                                 logger.info(f"🔄 [TP/SL RETRY] {symbol} | Retrying entire TP/SL placement...")
                                 try:
                                     await asyncio.sleep(2.0)  # Wait before retry
-                                    retry_results = await self.rest_client.place_tpsl_order(
+                                    
+                                    # Retry static SL
+                                    retry_sl_results = await self.rest_client.place_tpsl_order(
                                         symbol=symbol,
                                         hold_side=side,
                                         size=actual_position_size,
                                         stop_loss_price=stop_loss_price,
-                                        take_profit_price=take_profit_price,
+                                        take_profit_price=None,
                                         size_precision=size_precision,
                                     )
-                                    retry_sl_code = retry_results.get('sl', {}).get('code', 'N/A') if retry_results.get('sl') else 'N/A'
-                                    retry_tp_code = retry_results.get('tp', {}).get('code', 'N/A') if retry_results.get('tp') else 'N/A'
+                                    retry_sl_code = retry_sl_results.get('sl', {}).get('code', 'N/A') if retry_sl_results and retry_sl_results.get('sl') else 'N/A'
+                                    
+                                    # Retry trailing TP
+                                    trailing_range_rate = regime_params.get("trailing_stop_pct", 0.01) if regime_params else 0.01
+                                    retry_tp_results = await self.rest_client.place_trailing_take_profit_order(
+                                        symbol=symbol,
+                                        hold_side=side,
+                                        size=actual_position_size,
+                                        range_rate=trailing_range_rate,
+                                        trigger_price=take_profit_price,
+                                        size_precision=size_precision,
+                                    )
+                                    retry_tp_code = retry_tp_results.get('code', 'N/A') if retry_tp_results else 'N/A'
+                                    
                                     if retry_sl_code == "00000" and retry_tp_code == "00000":
                                         logger.info(f"✅ [TP/SL RETRY SUCCESS] {symbol} | Both orders placed successfully on retry!")
                                     else:
