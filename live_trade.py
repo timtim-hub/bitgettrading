@@ -978,13 +978,7 @@ class LiveTrader:
                 self.equity = self.initial_equity + total_unrealized_pnl
                 pnl_pct = ((self.equity - self.initial_equity) / self.initial_equity) * 100
 
-                # Check daily loss limit
-                if pnl_pct < -self.daily_loss_limit * 100:
-                    logger.error(
-                        f"🚨 DAILY LOSS LIMIT HIT: {pnl_pct:.2f}% | STOPPING!"
-                    )
-                    self.running = False
-                    break
+                # Daily loss limit check removed - let positions use full SL (25%)
 
                 # SOMETIMES: Look for new entries ONLY if we have empty slots (NO REBALANCING!)
                 available_slots = self.max_positions - len(self.position_manager.positions)
