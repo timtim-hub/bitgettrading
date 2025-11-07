@@ -1451,10 +1451,21 @@ class LiveTrader:
                             pnl_pct = (position.unrealized_pnl / position.capital) * 100 if position.capital > 0 else 0
                             entry_time = datetime.fromisoformat(position.entry_time.replace('Z', '+00:00'))
                             time_held_min = (datetime.now(entry_time.tzinfo) - entry_time).total_seconds() / 60
+                            
+                            # 🚀 FIX: Determine exit reason based on PnL
+                            if pnl_pct >= 16.0:
+                                exit_reason = f"TAKE-PROFIT (Capital: {pnl_pct:.2f}%, Exchange TP/SL hit)"
+                            elif pnl_pct <= -50.0:
+                                exit_reason = f"STOP-LOSS (Capital: {pnl_pct:.2f}%, Exchange TP/SL hit)"
+                            elif pnl_pct < 0:
+                                exit_reason = f"LOSS (Capital: {pnl_pct:.2f}%, Exchange closed position)"
+                            else:
+                                exit_reason = f"PROFIT (Capital: {pnl_pct:.2f}%, Exchange closed position)"
+                            
                             logger.warning(
                                 f"⚠️ [POSITION CLOSED] {symbol} closed on exchange | "
                                 f"PnL: {pnl_pct:.2f}% | "
-                                f"Reason: TP/SL hit or manual close | "
+                                f"Reason: {exit_reason} | "
                                 f"Entry: ${position.entry_price:.4f} | "
                                 f"Time held: {time_held_min:.1f}min"
                             )
@@ -1466,6 +1477,9 @@ class LiveTrader:
                                     f"This should NOT happen with TP/SL set! | "
                                     f"Possible causes: Exchange auto-liquidation, margin call, or TP/SL order issue"
                                 )
+                            
+                            # 🚀 FIX: Call close_position with proper exit_reason to record the trade
+                            await self.close_position(symbol, exit_reason=exit_reason)
                             
                             # 🚨 CRITICAL: Cancel any remaining TP/SL and trailing orders when position closes!
                             # Exchange should auto-cancel them, but we ensure cleanup to prevent orphaned orders
@@ -1636,28 +1650,42 @@ class LiveTrader:
                                         if position.side == "long":
                                             # For long: liquidation happens when price drops to liquidation_price
                                             distance_to_liquidation_pct = ((mark_price - liquidation_price) / mark_price) * 100
-                                            # Emergency: close if within 1% of liquidation or margin ratio > 80%
-                                            if distance_to_liquidation_pct < 1.0 or margin_ratio > 0.80:
+                                            # 🚀 FIX: Only trigger emergency closure if stop-loss has failed AND we're very close
+                                            # Check if we're already past stop-loss level (should have triggered at -50%)
+                                            price_change_pct = ((mark_price - position.entry_price) / position.entry_price)
+                                            return_on_capital_pct = price_change_pct * position.leverage
+                                            pnl_pct = return_on_capital_pct * 100
+                                            
+                                            # Emergency: close if within 0.5% of liquidation OR margin ratio > 85% OR loss > -45% (stop-loss failed)
+                                            # Only trigger if stop-loss should have already triggered but didn't
+                                            if (distance_to_liquidation_pct < 0.5 or margin_ratio > 0.85) or (pnl_pct < -45.0):
                                                 logger.error(
                                                     f"🚨 [LIQUIDATION RISK!] {symbol} | "
                                                     f"Price ${mark_price:.4f} is {distance_to_liquidation_pct:.2f}% from liquidation (${liquidation_price:.4f}) | "
-                                                    f"Margin ratio: {margin_ratio*100:.2f}% | "
-                                                    f"EMERGENCY CLOSURE to prevent liquidation!"
+                                                    f"Margin ratio: {margin_ratio*100:.2f}% | PnL: {pnl_pct:.2f}% | "
+                                                    f"EMERGENCY CLOSURE to prevent liquidation! (Stop-loss should have triggered at -50%)"
                                                 )
-                                                await self.close_position(symbol, exit_reason=f"EMERGENCY: Too close to liquidation (${liquidation_price:.4f}, margin: {margin_ratio*100:.1f}%)")
+                                                await self.close_position(symbol, exit_reason=f"EMERGENCY: Too close to liquidation (${liquidation_price:.4f}, margin: {margin_ratio*100:.1f}%, PnL: {pnl_pct:.2f}%)")
                                                 continue
                                         else:  # short
                                             # For short: liquidation happens when price rises to liquidation_price
                                             distance_to_liquidation_pct = ((liquidation_price - mark_price) / mark_price) * 100
-                                            # Emergency: close if within 1% of liquidation or margin ratio > 80%
-                                            if distance_to_liquidation_pct < 1.0 or margin_ratio > 0.80:
+                                            # 🚀 FIX: Only trigger emergency closure if stop-loss has failed AND we're very close
+                                            # Check if we're already past stop-loss level (should have triggered at -50%)
+                                            price_change_pct = ((position.entry_price - mark_price) / position.entry_price)
+                                            return_on_capital_pct = price_change_pct * position.leverage
+                                            pnl_pct = return_on_capital_pct * 100
+                                            
+                                            # Emergency: close if within 0.5% of liquidation OR margin ratio > 85% OR loss > -45% (stop-loss failed)
+                                            # Only trigger if stop-loss should have already triggered but didn't
+                                            if (distance_to_liquidation_pct < 0.5 or margin_ratio > 0.85) or (pnl_pct < -45.0):
                                                 logger.error(
                                                     f"🚨 [LIQUIDATION RISK!] {symbol} | "
                                                     f"Price ${mark_price:.4f} is {distance_to_liquidation_pct:.2f}% from liquidation (${liquidation_price:.4f}) | "
-                                                    f"Margin ratio: {margin_ratio*100:.2f}% | "
-                                                    f"EMERGENCY CLOSURE to prevent liquidation!"
+                                                    f"Margin ratio: {margin_ratio*100:.2f}% | PnL: {pnl_pct:.2f}% | "
+                                                    f"EMERGENCY CLOSURE to prevent liquidation! (Stop-loss should have triggered at -50%)"
                                                 )
-                                                await self.close_position(symbol, exit_reason=f"EMERGENCY: Too close to liquidation (${liquidation_price:.4f}, margin: {margin_ratio*100:.1f}%)")
+                                                await self.close_position(symbol, exit_reason=f"EMERGENCY: Too close to liquidation (${liquidation_price:.4f}, margin: {margin_ratio*100:.1f}%, PnL: {pnl_pct:.2f}%)")
                                                 continue
                     except Exception as e:
                         logger.warning(f"⚠️ Failed to check liquidation price for {symbol}: {e}")
@@ -1679,11 +1707,12 @@ class LiveTrader:
                         pnl_pct = return_on_capital_pct * 100
                         
                         # 🚨 CRITICAL: Close positions earlier to prevent liquidations!
-                        # If price has hit stop-loss level OR loss exceeds -40%, close immediately
-                        if hit_sl or pnl_pct < -40.0:  # Trigger at -40% to prevent liquidations (was -25%)
+                        # If price has hit stop-loss level OR loss exceeds -35%, close immediately
+                        # Trigger earlier to catch stop-loss failures before they become big losses
+                        if hit_sl or pnl_pct < -35.0:  # Trigger at -35% to prevent liquidations (was -40%)
                             logger.error(
                                 f"🚨 [BOT-SIDE STOP-LOSS] {symbol} | "
-                                f"Price hit stop-loss level (${sl_price:.4f}) or loss exceeded -40%! | "
+                                f"Price hit stop-loss level (${sl_price:.4f}) or loss exceeded -35%! | "
                                 f"Current price: ${current_price:.4f} | PnL: {pnl_pct:.2f}% | "
                                 f"Closing manually as backup (exchange stop-loss may have failed!)"
                             )
@@ -1745,28 +1774,42 @@ class LiveTrader:
                                     if position.side == "long":
                                         # For long: liquidation happens when price drops to liquidation_price
                                         distance_to_liquidation_pct = ((mark_price - liquidation_price) / mark_price) * 100
-                                        # Emergency: close if within 2% of liquidation or margin ratio > 75%
-                                        if distance_to_liquidation_pct < 2.0 or margin_ratio > 0.75:
+                                        # 🚀 FIX: Only trigger emergency closure if stop-loss has failed AND we're very close
+                                        # Check if we're already past stop-loss level (should have triggered at -50%)
+                                        price_change_pct = ((mark_price - position.entry_price) / position.entry_price)
+                                        return_on_capital_pct = price_change_pct * position.leverage
+                                        pnl_pct = return_on_capital_pct * 100
+                                        
+                                        # Emergency: close if within 0.5% of liquidation OR margin ratio > 85% OR loss > -45% (stop-loss failed)
+                                        # Only trigger if stop-loss should have already triggered but didn't
+                                        if (distance_to_liquidation_pct < 0.5 or margin_ratio > 0.85) or (pnl_pct < -45.0):
                                             logger.error(
                                                 f"🚨 [LIQUIDATION RISK!] {symbol} | "
                                                 f"Price ${mark_price:.4f} is {distance_to_liquidation_pct:.2f}% from liquidation (${liquidation_price:.4f}) | "
-                                                f"Margin ratio: {margin_ratio*100:.2f}% | "
-                                                f"EMERGENCY CLOSURE to prevent liquidation!"
+                                                f"Margin ratio: {margin_ratio*100:.2f}% | PnL: {pnl_pct:.2f}% | "
+                                                f"EMERGENCY CLOSURE to prevent liquidation! (Stop-loss should have triggered at -50%)"
                                             )
-                                            await self.close_position(symbol, exit_reason=f"EMERGENCY: Too close to liquidation (${liquidation_price:.4f}, margin: {margin_ratio*100:.1f}%)")
+                                            await self.close_position(symbol, exit_reason=f"EMERGENCY: Too close to liquidation (${liquidation_price:.4f}, margin: {margin_ratio*100:.1f}%, PnL: {pnl_pct:.2f}%)")
                                             continue
                                     else:  # short
                                         # For short: liquidation happens when price rises to liquidation_price
                                         distance_to_liquidation_pct = ((liquidation_price - mark_price) / mark_price) * 100
-                                        # Emergency: close if within 2% of liquidation or margin ratio > 75%
-                                        if distance_to_liquidation_pct < 2.0 or margin_ratio > 0.75:
+                                        # 🚀 FIX: Only trigger emergency closure if stop-loss has failed AND we're very close
+                                        # Check if we're already past stop-loss level (should have triggered at -50%)
+                                        price_change_pct = ((position.entry_price - mark_price) / position.entry_price)
+                                        return_on_capital_pct = price_change_pct * position.leverage
+                                        pnl_pct = return_on_capital_pct * 100
+                                        
+                                        # Emergency: close if within 0.5% of liquidation OR margin ratio > 85% OR loss > -45% (stop-loss failed)
+                                        # Only trigger if stop-loss should have already triggered but didn't
+                                        if (distance_to_liquidation_pct < 0.5 or margin_ratio > 0.85) or (pnl_pct < -45.0):
                                             logger.error(
                                                 f"🚨 [LIQUIDATION RISK!] {symbol} | "
                                                 f"Price ${mark_price:.4f} is {distance_to_liquidation_pct:.2f}% from liquidation (${liquidation_price:.4f}) | "
-                                                f"Margin ratio: {margin_ratio*100:.2f}% | "
-                                                f"EMERGENCY CLOSURE to prevent liquidation!"
+                                                f"Margin ratio: {margin_ratio*100:.2f}% | PnL: {pnl_pct:.2f}% | "
+                                                f"EMERGENCY CLOSURE to prevent liquidation! (Stop-loss should have triggered at -50%)"
                                             )
-                                            await self.close_position(symbol, exit_reason=f"EMERGENCY: Too close to liquidation (${liquidation_price:.4f}, margin: {margin_ratio*100:.1f}%)")
+                                            await self.close_position(symbol, exit_reason=f"EMERGENCY: Too close to liquidation (${liquidation_price:.4f}, margin: {margin_ratio*100:.1f}%, PnL: {pnl_pct:.2f}%)")
                                             continue
                 except Exception as e:
                     logger.debug(f"⚠️ Failed to check liquidation price for {symbol} in main loop: {e}")
