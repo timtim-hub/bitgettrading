@@ -604,9 +604,12 @@ class EnhancedRanker:
                 indicator_scores_aggregated["order_flow"] = of_score
         
         # Check which indicators agree (for confluence)
+        # 🚀 PRO TRADING: Use weighted threshold (0.4 instead of 0.5) to account for multi-timeframe aggregation
+        # When aggregating across 3 timeframes, scores can be lower but still valid
         for indicator, score in indicator_scores_aggregated.items():
-            if score > 0.5:  # Indicator agrees with direction
+            if score > 0.4:  # Indicator agrees with direction (lowered from 0.5 for multi-timeframe)
                 indicator_confluence.append(indicator)
+                logger.debug(f"✅ [INDICATOR] {state.symbol} | {indicator}: {score:.2f} (agrees with {direction})")
 
         # 11. Multi-Indicator Confluence Check
         momentum_agrees = (
