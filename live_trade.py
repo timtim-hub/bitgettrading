@@ -313,12 +313,22 @@ class LiveTrader:
                             tp_capital_pct = regime_params["take_profit_pct"]
                             sl_price_pct = sl_capital_pct / self.leverage
                             tp_price_pct = tp_capital_pct / self.leverage
+                            # 🚨 DEBUG: Log the actual values being used
+                            logger.info(
+                                f"🔍 [TP/SL DEBUG] {symbol} | regime_params stop_loss_pct: {sl_capital_pct} "
+                                f"({sl_capital_pct*100:.0f}%) | leverage: {self.leverage}x | "
+                                f"sl_price_pct: {sl_price_pct:.6f} ({sl_price_pct*100:.4f}%)"
+                            )
                         else:
                             # Fallback (should never happen) - Use correct values: 50% SL, 6% TP
                             sl_price_pct = 0.02  # 50% capital @ 25x = 2% price
                             tp_price_pct = 0.0024  # 6% capital @ 25x = 0.24% price
                             sl_capital_pct = 0.50  # For logging
                             tp_capital_pct = 0.06  # For logging
+                            logger.warning(
+                                f"⚠️ [TP/SL FALLBACK] {symbol} | regime_params is None! Using fallback: "
+                                f"SL={sl_capital_pct*100:.0f}%, TP={tp_capital_pct*100:.0f}%"
+                            )
                         
                         # Calculate actual prices
                         if side == "long":
@@ -335,11 +345,28 @@ class LiveTrader:
                             stop_loss_price = round(stop_loss_price, price_place)
                             take_profit_price = round(take_profit_price, price_place)
                         
+                        # 🚨 VERIFY: Calculate actual price move and verify it matches expected capital %
+                        if side == "long":
+                            actual_price_move_pct = (price - stop_loss_price) / price
+                        else:
+                            actual_price_move_pct = (stop_loss_price - price) / price
+                        actual_capital_pct = actual_price_move_pct * self.leverage
+                        
                         logger.info(
                             f"📊 [TP/SL CALC] {symbol} | Entry: ${price:.4f} "
                             f"| TP: ${take_profit_price:.4f} ({tp_capital_pct*100:.0f}%) "
-                            f"| SL: ${stop_loss_price:.4f} ({sl_capital_pct*100:.0f}%)"
+                            f"| SL: ${stop_loss_price:.4f} ({sl_capital_pct*100:.0f}%) | "
+                            f"VERIFIED: Actual SL = {actual_capital_pct*100:.2f}% capital "
+                            f"({actual_price_move_pct*100:.4f}% price @ {self.leverage}x)"
                         )
+                        
+                        # 🚨 ALERT if stop loss doesn't match expected value
+                        if abs(actual_capital_pct - sl_capital_pct) > 0.01:  # More than 1% difference
+                            logger.error(
+                                f"❌ [TP/SL MISMATCH] {symbol} | Expected SL: {sl_capital_pct*100:.0f}% capital, "
+                                f"but calculated SL: {actual_capital_pct*100:.2f}% capital! "
+                                f"Price move: {actual_price_move_pct*100:.4f}% | Leverage: {self.leverage}x"
+                            )
 
                         # Convert logical side to API side
                         order_side = "buy" if side == "long" else "sell"

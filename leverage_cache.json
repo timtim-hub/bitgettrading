@@ -1,0 +1,2202 @@
+{
+  "BTCUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500931.6913311
+  },
+  "BTCUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500932.207974
+  },
+  "ETHUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500932.7030652
+  },
+  "ETHUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500933.1767528
+  },
+  "XRPUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500933.820818
+  },
+  "XRPUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500934.341472
+  },
+  "BCHUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500934.832875
+  },
+  "BCHUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500935.258813
+  },
+  "LTCUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500935.772224
+  },
+  "LTCUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500936.3295329
+  },
+  "ADAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500937.0638
+  },
+  "ADAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500937.867769
+  },
+  "ETCUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500938.482336
+  },
+  "ETCUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500939.011786
+  },
+  "LINKUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500939.510831
+  },
+  "LINKUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500940.008416
+  },
+  "TRXUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500940.49491
+  },
+  "TRXUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500941.0158231
+  },
+  "DOTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500941.5337741
+  },
+  "DOTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500942.097051
+  },
+  "DOGEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500942.582727
+  },
+  "DOGEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500943.051289
+  },
+  "SOLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500943.530099
+  },
+  "SOLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500944.067606
+  },
+  "BNBUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500944.58775
+  },
+  "BNBUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500945.1647732
+  },
+  "UNIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500945.6967869
+  },
+  "UNIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500946.172235
+  },
+  "ICPUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500946.790346
+  },
+  "ICPUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500947.300709
+  },
+  "AAVEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500947.809571
+  },
+  "AAVEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500948.305142
+  },
+  "FILUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500948.800919
+  },
+  "FILUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500949.260641
+  },
+  "XLMUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500949.731694
+  },
+  "XLMUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500950.2315252
+  },
+  "ATOMUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500950.795277
+  },
+  "ATOMUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500951.298333
+  },
+  "XTZUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500951.808594
+  },
+  "XTZUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500952.3898082
+  },
+  "SUSHIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500952.88912
+  },
+  "SUSHIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500953.410041
+  },
+  "AXSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500953.86938
+  },
+  "AXSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500954.408345
+  },
+  "THETAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500954.944923
+  },
+  "THETAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500955.492749
+  },
+  "AVAXUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500956.0737019
+  },
+  "AVAXUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500956.641776
+  },
+  "DASHUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500957.1805818
+  },
+  "DASHUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500957.67277
+  },
+  "SHIBUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500958.20913
+  },
+  "SHIBUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500958.756563
+  },
+  "MANAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500959.3217862
+  },
+  "MANAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500960.143727
+  },
+  "GALAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500960.91953
+  },
+  "GALAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500961.42198
+  },
+  "SANDUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500961.945195
+  },
+  "SANDUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500962.503556
+  },
+  "DYDXUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500962.9737558
+  },
+  "DYDXUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500963.462684
+  },
+  "CRVUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500963.911637
+  },
+  "CRVUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500964.404895
+  },
+  "NEARUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500964.884471
+  },
+  "NEARUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500965.400029
+  },
+  "KSMUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500965.889856
+  },
+  "KSMUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500966.3505092
+  },
+  "ARUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500966.843298
+  },
+  "ARUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500967.384932
+  },
+  "PEOPLEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500967.892525
+  },
+  "PEOPLEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500968.4819882
+  },
+  "NEOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500969.001411
+  },
+  "NEOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500969.480793
+  },
+  "ALICEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500969.97888
+  },
+  "ALICEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500970.433265
+  },
+  "ALGOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500970.9311202
+  },
+  "ALGOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500971.502524
+  },
+  "IOTAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500972.0006669
+  },
+  "IOTAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500972.501003
+  },
+  "APEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500973.097724
+  },
+  "APEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500973.638012
+  },
+  "RUNEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500974.1911428
+  },
+  "RUNEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500974.743496
+  },
+  "APTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500975.2621171
+  },
+  "APTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500975.816183
+  },
+  "ROSEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500976.3094442
+  },
+  "ROSEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500976.757399
+  },
+  "ZRXUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500977.228317
+  },
+  "ZRXUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500977.750514
+  },
+  "ENSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500978.2799292
+  },
+  "ENSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500978.770491
+  },
+  "C98USDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500979.2384121
+  },
+  "C98USDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500979.755914
+  },
+  "OPUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500980.280277
+  },
+  "OPUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500980.822179
+  },
+  "RSRUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500981.332387
+  },
+  "RSRUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500981.95605
+  },
+  "SNXUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500982.4723682
+  },
+  "SNXUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500983.092648
+  },
+  "STORJUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500983.576396
+  },
+  "STORJUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500984.019007
+  },
+  "1INCHUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500984.548237
+  },
+  "1INCHUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500985.032151
+  },
+  "FLOWUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500985.610971
+  },
+  "FLOWUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500986.037929
+  },
+  "TRBUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500986.520336
+  },
+  "TRBUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500986.9709508
+  },
+  "API3USDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500987.455769
+  },
+  "API3USDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500987.957738
+  },
+  "GRTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500988.460166
+  },
+  "GRTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500988.997393
+  },
+  "BANDUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500989.545003
+  },
+  "BANDUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500990.007516
+  },
+  "STGUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500990.555797
+  },
+  "STGUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500991.036476
+  },
+  "JASMYUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500991.542717
+  },
+  "JASMYUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500991.979007
+  },
+  "BATUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500992.512574
+  },
+  "BATUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500993.023883
+  },
+  "LDOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500993.5605881
+  },
+  "LDOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500994.174012
+  },
+  "CELOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500994.682849
+  },
+  "CELOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500995.141112
+  },
+  "BLURUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500995.8582258
+  },
+  "BLURUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500996.313358
+  },
+  "MINAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500996.784108
+  },
+  "MINAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500997.325633
+  },
+  "CFXUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500997.871435
+  },
+  "CFXUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500998.4946291
+  },
+  "ACHUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762500999.085564
+  },
+  "ACHUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762500999.5666292
+  },
+  "FETUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501000.087845
+  },
+  "FETUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501000.606935
+  },
+  "FXSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501001.1164439
+  },
+  "FXSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501001.585786
+  },
+  "HOOKUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501002.075566
+  },
+  "HOOKUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501002.543704
+  },
+  "SSVUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501003.0482318
+  },
+  "SSVUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501003.515902
+  },
+  "LQTYUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501003.996788
+  },
+  "LQTYUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501004.496002
+  },
+  "STXUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501004.984524
+  },
+  "STXUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501005.465129
+  },
+  "HBARUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501006.068057
+  },
+  "HBARUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501006.533974
+  },
+  "INJUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501007.105181
+  },
+  "INJUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501007.624644
+  },
+  "COTIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501008.150851
+  },
+  "COTIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501008.599293
+  },
+  "VETUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501009.068057
+  },
+  "VETUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501009.545697
+  },
+  "ARBUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501010.0593169
+  },
+  "ARBUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501010.5799098
+  },
+  "FLMUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501011.161505
+  },
+  "FLMUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501011.6509461
+  },
+  "TLMUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501012.183462
+  },
+  "TLMUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501012.6677032
+  },
+  "HFTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501013.155013
+  },
+  "HFTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501013.712966
+  },
+  "ZECUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501014.205556
+  },
+  "ZECUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501014.693603
+  },
+  "RVNUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501015.2340338
+  },
+  "RVNUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501015.8457758
+  },
+  "FLOKIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501016.40013
+  },
+  "FLOKIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501016.861152
+  },
+  "SUIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501017.351647
+  },
+  "SUIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501017.931635
+  },
+  "PEPEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501018.5130181
+  },
+  "PEPEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501019.037127
+  },
+  "TURBOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501019.67403
+  },
+  "TURBOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501020.213192
+  },
+  "TONUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501020.84914
+  },
+  "TONUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501021.543726
+  },
+  "ZENUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501022.0237482
+  },
+  "ZENUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501022.5765278
+  },
+  "ORDIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501023.16611
+  },
+  "ORDIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501023.723716
+  },
+  "1000BONKUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501024.25865
+  },
+  "1000BONKUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501024.816942
+  },
+  "QNTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501025.3213089
+  },
+  "QNTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501025.817632
+  },
+  "WLDUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501027.4693341
+  },
+  "WLDUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501028.0973701
+  },
+  "PENDLEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501028.677289
+  },
+  "PENDLEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501029.184685
+  },
+  "ARKMUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501029.664978
+  },
+  "ARKMUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501030.230432
+  },
+  "YGGUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501031.012746
+  },
+  "YGGUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501031.538306
+  },
+  "LPTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501032.117665
+  },
+  "LPTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501032.6565602
+  },
+  "SEIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501033.1840582
+  },
+  "SEIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501033.7324421
+  },
+  "TIAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501034.243927
+  },
+  "TIAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501034.806952
+  },
+  "MEMEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501035.301613
+  },
+  "MEMEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501035.767645
+  },
+  "PYTHUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501036.2307289
+  },
+  "PYTHUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501036.692924
+  },
+  "JTOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501037.2045052
+  },
+  "JTOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501037.686165
+  },
+  "1000SATSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501038.2103128
+  },
+  "1000SATSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501038.7668731
+  },
+  "1000RATSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501039.393619
+  },
+  "1000RATSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501039.931913
+  },
+  "JUPUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501040.461762
+  },
+  "JUPUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501040.938019
+  },
+  "STRKUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501041.4515011
+  },
+  "STRKUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501042.0086248
+  },
+  "WIFUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501042.511168
+  },
+  "WIFUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501043.099408
+  },
+  "BOMEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501043.6351612
+  },
+  "BOMEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501044.253558
+  },
+  "METISUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501044.762253
+  },
+  "METISUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501045.25314
+  },
+  "AEVOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501045.808575
+  },
+  "AEVOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501046.365482
+  },
+  "ETHFIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501046.950943
+  },
+  "ETHFIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501047.398725
+  },
+  "ONDOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501047.8628328
+  },
+  "ONDOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501048.299638
+  },
+  "CAKEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501048.81601
+  },
+  "CAKEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501049.3299541
+  },
+  "KASUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501050.9971368
+  },
+  "KASUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501051.467947
+  },
+  "ENAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501052.110584
+  },
+  "ENAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501052.6871
+  },
+  "WUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501053.23323
+  },
+  "WUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501053.75015
+  },
+  "TAOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501054.289284
+  },
+  "TAOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501054.8240929
+  },
+  "RAYUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501055.456432
+  },
+  "RAYUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501055.9944801
+  },
+  "SUPERUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501056.474713
+  },
+  "SUPERUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501056.987079
+  },
+  "GLMUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501057.54929
+  },
+  "GLMUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501058.051602
+  },
+  "MOVRUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501058.5614378
+  },
+  "MOVRUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501061.123199
+  },
+  "BBUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501061.811948
+  },
+  "BBUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501062.477855
+  },
+  "IOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501062.990104
+  },
+  "IOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501063.592233
+  },
+  "BRETTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501064.176129
+  },
+  "BRETTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501064.6917918
+  },
+  "ATHUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501065.188886
+  },
+  "ATHUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501065.731601
+  },
+  "ZKUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501066.214161
+  },
+  "ZKUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501066.67507
+  },
+  "MEWUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501067.143877
+  },
+  "MEWUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501067.727207
+  },
+  "ZROUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501068.4989178
+  },
+  "ZROUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501069.379058
+  },
+  "PAXGUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501070.4338582
+  },
+  "PAXGUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501070.942949
+  },
+  "BGBUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501072.418783
+  },
+  "BGBUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501072.93439
+  },
+  "MOCAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501073.461086
+  },
+  "MOCAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501074.0034828
+  },
+  "BANANAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501074.4935958
+  },
+  "BANANAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501075.04603
+  },
+  "POPCATUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501075.5269
+  },
+  "POPCATUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501076.075572
+  },
+  "RENDERUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501076.5397298
+  },
+  "RENDERUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501077.0353868
+  },
+  "RAREUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501077.490033
+  },
+  "RAREUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501078.018032
+  },
+  "1000000MOGUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501078.5032089
+  },
+  "1000000MOGUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501079.0360901
+  },
+  "SYNUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501079.511244
+  },
+  "SYNUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501080.080775
+  },
+  "AKTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501080.720373
+  },
+  "AKTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501081.265291
+  },
+  "POLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501081.764628
+  },
+  "POLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501082.34038
+  },
+  "1MBABYDOGEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501082.8842702
+  },
+  "1MBABYDOGEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501083.356169
+  },
+  "FIDAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501083.915464
+  },
+  "FIDAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501084.37947
+  },
+  "HMSTRUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501084.874476
+  },
+  "HMSTRUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501085.855961
+  },
+  "EIGENUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501086.377677
+  },
+  "EIGENUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501086.900605
+  },
+  "MOODENGUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501087.3502111
+  },
+  "MOODENGUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501087.902813
+  },
+  "NEIROCTOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501089.52971
+  },
+  "NEIROCTOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501090.11385
+  },
+  "ETHWUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501090.62718
+  },
+  "ETHWUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501091.120648
+  },
+  "KMNOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501091.5945432
+  },
+  "KMNOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501092.1713011
+  },
+  "DEEPUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501092.699337
+  },
+  "DEEPUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501093.224055
+  },
+  "LUMIAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501093.73916
+  },
+  "LUMIAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501094.2275999
+  },
+  "GOATUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501094.761079
+  },
+  "GOATUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501095.2778418
+  },
+  "GRASSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501095.7273211
+  },
+  "GRASSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501096.176176
+  },
+  "SPXUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501096.770015
+  },
+  "SPXUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501097.383208
+  },
+  "VIRTUALUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501097.9072099
+  },
+  "VIRTUALUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501098.3956192
+  },
+  "AEROUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501098.894845
+  },
+  "AEROUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501099.399937
+  },
+  "DRIFTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501099.895015
+  },
+  "DRIFTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501100.37714
+  },
+  "PNUTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501100.8864
+  },
+  "PNUTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501101.438288
+  },
+  "ACTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501101.918228
+  },
+  "ACTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501102.415667
+  },
+  "PEAQUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501102.954727
+  },
+  "PEAQUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501103.533278
+  },
+  "HIPPOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501104.061068
+  },
+  "HIPPOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501104.8140512
+  },
+  "MERLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501105.5641012
+  },
+  "MERLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501106.339953
+  },
+  "MORPHOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501107.4681768
+  },
+  "MORPHOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501107.9458718
+  },
+  "SCRTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501108.438174
+  },
+  "SCRTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501108.923532
+  },
+  "MEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501109.3796842
+  },
+  "MEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501109.903888
+  },
+  "VANAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501110.4098701
+  },
+  "VANAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501110.9544268
+  },
+  "HYPEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501111.4243069
+  },
+  "HYPEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501111.997997
+  },
+  "PENGUUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501112.521856
+  },
+  "PENGUUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501113.032414
+  },
+  "USUALUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501113.576405
+  },
+  "USUALUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501114.161189
+  },
+  "AIXBTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501114.6523361
+  },
+  "AIXBTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501115.2749891
+  },
+  "FARTCOINUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501115.745976
+  },
+  "FARTCOINUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501116.216011
+  },
+  "PHAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501116.774382
+  },
+  "PHAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501117.284408
+  },
+  "GRIFFAINUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501117.87449
+  },
+  "GRIFFAINUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501118.349972
+  },
+  "ZEREBROUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501118.908624
+  },
+  "ZEREBROUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501119.3792
+  },
+  "BIOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501119.87539
+  },
+  "BIOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501120.848395
+  },
+  "ALCHUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501122.4648619
+  },
+  "ALCHUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501122.91546
+  },
+  "COOKIEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501123.448896
+  },
+  "COOKIEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501123.945802
+  },
+  "SUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501124.440653
+  },
+  "SUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501124.950308
+  },
+  "ARCUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501125.436563
+  },
+  "ARCUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501126.010942
+  },
+  "TRUMPUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501127.520204
+  },
+  "TRUMPUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501128.023411
+  },
+  "MELANIAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501128.6046941
+  },
+  "MELANIAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501129.1783738
+  },
+  "PLUMEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501129.8199859
+  },
+  "PLUMEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501130.357304
+  },
+  "BERAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501132.923754
+  },
+  "BERAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501133.468215
+  },
+  "LAYERUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501133.9415119
+  },
+  "LAYERUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501134.526222
+  },
+  "IPUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501134.9788108
+  },
+  "IPUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501135.469007
+  },
+  "HEIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501136.001645
+  },
+  "HEIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501136.5959349
+  },
+  "SHELLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501137.042153
+  },
+  "SHELLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501137.532908
+  },
+  "AUCTIONUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501138.048419
+  },
+  "AUCTIONUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501138.522315
+  },
+  "PIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501139.040278
+  },
+  "PIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501139.537187
+  },
+  "KAITOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501140.067384
+  },
+  "KAITOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501140.525242
+  },
+  "EPICUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501141.076725
+  },
+  "EPICUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501141.60943
+  },
+  "MUBARAKUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501142.173344
+  },
+  "MUBARAKUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501142.65713
+  },
+  "NMRUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501143.135763
+  },
+  "NMRUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501143.6257222
+  },
+  "FORMUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501145.173899
+  },
+  "FORMUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501145.7295969
+  },
+  "BANANAS31USDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501146.179567
+  },
+  "BANANAS31USDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501146.707238
+  },
+  "NILUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501147.210258
+  },
+  "NILUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501147.784607
+  },
+  "PARTIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501148.2400682
+  },
+  "PARTIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501148.737355
+  },
+  "FUNUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501150.176519
+  },
+  "FUNUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501150.687634
+  },
+  "MLNUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501151.186015
+  },
+  "MLNUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501151.731057
+  },
+  "XAUTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501152.2789671
+  },
+  "XAUTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501152.774025
+  },
+  "PROMPTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501153.264419
+  },
+  "PROMPTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501153.817742
+  },
+  "KERNELUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501154.2900548
+  },
+  "KERNELUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501154.884716
+  },
+  "BANKUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501155.467005
+  },
+  "BANKUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501156.0418189
+  },
+  "EPTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501156.5244591
+  },
+  "EPTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501157.111964
+  },
+  "ZORAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501157.806845
+  },
+  "ZORAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501158.425267
+  },
+  "SIGNUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501158.9402921
+  },
+  "SIGNUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501159.4917812
+  },
+  "DOODUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501163.249631
+  },
+  "DOODUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501163.842278
+  },
+  "SKYAIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501164.327376
+  },
+  "SKYAIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501164.823435
+  },
+  "SOONUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501165.3596768
+  },
+  "SOONUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501167.7990348
+  },
+  "AUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501169.286015
+  },
+  "AUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501169.830692
+  },
+  "LAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501170.292586
+  },
+  "LAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501170.8328059
+  },
+  "RESOLVUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501172.3765051
+  },
+  "RESOLVUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501172.900552
+  },
+  "SQDUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501173.406144
+  },
+  "SQDUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501173.892033
+  },
+  "TAGUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501174.406645
+  },
+  "TAGUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501174.9313788
+  },
+  "SPKUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501175.424026
+  },
+  "SPKUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501175.939973
+  },
+  "FUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501176.6516778
+  },
+  "FUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501177.2749498
+  },
+  "HUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501177.761208
+  },
+  "HUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501178.246484
+  },
+  "ICNTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501178.7448928
+  },
+  "ICNTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501179.316239
+  },
+  "PUMPUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501181.749503
+  },
+  "PUMPUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501182.3784509
+  },
+  "CUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501182.8410308
+  },
+  "CUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501183.390686
+  },
+  "ERAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501183.902308
+  },
+  "ERAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501184.375155
+  },
+  "TREEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501184.854166
+  },
+  "TREEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501185.361268
+  },
+  "NAORISUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501185.901284
+  },
+  "NAORISUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501186.411704
+  },
+  "PROVEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501186.925045
+  },
+  "PROVEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501187.5495958
+  },
+  "ILVUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501188.128756
+  },
+  "ILVUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501188.67029
+  },
+  "INUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501189.453853
+  },
+  "INUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501190.258791
+  },
+  "CRCLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501190.756426
+  },
+  "CRCLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501191.326689
+  },
+  "NVDAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501191.977375
+  },
+  "NVDAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501192.462828
+  },
+  "TSLAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501192.924629
+  },
+  "TSLAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501193.46601
+  },
+  "SAPIENUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501194.080845
+  },
+  "SAPIENUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501194.593129
+  },
+  "WLFIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501195.108049
+  },
+  "WLFIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501195.60096
+  },
+  "SOMIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501196.092061
+  },
+  "SOMIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501196.565411
+  },
+  "AAPLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501197.103553
+  },
+  "AAPLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501197.599633
+  },
+  "GOOGLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501198.0705762
+  },
+  "GOOGLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501198.735762
+  },
+  "AMZNUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501199.21633
+  },
+  "AMZNUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501199.739784
+  },
+  "XPLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501201.181696
+  },
+  "XPLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501203.626243
+  },
+  "HOODUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501204.9078789
+  },
+  "HOODUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501205.477875
+  },
+  "COINUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501205.936331
+  },
+  "COINUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501206.4132621
+  },
+  "MSTRUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501206.986002
+  },
+  "MSTRUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501207.434005
+  },
+  "BTRUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501207.9588091
+  },
+  "BTRUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501208.4635441
+  },
+  "MITOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501208.990891
+  },
+  "MITOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501209.45886
+  },
+  "HEMIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501209.962063
+  },
+  "HEMIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501210.542306
+  },
+  "LINEAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501211.0258188
+  },
+  "LINEAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501211.5359402
+  },
+  "QUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501212.04124
+  },
+  "QUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501212.600574
+  },
+  "PTBUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501213.1387
+  },
+  "PTBUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501213.624321
+  },
+  "ARIAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501214.1123269
+  },
+  "ARIAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501214.695622
+  },
+  "XPINUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501216.2260952
+  },
+  "XPINUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501216.808088
+  },
+  "ZKCUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501217.3357801
+  },
+  "ZKCUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501217.811903
+  },
+  "0GUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501218.417577
+  },
+  "0GUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501218.957887
+  },
+  "BARDUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501219.563107
+  },
+  "BARDUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501220.102093
+  },
+  "ASTERUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501220.625102
+  },
+  "ASTERUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501221.1781828
+  },
+  "MSFTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501221.72562
+  },
+  "MSFTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501222.306724
+  },
+  "HANAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501226.352484
+  },
+  "HANAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501227.04053
+  },
+  "LIGHTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501227.5750668
+  },
+  "LIGHTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501228.2631428
+  },
+  "STBLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501228.773708
+  },
+  "STBLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501229.2585049
+  },
+  "FFUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501229.7345679
+  },
+  "FFUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501230.166848
+  },
+  "XANUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501230.686815
+  },
+  "XANUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501231.1851761
+  },
+  "EDENUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501231.6827369
+  },
+  "EDENUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501232.1932118
+  },
+  "VFYUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501232.7228858
+  },
+  "VFYUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501233.193439
+  },
+  "EVAAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501233.7100632
+  },
+  "EVAAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501234.2326999
+  },
+  "AIAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501234.753954
+  },
+  "AIAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501235.236651
+  },
+  "KGENUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501235.8874261
+  },
+  "KGENUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501236.397287
+  },
+  "4USDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501237.001834
+  },
+  "4USDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501237.549584
+  },
+  "YBUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501239.109388
+  },
+  "YBUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501239.6916502
+  },
+  "ENSOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501240.252584
+  },
+  "ENSOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501240.784368
+  },
+  "RECALLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501241.29971
+  },
+  "RECALLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501242.75717
+  },
+  "GIGGLEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501243.319031
+  },
+  "GIGGLEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501243.840048
+  },
+  "LABUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501244.314773
+  },
+  "LABUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501245.074039
+  },
+  "RIVERUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501245.5839942
+  },
+  "RIVERUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501246.0660381
+  },
+  "BLUAIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501247.830168
+  },
+  "BLUAIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501248.328183
+  },
+  "TURTLEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501248.785249
+  },
+  "TURTLEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501249.430909
+  },
+  "APRUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501249.999146
+  },
+  "APRUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501250.511056
+  },
+  "COMMONUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501252.11197
+  },
+  "COMMONUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501252.8894458
+  },
+  "KITEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501254.4099042
+  },
+  "KITEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501254.8990972
+  },
+  "MMTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501255.386611
+  },
+  "MMTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501255.9257689
+  },
+  "TRUSTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501256.500279
+  },
+  "TRUSTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501257.0524192
+  },
+  "UAIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501257.5014741
+  },
+  "UAIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501257.973782
+  },
+  "FOLKSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501258.471334
+  },
+  "FOLKSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501259.135673
+  },
+  "STABLEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762501259.678682
+  },
+  "STABLEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762501260.227819
+  }
+}
