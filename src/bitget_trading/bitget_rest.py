@@ -319,8 +319,12 @@ class BitgetRestClient:
         # 🚨 NEW: Add atomic TP/SL prices directly to the order
         if take_profit_price:
             data["presetTakeProfitPrice"] = str(take_profit_price)
+            # Ensure TP executes as market when triggered
+            data["executeTakeProfitPrice"] = "0"
         if stop_loss_price:
             data["presetStopLossPrice"] = str(stop_loss_price)
+            # Ensure SL executes as market when triggered
+            data["executeStopLossPrice"] = "0"
         
         # Log EXACT data being sent to API
         logger.info(
