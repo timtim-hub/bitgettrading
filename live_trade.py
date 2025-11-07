@@ -2198,6 +2198,7 @@ class LiveTrader:
                     
                     logger.info(f"\n{'='*70}")
                     logger.info(f"[ENTRY CHECK #{iteration}] Looking for {available_slots} new positions")
+                    logger.info(f"[PROGRESS] Ranking {len(self.symbols)} symbols...")
                     logger.info(f"{'='*70}")
 
                     # 🚀 NEW: Filter symbols before ranking (if enabled)
@@ -2211,6 +2212,7 @@ class LiveTrader:
                     
                     # Rank ALL symbols - then pick top ones for available slots
                     # This ensures we're trading the BEST opportunities across ALL 300+ tokens!
+                    logger.info(f"📊 [RANKING] Analyzing {len(symbols_to_rank)} symbols...")
                     all_ranked = self.enhanced_ranker.rank_symbols_enhanced(
                         self.state_manager,
                         top_k=len(symbols_to_rank),  # Rank filtered symbols
@@ -2218,7 +2220,7 @@ class LiveTrader:
                     # Then take only the top ones for available slots
                     allocations = all_ranked[:available_slots] if len(all_ranked) > available_slots else all_ranked
 
-                    logger.info(f"📊 Found {len(allocations)} high-quality signals for empty slots")
+                    logger.info(f"✅ [RANKING COMPLETE] Found {len(allocations)} high-quality signals for {available_slots} empty slots")
                     if allocations:
                         for i, alloc in enumerate(allocations, 1):
                             logger.info(
@@ -2238,11 +2240,11 @@ class LiveTrader:
                     )
                     logger.info(f"{'='*70}\n")
                 else:
-                    # Just log quick status - every 20th check (40 seconds @ 2s interval)
+                    # Just log quick status - every 20th check (100ms @ 5ms interval = 1 second)
                     check_count = getattr(self, '_check_count', 0)
                     self._check_count = check_count + 1
                     
-                    if check_count % 20 == 0:
+                    if check_count % 200 == 0:  # Every 1 second (200 * 5ms)
                         if len(self.position_manager.positions) > 0:
                             logger.info(
                                 f"[Monitor] Equity: ${self.equity:.2f} ({pnl_pct:+.2f}%) | "
