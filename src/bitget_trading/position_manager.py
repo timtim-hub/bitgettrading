@@ -165,18 +165,6 @@ class PositionManager:
         
         position = self.positions[symbol]
         
-        # EMERGENCY EXIT: Close positions stuck for too long (prevent losses from accumulating)
-        # For ultra-short-term trading, 15 minutes is TOO LONG!
-        from datetime import datetime, timedelta
-        entry_time = datetime.fromisoformat(position.entry_time.replace('Z', '+00:00'))
-        time_in_position = (datetime.now(entry_time.tzinfo) - entry_time).total_seconds()
-        
-        if time_in_position > 900:  # 15 minutes = 900 seconds
-            logger.warning(
-                f"⏰ EMERGENCY EXIT: {symbol} held for {time_in_position/60:.1f} minutes - CLOSING!"
-            )
-            return True, f"EMERGENCY-EXIT (held {time_in_position/60:.1f} min - cut losses!)"
-        
         # Calculate current price change % (currency move)
         if position.side == "long":
             price_change_pct = ((current_price - position.entry_price) / position.entry_price)

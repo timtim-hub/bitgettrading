@@ -811,22 +811,11 @@ class LiveTrader:
         """Execute trades based on allocations."""
         logger.info(f"💼 Execute trades called with {len(allocations)} allocations")
         
-        # 🚨 DISABLED: No rebalancing! Hold positions until TP/SL/trailing hit!
-        # OLD BUGGY CODE was closing positions just because they're not in top rankings
-        # This caused positions to exit at random PnL (1.74%, 3%, etc.) instead of our targets!
-        # 
-        # NEW STRATEGY: HOLD-AND-FILL
+        # 🚨 NO REBALANCING! Hold positions until TP/SL/trailing hit!
+        # HOLD-AND-FILL STRATEGY:
         # - Open positions with A-grade signals
-        # - HOLD until TP (14%) or SL (50%) or trailing (4%) triggers
-        # - Or emergency exit at 15 minutes
+        # - HOLD until TP (6%) or SL (25%) or trailing (1%) triggers
         # - NO rebalancing = lower fees, let winners run!
-        #
-        # Close positions not in new allocations - DISABLED!
-        # allocated_symbols = {alloc["symbol"] for alloc in allocations}
-        # for symbol in list(self.position_manager.positions.keys()):
-        #     if symbol not in allocated_symbols:
-        #         logger.info(f"🔄 Closing {symbol} (no longer in top allocations)")
-        #         await self.close_position(symbol)
 
         # Open new positions
         trades_attempted = 0
