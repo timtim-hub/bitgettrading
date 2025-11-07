@@ -195,15 +195,16 @@ class PositionManager:
         target_price_move_for_tp = position.take_profit_pct / position.leverage  # e.g., 0.14 / 25 = 0.0056 (0.56%)
         target_price_move_for_trail = position.trailing_stop_pct / position.leverage  # e.g., 0.04 / 25 = 0.0016 (0.16%)
         
-        # DEBUG: Log exit check details every time (to find why TP isn't triggering)
-        logger.debug(
-            f"📊 Exit check: {symbol} | "
-            f"Leverage: {position.leverage}x | "
+        # 🚨 EXTREME DEBUG: Log EVERY detail to understand exits
+        logger.info(
+            f"🔍 [EXIT CHECK] {symbol} | "
+            f"Entry: ${position.entry_price:.4f} → Current: ${current_price:.4f} | "
             f"Price Δ: {price_change_pct*100:.4f}% | "
-            f"Capital: {return_on_capital_pct*100:.2f}% | "
-            f"TP target: {target_price_move_for_tp*100:.4f}% price | "
-            f"Entry: ${position.entry_price:.4f} | "
-            f"Current: ${current_price:.4f}"
+            f"Capital PnL: {return_on_capital_pct*100:.2f}% | "
+            f"Leverage: {position.leverage}x | "
+            f"SL target: {-target_price_move_for_stop*100:.2f}% price ({-position.stop_loss_pct*100:.0f}% capital) | "
+            f"TP target: {target_price_move_for_tp*100:.2f}% price ({position.take_profit_pct*100:.0f}% capital) | "
+            f"Time held: {time_in_position/60:.1f}min"
         )
         
         # 1. Hard stop-loss (on capital, not price) - ALWAYS HONOR

@@ -284,6 +284,16 @@ class BitgetRestClient:
         """
         endpoint = "/api/v2/mix/order/place-order"
         
+        # 🚨 FORCE MARKET ORDERS - OVERRIDE ANY PARAMETER!
+        # User reports limit orders still being placed
+        # This forces "market" no matter what's passed
+        order_type = "market"  # FORCE IT!
+        
+        logger.info(
+            f"🔍 [BITGET_REST] place_order called: symbol={symbol}, side={side}, "
+            f"order_type={order_type} (FORCED TO MARKET!), size={size}"
+        )
+        
         # SIMPLIFIED: Just basic parameters for isolated margin
         data = {
             "symbol": symbol,
@@ -291,7 +301,7 @@ class BitgetRestClient:
             "marginMode": "isolated",
             "marginCoin": "USDT",
             "side": side,
-            "orderType": order_type,
+            "orderType": order_type,  # Will ALWAYS be "market" now!
             "size": str(size),
         }
         
@@ -301,7 +311,17 @@ class BitgetRestClient:
         if reduce_only:
             data["reduceOnly"] = "YES"
         
+        # Log EXACT data being sent to API
+        logger.info(
+            f"🚨 [API REQUEST] Sending to Bitget: {data}"
+        )
+        
         response = await self._request("POST", endpoint, data=data)
+        
+        logger.info(
+            f"✅ [API RESPONSE] Order placed: symbol={symbol}, side={side}, "
+            f"order_type={order_type}, response={response}"
+        )
         
         logger.info(
             "order_placed",

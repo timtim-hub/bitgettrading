@@ -289,13 +289,23 @@ class LiveTrader:
                 logger.error(f"❌ Order placement error: {e}")
                 return False
 
-    async def close_position(self, symbol: str) -> bool:
+    async def close_position(self, symbol: str, exit_reason: str = "MANUAL") -> bool:
         """Close an existing position."""
         position = self.position_manager.get_position(symbol)
         if not position:
+            logger.warning(f"⚠️ [CLOSE_POSITION] No position found for {symbol}")
             return False
 
         side = "sell" if position.side == "long" else "buy"
+        
+        # Log WHY we're closing
+        logger.info(
+            f"🚨 [CLOSE_POSITION CALLED] {symbol} | "
+            f"Reason: {exit_reason} | "
+            f"Side: {position.side} | "
+            f"Entry: ${position.entry_price:.4f} | "
+            f"Size: {position.size:.4f}"
+        )
 
         if self.paper_mode:
             logger.info(f"📝 [PAPER] CLOSE {symbol} | Size: {position.size:.4f}")
@@ -519,7 +529,8 @@ class LiveTrader:
                             f"💰 {reason} for {symbol} | PnL: {pnl_pct:.2f}%"
                         )
                 
-                await self.close_position(symbol)
+                # Pass the reason to close_position for comprehensive logging
+                await self.close_position(symbol, exit_reason=reason)
                 continue
 
     async def execute_trades(self, allocations: list[dict[str, Any]]) -> None:
