@@ -2262,5 +2262,21 @@
   "METUSDT_short": {
     "leverage": 25,
     "timestamp": 1762510702.217639
+  },
+  "MANTAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762511585.5392299
+  },
+  "MANTAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762511586.094091
+  },
+  "CROUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762511590.425816
+  },
+  "CROUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762511591.0198889
   }
 }
