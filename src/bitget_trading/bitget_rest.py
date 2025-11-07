@@ -823,32 +823,61 @@ class BitgetRestClient:
             f"trigger_price: {trigger_price} | product_type: {product_type}"
         )
         
-        try:
-            response = await self._request("POST", endpoint, data=data)
-            code = response.get("code", "N/A")
-            msg = response.get("msg", "N/A")
-            data_resp = response.get("data", {})
-            
-            if code == "00000":
-                logger.info(
-                    f"✅ [TRAILING TAKE PROFIT PLACED] {symbol} | "
-                    f"Range rate: {range_rate*100:.2f}% | "
-                    f"Trigger price: {trigger_price} | "
-                    f"Size: {rounded_size} | Response: {response}"
+        # Retry logic for trailing TP placement
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = await self._request("POST", endpoint, data=data)
+                code = response.get("code", "N/A")
+                msg = response.get("msg", "N/A")
+                data_resp = response.get("data", {})
+                
+                if code == "00000":
+                    logger.info(
+                        f"✅ [TRAILING TAKE PROFIT PLACED] {symbol} | "
+                        f"Range rate: {range_rate*100:.2f}% | "
+                        f"Trigger price: {trigger_price} | "
+                        f"Size: {rounded_size} | Order ID: {data_resp.get('orderId', 'N/A')}"
+                    )
+                    return response
+                else:
+                    # Check for "Insufficient position" error - needs longer wait
+                    if code == "43023" or "Insufficient position" in str(msg):
+                        wait_time = 3.0 * (attempt + 1)  # Exponential backoff: 3s, 6s, 9s
+                        logger.warning(
+                            f"⚠️ [TRAILING TP ERROR 43023] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                            f"Insufficient position - waiting {wait_time:.1f}s before retry..."
+                        )
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(wait_time)
+                            continue
+                    else:
+                        logger.error(
+                            f"❌ [TRAILING TAKE PROFIT FAILED] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                            f"Code: {code} | Msg: {msg} | Full response: {response}"
+                        )
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(2.0)  # Wait before retry
+                            continue
+                        else:
+                            return response  # Return failed response after all retries
+            except Exception as e:
+                logger.warning(
+                    f"⚠️ [TRAILING TAKE PROFIT EXCEPTION] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                    f"Exception: {e} | Type: {type(e).__name__}"
                 )
-            else:
-                logger.error(
-                    f"❌ [TRAILING TAKE PROFIT FAILED] {symbol} | "
-                    f"Code: {code} | Msg: {msg} | Full response: {response}"
-                )
-            
-            return response
-        except Exception as e:
-            logger.error(
-                f"❌ [TRAILING TAKE PROFIT EXCEPTION] {symbol} | "
-                f"Exception: {e} | Type: {type(e).__name__}"
-            )
-            return {"code": "error", "msg": str(e)}
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2.0)  # Wait before retry
+                    continue
+                else:
+                    logger.error(
+                        f"❌ [TRAILING TAKE PROFIT EXCEPTION] {symbol} | "
+                        f"Failed after {max_retries} attempts! Exception: {e}"
+                    )
+                    return {"code": "error", "msg": str(e)}
+        
+        # Should never reach here, but return error if we do
+        return {"code": "error", "msg": "Failed after all retries"}
 
     async def get_ticker(
         self, symbol: str, product_type: str = "USDT-FUTURES"

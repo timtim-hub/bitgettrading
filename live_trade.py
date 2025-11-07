@@ -527,39 +527,65 @@ class LiveTrader:
                                     f"TP Threshold: ${take_profit_price:.4f}"
                                 )
                                 
-                                tp_results = await self.rest_client.place_trailing_take_profit_order(
-                                    symbol=symbol,
-                                    hold_side=side,
-                                    size=actual_position_size,
-                                    range_rate=trailing_range_rate,  # 1% trailing distance
-                                    trigger_price=trailing_trigger_price,  # Activate at TP threshold (Rückrufpreis)
-                                    size_precision=size_precision,
-                                )
+                                # 🚨 CRITICAL: Place trailing TP with robust retry logic
+                                # Keep retrying until it succeeds or we exhaust all attempts
+                                trailing_tp_placed = False
+                                max_trailing_tp_retries = 5  # More retries for trailing TP
+                                trailing_tp_retry_delay = 2.0  # Wait longer between retries
                                 
-                                # 🚨 CRITICAL: Verify trailing TP was placed successfully
-                                if tp_results and tp_results.get("code") == "00000":
-                                    logger.info(f"✅ [TRAILING TP PLACED] {symbol} | Order ID: {tp_results.get('data', {}).get('orderId', 'N/A')}")
-                                else:
-                                    logger.error(
-                                        f"❌ [TRAILING TP FAILED] {symbol} | "
-                                        f"Code: {tp_results.get('code', 'N/A') if tp_results else 'N/A'} | "
-                                        f"Msg: {tp_results.get('msg', 'N/A') if tp_results else 'N/A'} | "
-                                        f"Retrying..."
-                                    )
-                                    # Retry trailing TP placement
-                                    await asyncio.sleep(1.0)
-                                    retry_tp_results = await self.rest_client.place_trailing_take_profit_order(
+                                for trailing_attempt in range(max_trailing_tp_retries):
+                                    tp_results = await self.rest_client.place_trailing_take_profit_order(
                                         symbol=symbol,
                                         hold_side=side,
                                         size=actual_position_size,
-                                        range_rate=trailing_range_rate,
-                                        trigger_price=trailing_trigger_price,
+                                        range_rate=trailing_range_rate,  # 1% trailing distance
+                                        trigger_price=trailing_trigger_price,  # Activate at TP threshold (Rückrufpreis)
                                         size_precision=size_precision,
                                     )
-                                    if retry_tp_results and retry_tp_results.get("code") == "00000":
-                                        logger.info(f"✅ [TRAILING TP RETRY SUCCESS] {symbol}")
+                                    
+                                    # Verify trailing TP was placed successfully
+                                    if tp_results and tp_results.get("code") == "00000":
+                                        logger.info(
+                                            f"✅ [TRAILING TP PLACED] {symbol} | "
+                                            f"Order ID: {tp_results.get('data', {}).get('orderId', 'N/A')} | "
+                                            f"Attempt: {trailing_attempt + 1}/{max_trailing_tp_retries}"
+                                        )
+                                        trailing_tp_placed = True
+                                        break  # Success! Exit retry loop
                                     else:
-                                        logger.error(f"❌ [TRAILING TP RETRY FAILED] {symbol} | Code: {retry_tp_results.get('code', 'N/A') if retry_tp_results else 'N/A'}")
+                                        code = tp_results.get('code', 'N/A') if tp_results else 'N/A'
+                                        msg = tp_results.get('msg', 'N/A') if tp_results else 'N/A'
+                                        
+                                        # Check for "Insufficient position" error - needs longer wait
+                                        if code == "43023" or "Insufficient position" in str(msg):
+                                            wait_time = trailing_tp_retry_delay * (trailing_attempt + 1)  # Exponential backoff
+                                            logger.warning(
+                                                f"⚠️ [TRAILING TP ERROR 43023] {symbol} | "
+                                                f"Attempt {trailing_attempt + 1}/{max_trailing_tp_retries} | "
+                                                f"Insufficient position - waiting {wait_time:.1f}s before retry..."
+                                            )
+                                            if trailing_attempt < max_trailing_tp_retries - 1:
+                                                await asyncio.sleep(wait_time)
+                                                continue
+                                        else:
+                                            logger.error(
+                                                f"❌ [TRAILING TP FAILED] {symbol} | "
+                                                f"Attempt {trailing_attempt + 1}/{max_trailing_tp_retries} | "
+                                                f"Code: {code} | Msg: {msg}"
+                                            )
+                                            if trailing_attempt < max_trailing_tp_retries - 1:
+                                                await asyncio.sleep(trailing_tp_retry_delay)
+                                                continue
+                                
+                                # 🚨 CRITICAL: If trailing TP still not placed after all retries, log error
+                                if not trailing_tp_placed:
+                                    logger.error(
+                                        f"🚨 [TRAILING TP CRITICAL FAILURE] {symbol} | "
+                                        f"Failed to place trailing TP after {max_trailing_tp_retries} attempts! | "
+                                        f"This is a CRITICAL issue - position will not have trailing TP protection!"
+                                    )
+                                    # Set tp_results to empty dict to prevent errors downstream
+                                    tp_results = {"code": "error", "msg": "Failed after all retries"}
                                 
                                 # Handle results safely (check for None)
                                 if sl_results is None:
