@@ -2786,7 +2786,7 @@ class LiveTrader:
         """
         iteration = 0
         last_entry_check_time = datetime.now()
-        entry_check_interval_sec = 0.1  # Check for new entries every 0.1 seconds (100ms - INSTANT SIGNAL RESPONSE!)
+        entry_check_interval_sec = 0.01  # Check for new entries every 0.01 seconds (10ms - HYPER-FAST SIGNAL RESPONSE!)
         position_check_interval_sec = 0.005  # Check exits every 0.005 seconds (5ms - HYPER FAST! 10x faster!)
 
         logger.info("🚀 [TRADING LOOP] Starting trading loop...")
@@ -2851,11 +2851,11 @@ class LiveTrader:
 
                 # Daily loss limit check removed - let positions use full SL (25%)
 
-                # 🚀 INSTANT ENTRY: Check for new entries IMMEDIATELY when slots available (NO WAITING!)
+                # 🚀 HYPER-FAST ENTRY: Check for new entries IMMEDIATELY when slots available (NO WAITING!)
                 # This ensures we place trades as soon as signals come in
                 available_slots = self.max_positions - len(self.position_manager.positions)
                 time_since_entry_check = (datetime.now() - last_entry_check_time).total_seconds()
-                should_check_entries = time_since_entry_check >= entry_check_interval_sec
+                should_check_entries = time_since_entry_check >= entry_check_interval_sec  # Still track for logging
 
                 # Debug logging every 200 iterations (1 second) to show bot is active
                 loop_count = getattr(self, '_loop_count', 0)
@@ -2870,8 +2870,9 @@ class LiveTrader:
                         f"Equity: ${self.equity:.2f} ({pnl_pct:+.2f}%)"
                     )
 
-                # 🚀 INSTANT ENTRY: Check immediately when slots available (don't wait for interval)
-                if available_slots > 0 and should_check_entries:
+                # 🚀 HYPER-FAST ENTRY: Check immediately when slots available (don't wait for interval)
+                # Always check if slots available (remove interval wait for maximum speed)
+                if available_slots > 0:
                     iteration += 1
                     last_entry_check_time = datetime.now()
                     
