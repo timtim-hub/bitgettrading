@@ -934,10 +934,11 @@ class EnhancedRanker:
         result = filtered[:top_k] if top_k < len(filtered) else filtered
 
         if result:
+            top_3_list = [(s['symbol'], f"{s['score']:.3f}", s['regime']) for s in result[:3]]
             logger.debug(
                 f"top_ranked: total_ranked={len(scored_symbols)}, "
                 f"returned={len(result)}, "
-                f"top_3={[(s['symbol'], f'{s[\"score\"]:.3f}', s['regime']) for s in result[:3]]}"
+                f"top_3={top_3_list}"
             )
 
         return result
