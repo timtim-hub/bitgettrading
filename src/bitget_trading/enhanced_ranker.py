@@ -318,7 +318,7 @@ class EnhancedRanker:
         if not has_confluence:
             # No confluence = skip this symbol
             reason = confluence_metadata.get("reason", "no_confluence")
-            logger.info(
+            logger.debug(
                 f"🚫 [CONFLUENCE FAILED] {state.symbol} | Reason: {reason} | "
                 f"Regime: {regime} | "
                 f"Volume: {confluence_metadata.get('volume_ratio', 0):.2f}x | "
@@ -923,28 +923,21 @@ class EnhancedRanker:
         else:
             filtered = scored_symbols  # Return ALL ranked symbols, not just top_k
 
-        # Return top_k only at the end (after ranking all)
-        return filtered[:top_k] if top_k < len(filtered) else filtered
-
-        logger.info(
-            "enhanced_ranking_complete",
-            total_analyzed=len(all_features),
-            scored=len(scored_symbols),
-            after_filters=len(filtered),
-            skip_reasons=skip_reasons,
+        # Log ranking summary
+        logger.debug(
+            f"enhanced_ranking_complete: total_analyzed={len(all_features)}, "
+            f"scored={len(scored_symbols)}, after_filters={len(filtered)}, "
+            f"skip_reasons={skip_reasons}"
         )
 
-        # Return top_k (but we ranked ALL symbols first)
+        # Return top_k only at the end (after ranking all)
         result = filtered[:top_k] if top_k < len(filtered) else filtered
 
         if result:
-            logger.info(
-                "top_ranked",
-                total_ranked=len(scored_symbols),
-                returned=len(result),
-                top_3=[
-                    (s["symbol"], f"{s['score']:.3f}", s["regime"]) for s in result[:3]
-                ],
+            logger.debug(
+                f"top_ranked: total_ranked={len(scored_symbols)}, "
+                f"returned={len(result)}, "
+                f"top_3={[(s['symbol'], f'{s[\"score\"]:.3f}', s['regime']) for s in result[:3]]}"
             )
 
         return result
