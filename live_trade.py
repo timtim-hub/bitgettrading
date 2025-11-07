@@ -268,9 +268,9 @@ class LiveTrader:
                     # Wait a moment for order to fill
                     await asyncio.sleep(0.5)
                     
-                    # Calculate TP/SL prices (20% capital = 0.4% price @ 50x)
-                    # Use tighter SL/TP for exchange-side orders
-                    sl_price_pct = 0.004  # 0.4% price move = 20% capital @ 50x
+                    # Calculate TP/SL prices (15% capital = 0.3% price @ 50x)
+                    # TIGHTER for liquidation protection!
+                    sl_price_pct = 0.003  # 0.3% price move = 15% capital @ 50x (TIGHTER!)
                     tp_price_pct = 0.004  # 0.4% price move = 20% capital @ 50x
                     
                     if side == "long":
@@ -308,8 +308,8 @@ class LiveTrader:
                         if tpsl_order and tpsl_order.get("code") == "00000":
                             logger.info(
                                 f"🛡️  [EXCHANGE-SIDE TP/SL] {symbol} | "
-                                f"SL: ${stop_loss_price:.4f} (-20% capital) | "
-                                f"TP: ${take_profit_price:.4f} (+20% capital)"
+                                f"SL: ${stop_loss_price:.4f} (-15% capital / 0.3% price) | "
+                                f"TP: ${take_profit_price:.4f} (+20% capital / 0.4% price)"
                             )
                         else:
                             logger.warning(
@@ -474,11 +474,11 @@ class LiveTrader:
         Exchange-side TP/SL handles instant execution, so less frequent sync is fine.
         """
         # SYNC WITH EXCHANGE: Check what's actually open (but not EVERY iteration - too slow!)
-        # Sync every 5 seconds (25 iterations @ 200ms = 5s)
+        # Sync every 5 seconds (100 iterations @ 50ms = 5s)
         sync_count = getattr(self, '_sync_count', 0)
         self._sync_count = sync_count + 1
         
-        if not self.paper_mode and sync_count % 25 == 0:
+        if not self.paper_mode and sync_count % 100 == 0:
             try:
                 endpoint = "/api/v2/mix/position/all-position"
                 params = {"productType": "USDT-FUTURES", "marginCoin": "USDT"}
@@ -504,12 +504,12 @@ class LiveTrader:
         positions_checked = 0
         positions_to_check = list(self.position_manager.positions.keys())
         
-        # Log position status every 25 checks (5 seconds @ 200ms interval)
+        # Log position status every 100 checks (5 seconds @ 50ms interval)
         check_count = getattr(self, '_position_check_count', 0)
         self._position_check_count = check_count + 1
         
         if positions_to_check:
-            if check_count % 25 == 0:
+            if check_count % 100 == 0:
                 # Detailed status every 5 seconds
                 logger.info(f"🔍 Monitoring {len(positions_to_check)} positions for exits...")
                 for sym in positions_to_check:
@@ -674,7 +674,7 @@ class LiveTrader:
         iteration = 0
         last_entry_check_time = datetime.now()
         entry_check_interval_sec = 60  # Check for new entries every 60 seconds
-        position_check_interval_sec = 0.2  # Check exits every 0.2 seconds (200ms - ULTRA FAST!)
+        position_check_interval_sec = 0.05  # Check exits every 0.05 seconds (50ms - LIGHTNING FAST!)
 
         while self.running:
             try:
