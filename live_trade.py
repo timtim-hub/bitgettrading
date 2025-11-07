@@ -955,13 +955,13 @@ class LiveTrader:
                                     
                                     # 🚨 CRITICAL: If trailing TP still not placed after all retries, log error
                                     if not trailing_tp_placed:
-                                    logger.error(
-                                        f"🚨 [TRAILING TP CRITICAL FAILURE] {symbol} | "
-                                        f"Failed to place trailing TP after {max_trailing_tp_retries} attempts! | "
-                                        f"This is a CRITICAL issue - position will not have trailing TP protection!"
-                                    )
-                                    # Set tp_results to empty dict to prevent errors downstream
-                                    tp_results = {"code": "error", "msg": "Failed after all retries"}
+                                        logger.error(
+                                            f"🚨 [TRAILING TP CRITICAL FAILURE] {symbol} | "
+                                            f"Failed to place trailing TP after {max_trailing_tp_retries} attempts! | "
+                                            f"This is a CRITICAL issue - position will not have trailing TP protection!"
+                                        )
+                                        # Set tp_results to empty dict to prevent errors downstream
+                                        tp_results = {"code": "error", "msg": "Failed after all retries"}
                                 
                                 # Handle results safely (check for None)
                                 # 🚨 CRITICAL FIX: place_tpsl_order returns {"sl": {...}, "tp": {...}} dict
