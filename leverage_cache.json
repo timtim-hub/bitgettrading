@@ -2478,5 +2478,21 @@
   "SLPUSDT_short": {
     "leverage": 25,
     "timestamp": 1762537142.5277262
+  },
+  "BICOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762537958.314164
+  },
+  "BICOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762537958.934478
+  },
+  "CETUSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762537964.4938219
+  },
+  "CETUSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762537965.064636
   }
 }
