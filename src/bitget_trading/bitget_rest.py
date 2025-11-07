@@ -766,6 +766,9 @@ class BitgetRestClient:
                         )
                         results["tp"] = {"code": "error", "msg": str(e)}
         
+        # 🚨 CRITICAL: Return results dict with SL and TP order results
+        return results
+    
     async def place_trailing_take_profit_order(
         self,
         symbol: str,

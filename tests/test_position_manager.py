@@ -173,14 +173,14 @@ def test_check_exit_trailing_stop_long(position_manager):
     entry_price = 30000.0
     capital = 100.0
     leverage = 50
-    take_profit_pct = 0.10  # 10% capital TP
-    trailing_stop_pct = 0.04 # 4% capital drop from peak
+    take_profit_pct = 0.08  # 8% capital TP
+    trailing_stop_pct = 0.015  # 1.5% capital drop from peak
     position_manager.add_position(symbol, "long", entry_price, 0.01, capital, leverage, 
                                   take_profit_pct=take_profit_pct, trailing_stop_pct=trailing_stop_pct)
     pos = position_manager.get_position(symbol)
 
-    # Price rises to TP threshold (10% capital profit) - use slightly above to trigger TP check
-    tp_price = entry_price * (1 + (take_profit_pct + 0.001) / leverage)  # Slightly above 10% capital profit
+    # Price rises to TP threshold (8% capital profit) - use slightly above to trigger TP check
+    tp_price = entry_price * (1 + (take_profit_pct + 0.0005) / leverage)  # Slightly above 8% capital profit
     position_manager.update_position_price(symbol, tp_price)
     assert pos.highest_price == tp_price
     
@@ -190,8 +190,8 @@ def test_check_exit_trailing_stop_long(position_manager):
     assert "TAKE-PROFIT" in reason
     
     # Now test trailing stop: price continues higher (new peak), then drops to trigger trailing stop
-    # Update position to new peak (slightly higher than TP)
-    higher_peak = entry_price * (1 + (take_profit_pct + 0.01) / leverage)  # 11% capital profit
+    # Update position to new peak (higher than TP to allow trailing stop room)
+    higher_peak = entry_price * (1 + (take_profit_pct + 0.02) / leverage)  # 10% capital profit
     position_manager.update_position_price(symbol, higher_peak)
     assert pos.highest_price == higher_peak
     
@@ -204,9 +204,10 @@ def test_check_exit_trailing_stop_long(position_manager):
     # Find a price that satisfies both conditions
     min_price_for_tp = entry_price * (1 + take_profit_pct / leverage)  # Minimum to stay above TP
     max_price_for_trail = higher_peak * (1 - trailing_stop_pct / leverage)  # Maximum for trailing stop
-    
-    # Use a price between these two (closer to trailing stop trigger)
-    trailing_stop_trigger_price = max(min_price_for_tp * 1.001, max_price_for_trail * 0.999)  # Slightly trigger trailing stop
+
+    # Use a price between these two (closer to trailing stop trigger) while staying above TP threshold
+    # Drop back to the exact TP threshold to simulate trailing protection kicking in
+    trailing_stop_trigger_price = min_price_for_tp
     
     # Now drop to trailing stop trigger price
     position_manager.update_position_price(symbol, trailing_stop_trigger_price)
@@ -219,14 +220,14 @@ def test_check_exit_trailing_stop_short(position_manager):
     entry_price = 2000.0
     capital = 100.0
     leverage = 50
-    take_profit_pct = 0.10  # 10% capital TP
-    trailing_stop_pct = 0.04
+    take_profit_pct = 0.08  # 8% capital TP
+    trailing_stop_pct = 0.015
     position_manager.add_position(symbol, "short", entry_price, 0.1, capital, leverage,
                                   take_profit_pct=take_profit_pct, trailing_stop_pct=trailing_stop_pct)
     pos = position_manager.get_position(symbol)
 
-    # Price drops to TP threshold (10% capital profit) - use slightly below to trigger TP check
-    tp_price = entry_price * (1 - (take_profit_pct + 0.001) / leverage)  # Slightly below entry (above 10% capital profit)
+    # Price drops to TP threshold (8% capital profit) - use slightly below to trigger TP check
+    tp_price = entry_price * (1 - (take_profit_pct + 0.0005) / leverage)  # Slightly below entry (above 8% capital profit)
     position_manager.update_position_price(symbol, tp_price)
     assert pos.lowest_price == tp_price
     
@@ -236,8 +237,8 @@ def test_check_exit_trailing_stop_short(position_manager):
     assert "TAKE-PROFIT" in reason
     
     # Now test trailing stop: price drops further (new low), then rises to trigger trailing stop
-    # Lower low = entry_price * (1 - (take_profit_pct + 0.01) / leverage)  # 11% capital profit
-    lower_low = entry_price * (1 - (take_profit_pct + 0.01) / leverage)
+    # Lower low to establish new peak profit (deeper than TP to allow trailing stop room)
+    lower_low = entry_price * (1 - (take_profit_pct + 0.02) / leverage)
     position_manager.update_position_price(symbol, lower_low)
     assert pos.lowest_price == lower_low
     
@@ -251,9 +252,9 @@ def test_check_exit_trailing_stop_short(position_manager):
     # Find a price that satisfies both conditions
     max_price_for_tp = entry_price * (1 - take_profit_pct / leverage)  # Maximum to stay above TP
     min_price_for_trail = lower_low * (1 + trailing_stop_pct / leverage)  # Minimum for trailing stop
-    
-    # Use a price between these two (closer to trailing stop trigger)
-    trailing_stop_trigger_price = min(max_price_for_tp * 0.999, min_price_for_trail * 1.001)  # Slightly trigger trailing stop
+
+    # Rise back to the exact TP threshold to simulate trailing protection on shorts
+    trailing_stop_trigger_price = max_price_for_tp
     
     position_manager.update_position_price(symbol, trailing_stop_trigger_price)
     should_close, reason = position_manager.check_exit_conditions(symbol, trailing_stop_trigger_price)

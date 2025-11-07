@@ -320,11 +320,11 @@ class LiveTrader:
                                 f"sl_price_pct: {sl_price_pct:.6f} ({sl_price_pct*100:.4f}%)"
                             )
                         else:
-                            # Fallback (should never happen) - Use correct values: 50% SL, 6% TP
+                            # Fallback (should never happen) - Use correct values: 50% SL, 8% TP
                             sl_price_pct = 0.02  # 50% capital @ 25x = 2% price
-                            tp_price_pct = 0.0024  # 6% capital @ 25x = 0.24% price
+                            tp_price_pct = 0.0032  # 8% capital @ 25x = 0.32% price
                             sl_capital_pct = 0.50  # For logging
-                            tp_capital_pct = 0.06  # For logging
+                            tp_capital_pct = 0.08  # For logging
                             logger.warning(
                                 f"⚠️ [TP/SL FALLBACK] {symbol} | regime_params is None! Using fallback: "
                                 f"SL={sl_capital_pct*100:.0f}%, TP={tp_capital_pct*100:.0f}%"
@@ -595,15 +595,33 @@ class LiveTrader:
                                 # 🚨 CRITICAL FIX: Trigger price must be ≥ current market price (error 43035)
                                 # For LONG: trigger price must be ≥ current price (activates when price goes up)
                                 # For SHORT: trigger price must be ≤ current price (activates when price goes down)
-                                # Add buffer to ensure it's always above/below current price
+                                # 
+                                # 🚨 IMPORTANT: Trailing TP should activate at TP threshold, NOT at current price!
+                                # If current price is already above TP threshold, we still set trigger at TP threshold
+                                # (Bitget will activate it when price reaches that level)
+                                # Only if current price is BELOW TP threshold, we need to set trigger ≥ current price
                                 if side == "long":
                                     # For long positions, trigger price must be ≥ current market price
-                                    # Set it to max(take_profit_price, current_market_price * 1.001) with 0.1% buffer
-                                    trailing_trigger_price = max(take_profit_price, current_market_price * 1.001)  # 0.1% above current to ensure it activates
+                                    # BUT: We want trailing TP to activate at TP threshold, not at current price!
+                                    # So: if current < TP threshold, set trigger = max(TP threshold, current * 1.001)
+                                    #     if current >= TP threshold, set trigger = current (will activate immediately)
+                                    if current_market_price < take_profit_price:
+                                        # Price hasn't reached TP threshold yet - set trigger at TP threshold or slightly above current
+                                        trailing_trigger_price = max(take_profit_price, current_market_price * 1.001)  # 0.1% above current to ensure it activates
+                                    else:
+                                        # Price already at/above TP threshold - set trigger at current price (will activate immediately)
+                                        # Bitget requires trigger ≥ current, so using current price should work
+                                        trailing_trigger_price = current_market_price
                                 else:  # short
                                     # For short positions, trigger price must be ≤ current market price
-                                    # Set it to min(take_profit_price, current_market_price * 0.999) with 0.1% buffer
-                                    trailing_trigger_price = min(take_profit_price, current_market_price * 0.999)  # 0.1% below current to ensure it activates
+                                    # BUT: We want trailing TP to activate at TP threshold, not at current price!
+                                    if current_market_price > take_profit_price:
+                                        # Price hasn't reached TP threshold yet - set trigger at TP threshold or slightly below current
+                                        trailing_trigger_price = min(take_profit_price, current_market_price * 0.999)  # 0.1% below current to ensure it activates
+                                    else:
+                                        # Price already at/below TP threshold - set trigger at current price (will activate immediately)
+                                        # Bitget requires trigger ≤ current, so using current price should work
+                                        trailing_trigger_price = current_market_price
                                 
                                 # 🚨 CRITICAL: Round trigger price to correct decimal places (error 40808: checkBDScale)
                                 # Bitget API requires trigger price to have exact precision based on contract's pricePlace
@@ -735,14 +753,17 @@ class LiveTrader:
                                     tp_results = {"code": "error", "msg": "Failed after all retries"}
                                 
                                 # Handle results safely (check for None)
+                                # 🚨 CRITICAL FIX: place_tpsl_order returns {"sl": {...}, "tp": {...}} dict
+                                # Check results correctly!
                                 if sl_results is None:
                                     sl_results = {}
                                 if tp_results is None:
                                     tp_results = {}
                                 
-                                sl_code = sl_results.get('sl', {}).get('code', 'N/A') if sl_results.get('sl') else 'N/A'
+                                # sl_results is the return value from place_tpsl_order, which is {"sl": {...}, "tp": {...}}
+                                sl_code = sl_results.get('sl', {}).get('code', 'N/A') if sl_results and sl_results.get('sl') else 'N/A'
                                 tp_code = tp_results.get('code', 'N/A') if tp_results else 'N/A'
-                                sl_msg = sl_results.get('sl', {}).get('msg', 'N/A') if sl_results.get('sl') else 'N/A'
+                                sl_msg = sl_results.get('sl', {}).get('msg', 'N/A') if sl_results and sl_results.get('sl') else 'N/A'
                                 tp_msg = tp_results.get('msg', 'N/A') if tp_results else 'N/A'
                                 
                                 logger.info(
@@ -776,7 +797,7 @@ class LiveTrader:
                                                 take_profit_price=None,  # Only retry SL
                                                 size_precision=size_precision,
                                             )
-                                            retry_sl_code = retry_sl.get('sl', {}).get('code', 'N/A') if retry_sl.get('sl') else 'N/A'
+                                            retry_sl_code = retry_sl.get('sl', {}).get('code', 'N/A') if retry_sl and retry_sl.get('sl') else 'N/A'
                                             if retry_sl_code == "00000":
                                                 logger.info(f"✅ [TP/SL RETRY SUCCESS] {symbol} | SL order placed successfully!")
                                             else:

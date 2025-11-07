@@ -29,9 +29,9 @@ class Position:
     
     # OPTIMIZED for ultra-short-term scalping with fees in mind
     # With 25x leverage + 0.04% round-trip fees (SAFER than 50x!)
-    trailing_stop_pct: float = 0.01  # 1% trailing from peak (0.04% price @ 25x) - ACTIVE!
+    trailing_stop_pct: float = 0.015  # 1.5% trailing from peak (0.06% price @ 25x) - ACTIVE!
     stop_loss_pct: float = 0.50   # 50% hard stop-loss (2% price @ 25x) - MAXIMUM ROOM for big moves!
-    take_profit_pct: float = 0.06  # 6% take-profit (0.24% price @ 25x) - WITH 1% trailing protection!
+    take_profit_pct: float = 0.08  # 8% take-profit (0.32% price @ 25x) - WITH trailing protection!
     
     # Regime info
     regime: str = "ranging"  # Market regime at entry
@@ -76,8 +76,8 @@ class PositionManager:
         leverage: int,
         regime: str = "ranging",
         stop_loss_pct: float = 0.50,  # 50% capital (2% price @ 25x) - MAXIMUM ROOM for big moves!
-        take_profit_pct: float = 0.06,  # 6% capital (0.24% price @ 25x) - WITH 1% trailing!
-        trailing_stop_pct: float = 0.01,  # 1% capital (0.04% price @ 25x) - ACTIVE!
+        take_profit_pct: float = 0.08,  # 8% capital (0.32% price @ 25x) - WITH trailing!
+        trailing_stop_pct: float = 0.015,  # 1.5% capital (0.06% price @ 25x) - ACTIVE!
         metadata: dict = None,  # Entry quality metadata for loss tracking
     ) -> None:
         """Add a new position with regime-based parameters and metadata."""
@@ -181,12 +181,12 @@ class PositionManager:
         
         # CRITICAL: Targets are based on CAPITAL return, not price move!
         # With 25x leverage:
-        # - 14% capital TP = 0.56% price move - WITH trailing protection!
+        # - 8% capital TP = 0.32% price move - WITH trailing protection!
         # - 50% capital SL = 2.0% price move - MAXIMUM ROOM for big moves!
         
         target_price_move_for_stop = position.stop_loss_pct / position.leverage  # e.g., 0.50 / 25 = 0.02 (2%)
-        target_price_move_for_tp = position.take_profit_pct / position.leverage  # e.g., 0.14 / 25 = 0.0056 (0.56%)
-        target_price_move_for_trail = position.trailing_stop_pct / position.leverage  # e.g., 0.04 / 25 = 0.0016 (0.16%)
+        target_price_move_for_tp = position.take_profit_pct / position.leverage  # e.g., 0.08 / 25 = 0.0032 (0.32%)
+        target_price_move_for_trail = position.trailing_stop_pct / position.leverage  # e.g., 0.015 / 25 = 0.0006 (0.06%)
         
         # 🚨 EXTREME DEBUG: Log EVERY detail to understand exits
         logger.info(
@@ -204,18 +204,7 @@ class PositionManager:
         if price_change_pct < -target_price_move_for_stop:
             return True, f"STOP-LOSS (Capital: {return_on_capital_pct*100:.2f}%, Price: {price_change_pct*100:.4f}%)"
         
-        # 2. Take-profit (on capital, not price) - CHECK THIS FIRST!
-        if price_change_pct > target_price_move_for_tp:
-            logger.info(
-                f"🎯 TP TRIGGERED! {symbol} | "
-                f"Capital: {return_on_capital_pct*100:.2f}% | "
-                f"Price: {price_change_pct*100:.4f}% | "
-                f"Target: {target_price_move_for_tp*100:.4f}% | "
-                f"Leverage: {position.leverage}x"
-            )
-            return True, f"TAKE-PROFIT (Capital: {return_on_capital_pct*100:.2f}%, Price: {price_change_pct*100:.4f}%)"
-        
-        # 3. REMOVED: Minimum profit lock was TRAPPING positions in losses!
+        # 2. REMOVED: Minimum profit lock was TRAPPING positions in losses!
         # Old logic: Held positions between -0.5% to +0.5%, but this caused:
         # - Small losses to turn into BIG losses
         # - Positions stuck without exit_reason
@@ -224,11 +213,12 @@ class PositionManager:
         # NEW APPROACH: Let stop-loss handle downside, let TP/trailing handle upside
         # NO artificial holds - trust our SL/TP/trailing logic!
         
-        # 4. Trailing stop (only AFTER reaching TP threshold on CAPITAL basis)
-        # Prevents early 4% exits; trailing becomes a post-TP profit lock
+        # 3. Trailing stop (only AFTER reaching TP threshold on CAPITAL basis)
+        # Prevents premature exits; trailing becomes a post-TP profit lock
         if return_on_capital_pct >= position.take_profit_pct:
             if position.side == "long":
                 # Trail from highest price
+                position.highest_price = max(position.highest_price, current_price)
                 trailing_stop_price = position.highest_price * (1 - target_price_move_for_trail)
                 drop_from_peak_price_pct = (position.highest_price - current_price) / position.highest_price
                 drop_from_peak_capital_pct = drop_from_peak_price_pct * position.leverage
@@ -257,6 +247,7 @@ class PositionManager:
                     )
             else:  # short
                 # Trail from lowest price
+                position.lowest_price = min(position.lowest_price, current_price)
                 trailing_stop_price = position.lowest_price * (1 + target_price_move_for_trail)
                 drop_from_low_price_pct = (current_price - position.lowest_price) / position.lowest_price
                 drop_from_low_capital_pct = drop_from_low_price_pct * position.leverage
@@ -283,6 +274,19 @@ class PositionManager:
                         f"TRAILING-STOP from low ${position.lowest_price:.4f} "
                         f"(Bounce: {drop_from_low_capital_pct*100:.2f}% capital)"
                     )
+
+            # If trailing stop did not trigger, fall back to exact take-profit close
+            logger.info(
+                f"🎯 TP TRIGGERED! {symbol} | "
+                f"Capital: {return_on_capital_pct*100:.2f}% | "
+                f"Price: {price_change_pct*100:.4f}% | "
+                f"Target: {target_price_move_for_tp*100:.4f}% | "
+                f"Leverage: {position.leverage}x"
+            )
+            return True, (
+                f"TAKE-PROFIT (Capital: {return_on_capital_pct*100:.2f}%, "
+                f"Price: {price_change_pct*100:.4f}%)"
+            )
         else:
             # Log when trailing stop is NOT active (below TP threshold)
             logger.debug(

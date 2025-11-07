@@ -134,7 +134,7 @@ class RegimeDetector:
         if regime == MarketRegime.TRENDING:
             return {
                 "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM for big moves!
-                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH trailing!
+                "take_profit_pct": 0.08,    # 8% capital (0.32% price @ 25x) - WITH trailing!
                 "trailing_stop_pct": 0.015,  # 1.5% callback rate (Rückrufquote) - More room for price movement
                 "position_size_multiplier": 1.5,  # 50% larger for trending (was 1.2)
             }
@@ -142,7 +142,7 @@ class RegimeDetector:
         elif regime == MarketRegime.RANGING:
             return {
                 "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM for big moves!
-                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH trailing!
+                "take_profit_pct": 0.08,    # 8% capital (0.32% price @ 25x) - WITH trailing!
                 "trailing_stop_pct": 0.015,  # 1.5% callback rate (Rückrufquote) - More room for price movement
                 "position_size_multiplier": 1.0,  # Normal size for ranging
             }
@@ -150,7 +150,7 @@ class RegimeDetector:
         elif regime == MarketRegime.BREAKOUT:
             return {
                 "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM for big moves!
-                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH trailing!
+                "take_profit_pct": 0.08,    # 8% capital (0.32% price @ 25x) - WITH trailing!
                 "trailing_stop_pct": 0.02,  # 2% callback rate (Rückrufquote) - More room for breakouts
                 "position_size_multiplier": 1.3,  # 30% larger for breakouts (high conviction)
             }
@@ -158,7 +158,7 @@ class RegimeDetector:
         elif regime == MarketRegime.VOLATILE:
             return {
                 "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM for big moves!
-                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH trailing!
+                "take_profit_pct": 0.08,    # 8% capital (0.32% price @ 25x) - WITH trailing!
                 "trailing_stop_pct": 0.015,  # 1.5% callback rate (Rückrufquote) - More room for volatility
                 "position_size_multiplier": 0.8,  # 20% smaller in volatile (risk reduction)
             }
@@ -166,7 +166,7 @@ class RegimeDetector:
         else:  # Default
             return {
                 "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM for big moves!
-                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH trailing!
+                "take_profit_pct": 0.08,    # 8% capital (0.32% price @ 25x) - WITH trailing!
                 "trailing_stop_pct": 0.015,  # 1.5% callback rate (Rückrufquote) - More room for price movement
                 "position_size_multiplier": 1.0,
             }

@@ -285,6 +285,14 @@ class EnhancedRanker:
         if not has_confluence:
             # No confluence = skip this symbol
             reason = confluence_metadata.get("reason", "no_confluence")
+            logger.info(
+                f"🚫 [CONFLUENCE FAILED] {state.symbol} | Reason: {reason} | "
+                f"Regime: {regime} | "
+                f"Volume: {confluence_metadata.get('volume_ratio', 0):.2f}x | "
+                f"OB: {confluence_metadata.get('ob_imbalance', 0):.3f} | "
+                f"Bullish: {confluence_metadata.get('bullish_count', 0)}/{confluence_metadata.get('total_timeframes', 0)} | "
+                f"Bearish: {confluence_metadata.get('bearish_count', 0)}/{confluence_metadata.get('total_timeframes', 0)}"
+            )
             return (
                 0.0,
                 "neutral",

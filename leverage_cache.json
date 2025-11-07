@@ -2198,5 +2198,37 @@
   "STABLEUSDT_short": {
     "leverage": 25,
     "timestamp": 1762501260.227819
+  },
+  "ARPAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762502118.307627
+  },
+  "ARPAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762502119.12253
+  },
+  "SCRUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762502123.814549
+  },
+  "SCRUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762502124.323529
+  },
+  "SWEATUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762502124.9098828
+  },
+  "SWEATUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762502125.402194
+  },
+  "CHZUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762505645.998676
+  },
+  "CHZUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762505646.583599
   }
 }
