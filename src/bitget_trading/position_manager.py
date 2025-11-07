@@ -231,20 +231,40 @@ class PositionManager:
         # NEW APPROACH: Let stop-loss handle downside, let TP/trailing handle upside
         # NO artificial holds - trust our SL/TP/trailing logic!
         
-        # 4. Trailing stop (only if in profit on capital basis)
-        min_profit_for_trailing = 0.01 / position.leverage  # 1% capital return = 0.02% price move @ 50x
-        if price_change_pct > min_profit_for_trailing:
+        # 4. Trailing stop (only AFTER reaching TP threshold on CAPITAL basis)
+        # Prevents early 4% exits; trailing becomes a post-TP profit lock
+        if return_on_capital_pct >= position.take_profit_pct:
             if position.side == "long":
                 # Trail from highest price
                 trailing_stop_price = position.highest_price * (1 - target_price_move_for_trail)
+                drop_from_peak_price_pct = (position.highest_price - current_price) / position.highest_price
+                drop_from_peak_capital_pct = drop_from_peak_price_pct * position.leverage
+                logger.info(
+                    f"🧵 [TRAIL CHECK] {symbol} (LONG) | Peak: ${position.highest_price:.4f} | "
+                    f"Drop from peak: {drop_from_peak_capital_pct*100:.2f}% capital | "
+                    f"Trail width: {position.trailing_stop_pct*100:.0f}% capital"
+                )
                 if current_price < trailing_stop_price:
-                    return True, f"TRAILING-STOP from peak ${position.highest_price:.4f} (Capital PnL: {return_on_capital_pct*100:.2f}%)"
+                    return True, (
+                        f"TRAILING-STOP from peak ${position.highest_price:.4f} "
+                        f"(Drop: {drop_from_peak_capital_pct*100:.2f}% capital)"
+                    )
             else:  # short
                 # Trail from lowest price
                 trailing_stop_price = position.lowest_price * (1 + target_price_move_for_trail)
+                drop_from_low_price_pct = (current_price - position.lowest_price) / position.lowest_price
+                drop_from_low_capital_pct = drop_from_low_price_pct * position.leverage
+                logger.info(
+                    f"🧵 [TRAIL CHECK] {symbol} (SHORT) | Low: ${position.lowest_price:.4f} | "
+                    f"Bounce from low: {drop_from_low_capital_pct*100:.2f}% capital | "
+                    f"Trail width: {position.trailing_stop_pct*100:.0f}% capital"
+                )
                 if current_price > trailing_stop_price:
-                    return True, f"TRAILING-STOP from low ${position.lowest_price:.4f} (Capital PnL: {return_on_capital_pct*100:.2f}%)"
-        
+                    return True, (
+                        f"TRAILING-STOP from low ${position.lowest_price:.4f} "
+                        f"(Bounce: {drop_from_low_capital_pct*100:.2f}% capital)"
+                    )
+ 
         return False, ""
 
     def get_position(self, symbol: str) -> Position | None:
