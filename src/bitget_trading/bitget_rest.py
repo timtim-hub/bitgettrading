@@ -729,6 +729,105 @@ class BitgetRestClient:
                         )
                         results["tp"] = {"code": "error", "msg": str(e)}
         
+    async def place_trailing_stop_order(
+        self,
+        symbol: str,
+        hold_side: str,  # "long" or "short" - which position to protect (converted to "buy"/"sell")
+        size: float,  # Position size in contracts
+        callback_ratio: float,  # Trailing stop callback ratio (e.g., 0.01 = 1%)
+        trigger_price: float | None = None,  # Optional: price at which trailing stop becomes active
+        product_type: str = "usdt-futures",  # FIXED: lowercase format required by API
+        size_precision: int | None = None,  # Size precision (decimal places)
+    ) -> dict[str, Any]:
+        """
+        Place exchange-side trailing stop order using Bitget's track_plan API.
+        
+        🚨 CRITICAL: This uses the place-plan-order endpoint with planType="track_plan"
+        The trailing stop will automatically adjust as price moves in your favor!
+        
+        Args:
+            symbol: Trading pair (e.g., "BTCUSDT")
+            hold_side: "long" or "short" - which position to protect (converted to "buy"/"sell" for API)
+            size: Position size in contracts (must match position size!)
+            callback_ratio: Trailing stop callback ratio (e.g., 0.01 = 1%, max 0.10 = 10%)
+            trigger_price: Optional price at which trailing stop becomes active (if None, uses current price)
+            product_type: Product type (default: "usdt-futures" - lowercase required!)
+            size_precision: Size precision (decimal places) - if None, will infer from size
+        
+        Returns:
+            Dict with order result
+        """
+        endpoint = "/api/v2/mix/order/place-plan-order"
+        
+        # Round size to correct precision
+        if size_precision is None:
+            if abs(size - round(size)) < 0.01:
+                size_precision = 0
+            else:
+                size_precision = 1
+        rounded_size = round(size, size_precision)
+        
+        # Convert "long"/"short" to "buy"/"sell" for one-way mode
+        api_hold_side = "buy" if hold_side == "long" else "sell"
+        # For trailing stop, side is opposite of hold_side (to close position)
+        order_side = "sell" if hold_side == "long" else "buy"
+        
+        # Ensure callback_ratio is within Bitget's limits (max 10%)
+        callback_ratio = min(callback_ratio, 0.10)
+        
+        data = {
+            "symbol": symbol,
+            "productType": product_type,  # "usdt-futures" (lowercase)
+            "marginMode": "isolated",
+            "marginCoin": "USDT",
+            "planType": "track_plan",  # Trailing stop order type
+            "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
+            "size": str(rounded_size),
+            "callbackRatio": str(callback_ratio),  # Trailing stop callback ratio (e.g., "0.01" = 1%)
+            "orderType": "market",  # Must be market for trailing stop
+            "side": order_side,  # "sell" for long, "buy" for short (to close position)
+            "triggerType": "mark_price",  # Use mark price for triggering
+            "reduceOnly": "yes",  # Only reduce position
+        }
+        
+        # Add triggerPrice if provided
+        if trigger_price is not None:
+            data["triggerPrice"] = str(trigger_price)
+        
+        logger.info(
+            f"🧵 [TRAILING STOP ORDER] {symbol} | "
+            f"hold_side: {hold_side} → API holdSide: {api_hold_side} | "
+            f"order_side: {order_side} | size: {size} → rounded: {rounded_size} | "
+            f"callback_ratio: {callback_ratio*100:.2f}% | "
+            f"trigger_price: {trigger_price} | product_type: {product_type}"
+        )
+        
+        try:
+            response = await self._request("POST", endpoint, data=data)
+            code = response.get("code", "N/A")
+            msg = response.get("msg", "N/A")
+            data_resp = response.get("data", {})
+            
+            if code == "00000":
+                logger.info(
+                    f"✅ [TRAILING STOP PLACED] {symbol} | "
+                    f"Callback ratio: {callback_ratio*100:.2f}% | "
+                    f"Size: {rounded_size} | Response: {response}"
+                )
+            else:
+                logger.error(
+                    f"❌ [TRAILING STOP FAILED] {symbol} | "
+                    f"Code: {code} | Msg: {msg} | Full response: {response}"
+                )
+            
+            return response
+        except Exception as e:
+            logger.error(
+                f"❌ [TRAILING STOP EXCEPTION] {symbol} | "
+                f"Exception: {e} | Type: {type(e).__name__}"
+            )
+            return {"code": "error", "msg": str(e)}
+        
         # Final summary
         logger.info(
             f"📊 [TP/SL SUMMARY] {symbol} | "
