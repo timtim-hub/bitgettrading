@@ -156,9 +156,9 @@ class BacktestScheduler:
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)
             
             # 🚀 RATE LIMITING: Add delay between batches to avoid 429 errors
-            # Wait 0.5 seconds between batches to slow down backtesting
+            # Wait 1 second between batches to slow down backtesting (never hit rate limits)
             if batch_idx < len(batches) - 1:  # Don't wait after last batch
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1.0)
             
             # Process results
             for symbol, result in zip(batch, batch_results):
@@ -210,8 +210,8 @@ class BacktestScheduler:
             f"Symbols: {len(self.symbols)}"
         )
         
-        # 🚀 OPTIMIZATION: Skip initial backtest if recent data exists (within 72 hours)
-        # Check if we have recent backtest data for any symbols
+        # 🚀 OPTIMIZATION: Check if we have recent backtest data, but NEVER block trading
+        # Use backtest data if available, but don't wait for it - trading starts immediately!
         symbols_with_recent_data = 0
         for symbol in self.symbols:
             perf = self.performance_tracker.get_performance(symbol)
@@ -222,18 +222,30 @@ class BacktestScheduler:
         
         if symbols_with_recent_data > 0:
             logger.info(
-                f"⏭️ [BACKTEST] Skipping initial backtest - {symbols_with_recent_data}/{len(self.symbols)} "
-                f"symbols have recent data (within 72 hours). Starting trading immediately!"
+                f"✅ [BACKTEST] {symbols_with_recent_data}/{len(self.symbols)} symbols have recent data (within 72 hours)"
             )
             logger.info(
-                f"📊 [BACKTEST] Next backtest will run in {self.interval_hours} hours "
-                f"(or when symbols need fresh data)"
+                f"📊 [BACKTEST] Using existing backtest data. Trading starts immediately!"
+            )
+            logger.info(
+                f"🔄 [BACKTEST] Background backtest will update data for {len(self.symbols) - symbols_with_recent_data} symbols "
+                f"(running slowly to avoid rate limits)"
             )
         else:
-            # Run initial backtest only if no recent data exists
-            logger.info("🔄 [BACKTEST] Running initial backtest for all tokens (no recent data found)...")
-            await self.run_backtest()
-            logger.info("✅ [BACKTEST] Initial backtest completed! Stats file generated at: data/symbol_performance_stats.txt")
+            logger.info(
+                f"⚠️ [BACKTEST] No recent backtest data found for any symbols"
+            )
+            logger.info(
+                f"📊 [BACKTEST] Trading starts immediately with default settings!"
+            )
+            logger.info(
+                f"🔄 [BACKTEST] Background backtest will run for all {len(self.symbols)} symbols "
+                f"(running slowly to avoid rate limits)"
+            )
+        
+        # 🚀 CRITICAL: Run initial backtest in BACKGROUND (non-blocking)
+        # This ensures trading starts immediately, regardless of backtest status
+        asyncio.create_task(self._run_initial_backtest_async())
         
         # Schedule periodic backtests
         while self.running:
@@ -245,6 +257,20 @@ class BacktestScheduler:
             
             # Run backtest
             await self.run_backtest()
+
+    async def _run_initial_backtest_async(self) -> None:
+        """
+        Run initial backtest in background (non-blocking).
+        
+        This ensures trading starts immediately, regardless of backtest status.
+        """
+        try:
+            logger.info("🔄 [BACKTEST] Starting background backtest (non-blocking)...")
+            await self.run_backtest()
+            logger.info("✅ [BACKTEST] Background backtest completed! Stats file generated at: data/symbol_performance_stats.txt")
+        except Exception as e:
+            logger.error(f"❌ [BACKTEST] Background backtest failed: {e}")
+            logger.warning("⚠️ [BACKTEST] Trading continues with existing/default data")
 
     def stop(self) -> None:
         """Stop the backtesting scheduler."""
