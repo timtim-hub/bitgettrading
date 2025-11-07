@@ -769,6 +769,7 @@ class LiveTrader:
                             contract_info = self.universe_manager.get_contract_info(symbol)
                             size_precision = None  # Let place_tpsl_order infer from size
                             
+                            # 🚨 CRITICAL FIX: Better size precision detection to prevent size <= 0 errors!
                             # Try to get size precision from contract info if available
                             # Note: Bitget API doesn't expose checkScale directly, so we infer it
                             # Based on errors: some contracts need 0 decimals, some need 1
@@ -784,6 +785,44 @@ class LiveTrader:
                                     size_precision = 0
                                 else:
                                     size_precision = 1
+                            
+                            # 🚨 CRITICAL: Ensure rounded size is never 0!
+                            # For small positions (e.g., BTCUSDT with 0.0004), rounding to 0 decimals = 0.0
+                            # This causes API error 43011: "size <= 0"
+                            rounded_size = round(actual_position_size, size_precision)
+                            if rounded_size <= 0:
+                                # Size rounded to 0 - use higher precision or minimum size
+                                if size_precision == 0:
+                                    # Try 1 decimal place instead
+                                    size_precision = 1
+                                    rounded_size = round(actual_position_size, 1)
+                                    logger.warning(
+                                        f"⚠️ [SIZE PRECISION FIX] {symbol} | "
+                                        f"Size rounded to 0 with precision 0, using precision 1: {rounded_size}"
+                                    )
+                                
+                                # If still 0, use minimum size (0.0001) or original size
+                                if rounded_size <= 0:
+                                    # Use minimum size or original size (whichever is larger)
+                                    min_size = 0.0001
+                                    rounded_size = max(min_size, actual_position_size)
+                                    # Adjust precision to match
+                                    if rounded_size < 0.01:
+                                        size_precision = 4  # 4 decimal places for very small sizes
+                                    elif rounded_size < 0.1:
+                                        size_precision = 3  # 3 decimal places
+                                    elif rounded_size < 1.0:
+                                        size_precision = 2  # 2 decimal places
+                                    else:
+                                        size_precision = 1  # 1 decimal place
+                                    rounded_size = round(rounded_size, size_precision)
+                                    logger.warning(
+                                        f"⚠️ [SIZE MINIMUM FIX] {symbol} | "
+                                        f"Size still <= 0, using minimum: {rounded_size} (precision: {size_precision})"
+                                    )
+                            
+                            # Update actual_position_size to use rounded size
+                            actual_position_size = rounded_size
                             
                             logger.info(
                                 f"🚀 [TP/SL CALL] {symbol} | "
@@ -2023,6 +2062,99 @@ class LiveTrader:
                 except Exception as e:
                     logger.debug(f"⚠️ Failed to check momentum reversal for {symbol}: {e}")
             
+            # 🚀 CRITICAL BACKUP: Bot-side TP monitoring (in case exchange-side TP fails!)
+            # This fixes the issue where positions reach +25% profit but TP never triggers
+            # Exchange-side TP can fail if:
+            # 1. Trailing TP order was never placed (size rounding issue)
+            # 2. Trailing TP order was cancelled
+            # 3. Exchange-side TP has bugs or delays
+            # 
+            # Bot-side TP acts as a backup to ensure profits are locked in!
+            if position:
+                try:
+                    # Calculate current PnL
+                    if position.side == "long":
+                        price_change_pct = ((current_price - position.entry_price) / position.entry_price)
+                    else:
+                        price_change_pct = ((position.entry_price - current_price) / position.entry_price)
+                    
+                    return_on_capital_pct = price_change_pct * position.leverage
+                    pnl_pct = return_on_capital_pct * 100
+                    
+                    # Get TP threshold from position metadata or use default
+                    tp_threshold_pct = position.metadata.get("take_profit_pct", position.take_profit_pct) * 100
+                    trailing_callback_pct = position.metadata.get("trailing_stop_pct", position.trailing_stop_pct) * 100
+                    
+                    # Check if position has reached TP threshold (e.g., 16% capital)
+                    if pnl_pct >= tp_threshold_pct:
+                        # Position has reached TP threshold - check if trailing TP should trigger
+                        # Trailing TP activates at TP threshold, then trails from peak
+                        peak_pnl_pct = position.peak_pnl_pct
+                        
+                        # If we've reached TP threshold, trailing TP should be active
+                        # Check if price has dropped from peak by trailing callback amount
+                        if peak_pnl_pct >= tp_threshold_pct:
+                            # Calculate trailing stop price from peak
+                            if position.side == "long":
+                                # Peak price = entry * (1 + peak_pnl_price_pct)
+                                peak_pnl_price_pct = peak_pnl_pct / (100 * position.leverage)
+                                peak_price = position.entry_price * (1 + peak_pnl_price_pct)
+                                
+                                # Trailing stop = peak * (1 - trailing_callback_price_pct)
+                                trailing_callback_price_pct = trailing_callback_pct / (100 * position.leverage)
+                                trailing_stop_price = peak_price * (1 - trailing_callback_price_pct)
+                                
+                                # Check if current price has dropped below trailing stop
+                                if current_price < trailing_stop_price:
+                                    logger.warning(
+                                        f"🎯 [BOT-SIDE TRAILING TP] {symbol} | "
+                                        f"Position reached TP threshold ({tp_threshold_pct:.0f}%) and trailing TP should trigger! | "
+                                        f"Peak: {peak_pnl_pct:.2f}% | Current: {pnl_pct:.2f}% | "
+                                        f"Peak price: ${peak_price:.4f} | Trailing stop: ${trailing_stop_price:.4f} | "
+                                        f"Current price: ${current_price:.4f} | "
+                                        f"Closing manually as backup (exchange trailing TP may have failed!)"
+                                    )
+                                    await self.close_position(
+                                        symbol,
+                                        exit_reason=f"BOT-SIDE TRAILING TP: Price dropped below trailing stop (peak: {peak_pnl_pct:.2f}%, current: {pnl_pct:.2f}%)"
+                                    )
+                                    continue
+                            else:  # short
+                                # Peak price = entry * (1 - peak_pnl_price_pct)
+                                peak_pnl_price_pct = peak_pnl_pct / (100 * position.leverage)
+                                peak_price = position.entry_price * (1 - peak_pnl_price_pct)
+                                
+                                # Trailing stop = peak * (1 + trailing_callback_price_pct)
+                                trailing_callback_price_pct = trailing_callback_pct / (100 * position.leverage)
+                                trailing_stop_price = peak_price * (1 + trailing_callback_price_pct)
+                                
+                                # Check if current price has risen above trailing stop
+                                if current_price > trailing_stop_price:
+                                    logger.warning(
+                                        f"🎯 [BOT-SIDE TRAILING TP] {symbol} | "
+                                        f"Position reached TP threshold ({tp_threshold_pct:.0f}%) and trailing TP should trigger! | "
+                                        f"Peak: {peak_pnl_pct:.2f}% | Current: {pnl_pct:.2f}% | "
+                                        f"Peak price: ${peak_price:.4f} | Trailing stop: ${trailing_stop_price:.4f} | "
+                                        f"Current price: ${current_price:.4f} | "
+                                        f"Closing manually as backup (exchange trailing TP may have failed!)"
+                                    )
+                                    await self.close_position(
+                                        symbol,
+                                        exit_reason=f"BOT-SIDE TRAILING TP: Price rose above trailing stop (peak: {peak_pnl_pct:.2f}%, current: {pnl_pct:.2f}%)"
+                                    )
+                                    continue
+                        else:
+                            # Position just reached TP threshold - log for monitoring
+                            if pnl_pct >= tp_threshold_pct * 1.1:  # 10% above threshold (e.g., 17.6% when threshold is 16%)
+                                logger.warning(
+                                    f"⚠️ [TP THRESHOLD REACHED] {symbol} | "
+                                    f"Position has reached TP threshold ({tp_threshold_pct:.0f}%)! | "
+                                    f"Current PnL: {pnl_pct:.2f}% | "
+                                    f"Trailing TP should be active. Monitoring for trailing stop trigger..."
+                                )
+                except Exception as e:
+                    logger.debug(f"⚠️ Failed to check bot-side TP for {symbol}: {e}")
+            
             # 🚨 CRITICAL: We use EXCHANGE-SIDE TP/SL orders - NO bot-side exit checking!
             # The exchange automatically closes positions when TP/SL triggers.
             # We only update position tracking data - we NEVER trigger exits from the bot!
@@ -2032,11 +2164,12 @@ class LiveTrader:
             # 2. Detect when exchange closes positions (done in sync logic above, lines 1097-1139)
             # 3. Monitor liquidation risk and close positions before liquidation
             # 4. Check for momentum reversal (strong opposite signal)
+            # 5. Bot-side TP monitoring as backup (if exchange-side TP fails)
             # 
             # What we DON'T do:
             # - Check exit conditions (disabled - exchange handles it)
-            # - Manually close positions (only when exchange already closed them OR liquidation risk OR momentum reversal)
-            # - Trigger any exits (exchange TP/SL handles all exits automatically)
+            # - Manually close positions (only when exchange already closed them OR liquidation risk OR momentum reversal OR bot-side TP backup)
+            # - Trigger any exits (exchange TP/SL handles all exits automatically, bot-side is backup only)
             # 
             # This ensures positions close at EXACTLY the TP/SL prices we set on the exchange!
             self.position_manager.update_position_price(symbol, current_price)
