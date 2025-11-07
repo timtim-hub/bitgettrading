@@ -314,8 +314,6 @@ class LiveTrader:
                             side=order_side,
                             size=size,
                             order_type="market",
-                            take_profit_price=take_profit_price,
-                            stop_loss_price=stop_loss_price,
                         )
                         
                         if order_response and order_response.get("code") == "00000":
