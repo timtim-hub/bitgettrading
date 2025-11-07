@@ -1,5 +1,6 @@
 """Multi-symbol universe management for Bitget USDT-M futures."""
 
+import asyncio
 from typing import Any
 
 import aiohttp
@@ -103,49 +104,66 @@ class UniverseManager:
         endpoint = f"{self.BASE_URL}/api/v2/mix/market/tickers"
         params = {"productType": "USDT-FUTURES"}
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(endpoint, params=params) as response:
-                    if response.status != 200:
-                        return {}
-
-                    data = await response.json()
-
-                    if data.get("code") != "00000":
-                        return {}
-
-                    tickers = data.get("data", [])
-
-                    ticker_map = {}
-                    for ticker in tickers:
-                        symbol = ticker.get("symbol")
-                        if symbol:
-                            # Handle None values properly
-                            last_price = ticker.get("lastPr") or 0
-                            bid_price = ticker.get("bidPr") or 0
-                            ask_price = ticker.get("askPr") or 0
-                            volume_24h = ticker.get("baseVolume") or 0
-                            quote_volume = ticker.get("quoteVolume") or 0
-                            open_interest = ticker.get("openInterest") or 0
-                            
-                            # Skip symbols with no valid price data
-                            if last_price == 0 or bid_price == 0 or ask_price == 0:
+        # Retry logic for network issues
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Configure timeout
+                timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=20)
+                
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(endpoint, params=params) as response:
+                        if response.status != 200:
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(1)
                                 continue
-                            
-                            ticker_map[symbol] = {
-                                "last_price": float(last_price),
-                                "bid_price": float(bid_price),
-                                "ask_price": float(ask_price),
-                                "volume_24h": float(volume_24h),
-                                "quote_volume_24h": float(quote_volume),
-                                "open_interest": float(open_interest),
-                            }
+                            return {}
 
-                    return ticker_map
+                        data = await response.json()
 
-        except Exception as e:
-            logger.error("fetch_tickers_error", error=str(e))
-            return {}
+                        if data.get("code") != "00000":
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(1)
+                                continue
+                            return {}
+
+                        tickers = data.get("data", [])
+
+                        ticker_map = {}
+                        for ticker in tickers:
+                            symbol = ticker.get("symbol")
+                            if symbol:
+                                # Handle None values properly
+                                last_price = ticker.get("lastPr") or 0
+                                bid_price = ticker.get("bidPr") or 0
+                                ask_price = ticker.get("askPr") or 0
+                                volume_24h = ticker.get("baseVolume") or 0
+                                quote_volume = ticker.get("quoteVolume") or 0
+                                open_interest = ticker.get("openInterest") or 0
+                                
+                                # Skip symbols with no valid price data
+                                if last_price == 0 or bid_price == 0 or ask_price == 0:
+                                    continue
+                                
+                                ticker_map[symbol] = {
+                                    "last_price": float(last_price),
+                                    "bid_price": float(bid_price),
+                                    "ask_price": float(ask_price),
+                                    "volume_24h": float(volume_24h),
+                                    "quote_volume_24h": float(quote_volume),
+                                    "open_interest": float(open_interest),
+                                }
+
+                        return ticker_map
+            
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"fetch_tickers_attempt_{attempt+1}_failed", error=str(e))
+                    await asyncio.sleep(2)  # Wait longer between retries
+                    continue
+                else:
+                    logger.error("fetch_tickers_error", error=str(e))
+                    return {}
 
     async def get_tradeable_universe(self) -> list[str]:
         """

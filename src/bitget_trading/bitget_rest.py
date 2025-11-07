@@ -314,6 +314,67 @@ class BitgetRestClient:
         
         return response
     
+    async def cancel_all_pending_orders(
+        self,
+        symbol: str,
+        product_type: str = "USDT-FUTURES",
+    ) -> dict[str, Any]:
+        """
+        Cancel ALL pending (stuck) LIMIT orders for a symbol.
+        
+        CRITICAL: Use to clear stuck limit orders that never executed!
+        
+        Args:
+            symbol: Trading pair (e.g., "BTCUSDT")
+            product_type: Product type
+        
+        Returns:
+            Cancellation response
+        """
+        endpoint = "/api/v2/mix/order/cancel-order"
+        
+        # Query existing pending orders first
+        try:
+            query_endpoint = "/api/v2/mix/order/orders-pending"
+            params = {
+                "symbol": symbol,
+                "productType": product_type,
+            }
+            pending_orders = await self._request("GET", query_endpoint, params=params)
+            
+            orders = pending_orders.get("data", {}).get("entrustedList", [])
+            if not orders:
+                logger.info(f"no_pending_orders_for_{symbol}")
+                return {"code": "00000", "msg": "No orders to cancel"}
+            
+            # Cancel each pending order
+            cancelled_count = 0
+            for order in orders:
+                order_id = order.get("orderId")
+                if order_id:
+                    try:
+                        data = {
+                            "symbol": symbol,
+                            "productType": product_type,
+                            "marginCoin": "USDT",
+                            "orderId": order_id,
+                        }
+                        await self._request("POST", endpoint, data=data)
+                        cancelled_count += 1
+                    except Exception as e:
+                        logger.warning(f"failed_to_cancel_order_{order_id}", error=str(e))
+            
+            logger.info(
+                "cancelled_stuck_orders",
+                symbol=symbol,
+                count=cancelled_count,
+            )
+            return {"code": "00000", "msg": f"Cancelled {cancelled_count} stuck orders"}
+            
+        except Exception as e:
+            logger.error("cancel_orders_error", symbol=symbol, error=str(e))
+            return {"code": "error", "msg": str(e)}
+    
     async def cancel_all_tpsl_orders(
         self,
         symbol: str,

@@ -857,26 +857,46 @@ class LiveTrader:
         # Fetch current positions
         await self.fetch_current_positions()
         
-        # 🚨 CRITICAL: Cancel ALL old TP/SL orders on startup!
-        # Old exchange-side orders with WRONG values override bot-side monitoring!
-        logger.info("🧹 Canceling all old exchange-side TP/SL orders (cleanup)...")
+        # 🚨 CRITICAL: Cancel ALL old/stuck orders on startup!
+        # 1. Old exchange-side TP/SL orders with WRONG values override bot-side monitoring!
+        # 2. Stuck LIMIT orders that never executed block new trades!
+        logger.info("🧹 Cleaning up old/stuck orders on startup...")
         all_positions = self.position_manager.get_all_positions()
-        cancelled_total = 0
+        tpsl_cancelled_total = 0
+        stuck_cancelled_total = 0
+        
         for symbol in all_positions.keys():
+            # Cancel old TP/SL orders
             try:
                 result = await self.rest_client.cancel_all_tpsl_orders(symbol)
                 if result.get("code") == "00000":
                     msg = result.get("msg", "")
                     if "Cancelled" in msg:
                         count = int(msg.split()[1]) if len(msg.split()) > 1 else 0
-                        cancelled_total += count
+                        tpsl_cancelled_total += count
             except Exception as e:
                 logger.warning(f"⚠️  Failed to cancel old TP/SL for {symbol}: {e}")
+            
+            # Cancel stuck pending orders
+            try:
+                result = await self.rest_client.cancel_all_pending_orders(symbol)
+                if result.get("code") == "00000":
+                    msg = result.get("msg", "")
+                    if "Cancelled" in msg:
+                        count = int(msg.split()[1]) if len(msg.split()) > 1 else 0
+                        stuck_cancelled_total += count
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to cancel stuck orders for {symbol}: {e}")
         
-        if cancelled_total > 0:
-            logger.info(f"✅ Cancelled {cancelled_total} old TP/SL orders (preventing wrong exits!)")
+        if tpsl_cancelled_total > 0:
+            logger.info(f"✅ Cancelled {tpsl_cancelled_total} old TP/SL orders (preventing wrong exits!)")
         else:
-            logger.info("✅ No old TP/SL orders found (clean state)")
+            logger.info("✅ No old TP/SL orders found")
+        
+        if stuck_cancelled_total > 0:
+            logger.info(f"✅ Cancelled {stuck_cancelled_total} stuck orders (cleaning up!)")
+        else:
+            logger.info("✅ No stuck orders found")
 
         # Discover universe
         logger.info("🔍 Discovering tradable symbols...")
