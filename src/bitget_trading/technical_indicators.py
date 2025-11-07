@@ -719,4 +719,105 @@ class TechnicalIndicators:
             "pressure": pressure,
             "is_balanced": is_balanced
         }
+    
+    def detect_pullback(self, prices: np.ndarray, lookback: int = 10) -> tuple[bool, float, str]:
+        """
+        Detect if price is in a pullback (retracement) - CRITICAL for avoiding buying tops/selling bottoms.
+        
+        A pullback is when price retraces against the main trend:
+        - In uptrend: Price pulls back 0.3-1.5% from recent high
+        - In downtrend: Price bounces 0.3-1.5% from recent low
+        
+        Args:
+            prices: Array of recent prices (at least 20)
+            lookback: Lookback period for high/low (default 10)
+            
+        Returns:
+            Tuple of (is_pullback, pullback_pct, trend_direction)
+        """
+        if len(prices) < 20:
+            return False, 0.0, "unknown"
+        
+        current_price = prices[-1]
+        
+        # Determine trend using EMA20 vs EMA50
+        ema_20 = np.mean(prices[-20:])
+        ema_50 = np.mean(prices[-50:]) if len(prices) >= 50 else ema_20
+        
+        if ema_20 > ema_50 * 1.002:  # 0.2% above = uptrend
+            trend = "uptrend"
+            # In uptrend: Check if we're in pullback from recent high
+            recent_high = np.max(prices[-lookback:])
+            pullback_pct = ((recent_high - current_price) / recent_high) * 100
+            
+            # Valid pullback: 0.3% - 1.5% retracement from high
+            is_pullback = 0.3 <= pullback_pct <= 1.5
+            
+        elif ema_20 < ema_50 * 0.998:  # 0.2% below = downtrend
+            trend = "downtrend"
+            # In downtrend: Check if we're in bounce from recent low
+            recent_low = np.min(prices[-lookback:])
+            pullback_pct = ((current_price - recent_low) / recent_low) * 100
+            
+            # Valid pullback: 0.3% - 1.5% bounce from low
+            is_pullback = 0.3 <= pullback_pct <= 1.5
+            
+        else:
+            trend = "ranging"
+            pullback_pct = 0.0
+            is_pullback = False
+        
+        return is_pullback, pullback_pct, trend
+    
+    def check_velocity_filter(self, prices: np.ndarray, window: int = 6) -> tuple[bool, float]:
+        """
+        Check if price moved too fast recently (parabolic move) - avoid chasing!
+        
+        If price moved >1% in last 30 seconds (6 price points @ 5s interval), it's overextended.
+        
+        Args:
+            prices: Array of recent prices
+            window: Number of recent prices to check (default 6 = 30 seconds)
+            
+        Returns:
+            Tuple of (should_skip, velocity_pct)
+        """
+        if len(prices) < window:
+            return False, 0.0
+        
+        velocity_pct = ((prices[-1] - prices[-window]) / prices[-window]) * 100
+        
+        # Skip if moved >1% in last 30 seconds (too fast, likely to reverse)
+        should_skip = abs(velocity_pct) > 1.0
+        
+        return should_skip, velocity_pct
+    
+    def calculate_distance_from_vwap(self, prices: np.ndarray, volumes: np.ndarray) -> tuple[float, bool]:
+        """
+        Calculate distance from VWAP - avoid entries when price is too extended.
+        
+        Args:
+            prices: Array of prices
+            volumes: Array of volumes
+            
+        Returns:
+            Tuple of (distance_pct, is_extended)
+        """
+        if len(prices) < 20 or len(volumes) < 20:
+            return 0.0, False
+        
+        prices_arr = prices[-20:]
+        volumes_arr = volumes[-20:]
+        
+        # Calculate VWAP
+        vwap = np.sum(prices_arr * volumes_arr) / np.sum(volumes_arr)
+        current_price = prices_arr[-1]
+        
+        # Distance from VWAP
+        distance_pct = ((current_price - vwap) / vwap) * 100
+        
+        # Extended if >1.5% away from VWAP
+        is_extended = abs(distance_pct) > 1.5
+        
+        return distance_pct, is_extended
 
