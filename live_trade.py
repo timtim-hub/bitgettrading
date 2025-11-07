@@ -496,11 +496,18 @@ class LiveTrader:
                                         break
                             
                             # 🚨 CRITICAL: Place TP/SL as separate plan orders (visible in app)
-                            # Cancel any old TP/SL orders first
+                            # Cancel any old TP/SL orders first (AGGRESSIVE CANCELLATION!)
                             try:
-                                await self.rest_client.cancel_all_tpsl_orders(symbol)
-                            except Exception:
-                                pass  # Ignore if no orders exist
+                                cancel_result = await self.rest_client.cancel_all_tpsl_orders(symbol)
+                                logger.info(
+                                    f"🗑️ [CANCEL OLD ORDERS] {symbol} | "
+                                    f"Result: {cancel_result.get('msg', 'N/A')} | "
+                                    f"This ensures OLD orders don't interfere!"
+                                )
+                                # Wait for cancellation to propagate
+                                await asyncio.sleep(0.5)
+                            except Exception as e:
+                                logger.warning(f"⚠️ Cancel failed for {symbol}: {e}")
                             
                             # 🚨 CRITICAL: Additional wait after position query to ensure position is fully available
                             # Sometimes position query returns size but position isn't fully available for TP/SL yet

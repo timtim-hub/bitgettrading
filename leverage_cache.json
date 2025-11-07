@@ -2398,5 +2398,21 @@
   "NXPCUSDT_short": {
     "leverage": 25,
     "timestamp": 1762531535.466517
+  },
+  "BABYUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762532641.2769809
+  },
+  "BABYUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762532641.752706
+  },
+  "SOPHUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762532645.132195
+  },
+  "SOPHUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762532647.687273
   }
 }
