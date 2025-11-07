@@ -855,6 +855,20 @@ class BitgetRestClient:
                         if attempt < max_retries - 1:
                             await asyncio.sleep(wait_time)
                             continue
+                    # Check for "rangeRate must 2 decimal places" error (43011)
+                    elif code == "43011" or "rangeRate must 2 decimal places" in str(msg):
+                        logger.warning(
+                            f"⚠️ [TRAILING TP ERROR 43011] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                            f"rangeRate format error - should be 2 decimal places. Current: {formatted_range_rate} | "
+                            f"Original: {range_rate} | Reformatting..."
+                        )
+                        # Reformat range_rate to exactly 2 decimal places
+                        formatted_range_rate = f"{range_rate:.2f}"
+                        data["rangeRate"] = formatted_range_rate
+                        logger.info(f"🔄 [TRAILING TP REFORMAT] {symbol} | New rangeRate: {formatted_range_rate}")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(1.0)  # Short wait before retry
+                            continue
                     # Check for "trigger price should be ≥ current market price" error (43035)
                     elif code == "43035" or "trigger price should be" in str(msg).lower():
                         logger.warning(
