@@ -101,19 +101,23 @@ class EnhancedRanker:
         if len(available_timeframes) == 0:
             return False, "neutral", 0.0, {"reason": "no_data"}
 
-        # 🔥 LAYER 2: VOLUME-CONFIRMED CONFLUENCE
+        # 🔥 LAYER 2: VOLUME-CONFIRMED CONFLUENCE (STRICT)
         # Require volume surge when timeframes align (institutional activity)
         volume_ratio = features.get("volume_ratio", 1.0)
-        # 🚨 RELAXED: 24h rolling volume doesn't show real-time surges
-        # Accept normal volume (>=0.8x) to avoid rejecting all signals
-        volume_confirmed = volume_ratio >= 0.8  # At least 80% of average volume (relaxed from 150%)
+        # 🚀 TIGHTENED: Require 2.0x minimum volume for quality signals
+        # 3.0x+ for high-conviction trades (volume spike)
+        min_volume_ratio = 2.0  # 2.0x minimum (was 0.8x)
+        high_conviction_volume = 3.0  # 3.0x+ for high-conviction
+        
+        volume_confirmed = volume_ratio >= min_volume_ratio
+        is_high_conviction = volume_ratio >= high_conviction_volume
 
         if not volume_confirmed:
             return (
                 False,
                 "neutral",
                 0.0,
-                {"reason": "no_volume_confirmation", "volume_ratio": volume_ratio},
+                {"reason": "no_volume_confirmation", "volume_ratio": volume_ratio, "required": min_volume_ratio},
             )
 
         # 🔥 LAYER 3: ORDERBOOK-CONFIRMED CONFLUENCE
@@ -387,8 +391,15 @@ class EnhancedRanker:
             )
 
         # 🔥 STEP 5: Volume already validated in confluence check (Layer 2)
-        # Just extract for metadata
+        # Extract for metadata and apply high-conviction boost
         volume_ratio = confluence_metadata.get("volume_ratio", 1.0)
+        is_high_conviction = volume_ratio >= 3.0  # 3.0x+ volume spike
+        
+        # 🚀 HIGH-CONVICTION BOOST: Boost score for volume spikes (3.0x+)
+        volume_boost = 1.0
+        if is_high_conviction:
+            volume_boost = 1.2  # 20% boost for high-conviction trades
+            logger.debug(f"🚀 [HIGH-CONVICTION] {state.symbol} | Volume spike: {volume_ratio:.2f}x")
 
         # 4. Base momentum score (Sharpe-like)
         return_15s = features.get("return_15s", 0.0)
@@ -489,6 +500,41 @@ class EnhancedRanker:
             indicator_scores["bollinger"] = bb_score
             if bb_score > 0.5:
                 indicator_confluence.append("bollinger")
+            
+            # 🚀 NEW: Bollinger Squeeze Detection (breakout signal)
+            if bb_data.get("is_squeeze", False):
+                # Squeeze detected = low volatility = breakout imminent
+                indicator_scores["bollinger_squeeze"] = 1.0
+                indicator_confluence.append("bollinger_squeeze")
+                logger.debug(f"🔍 [BOLLINGER SQUEEZE] {state.symbol} | Breakout signal detected!")
+            
+            # 🚀 NEW: RSI Divergence Detection
+            if len(prices) >= 28:  # Need enough data for divergence
+                rsi_prev = self.technical_indicators.calculate_rsi(prices[:-7], period=14)
+                rsi_current = rsi
+                price_prev = prices[-14]
+                price_current = current_price
+                
+                # Bullish divergence: price lower, RSI higher
+                if direction == "long" and price_current < price_prev and rsi_current > rsi_prev:
+                    indicator_scores["rsi_divergence"] = 1.0
+                    indicator_confluence.append("rsi_divergence")
+                    logger.debug(f"🔍 [RSI DIVERGENCE] {state.symbol} | Bullish divergence detected!")
+                # Bearish divergence: price higher, RSI lower
+                elif direction == "short" and price_current > price_prev and rsi_current < rsi_prev:
+                    indicator_scores["rsi_divergence"] = 1.0
+                    indicator_confluence.append("rsi_divergence")
+                    logger.debug(f"🔍 [RSI DIVERGENCE] {state.symbol} | Bearish divergence detected!")
+            
+            # 🚀 NEW: MACD Momentum (histogram expansion)
+            if macd_data.get("histogram", 0) != 0:
+                # Strong momentum if histogram is expanding
+                macd_momentum = abs(macd_data["histogram"])
+                if macd_momentum > 0.001:  # Significant momentum
+                    indicator_scores["macd_momentum"] = min(1.0, macd_momentum * 100)
+                    if indicator_scores["macd_momentum"] > 0.5:
+                        indicator_confluence.append("macd_momentum")
+                        logger.debug(f"🔍 [MACD MOMENTUM] {state.symbol} | Strong momentum: {macd_momentum:.4f}")
 
             # Calculate EMA Crossovers
             ema_data = self.technical_indicators.calculate_ema_crossovers(
@@ -583,8 +629,9 @@ class EnhancedRanker:
         # 12. Boost by confluence strength
         base_score *= 1 + confluence_strength * 100  # AMPLIFY confluence impact!
 
-        # 13. Boost by volume ratio
-        base_score *= 1 + (volume_ratio - 1) * 0.5  # 50% of excess volume
+        # 13. Boost by volume ratio (already handled by volume_boost for high-conviction)
+        # Apply volume boost for high-conviction trades (3.0x+)
+        base_score *= volume_boost
 
         # 14. Boost by technical indicator confluence
         if len(prices) >= 20:
@@ -613,6 +660,9 @@ class EnhancedRanker:
                 self.bandit_alpha * np.clip(base_score, -5, 5) / 5.0
                 + (1 - self.bandit_alpha) * bandit_norm
             )
+        
+        # 🚀 Apply high-conviction volume boost to final score
+        final_score *= volume_boost
 
         # PRO TRADER QUALITY CHECK: Analyze market structure and trade quality
 
