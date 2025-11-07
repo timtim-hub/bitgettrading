@@ -43,8 +43,8 @@ class LiveTrader:
         secret_key: str,
         passphrase: str,
         initial_capital: float = 50.0,
-        leverage: int = 25,  # REDUCED to 25x for safety (was 50x) - prevents liquidations!
-        position_size_pct: float = 0.20,  # DOUBLED to 0.20 (was 0.10) to maintain same exposure
+        leverage: int = 25,  # 25x leverage for safety
+        position_size_pct: float = 0.05,  # 5% of capital per position (conservative)
         max_positions: int = 10,
         daily_loss_limit: float = 0.15,
         paper_mode: bool = True,
@@ -807,9 +807,39 @@ class LiveTrader:
         # Fetch current positions
         await self.fetch_current_positions()
         
-        # Clean startup: No old TP/SL orders to cancel (we don't use exchange-side TP/SL anymore)
-        # Bot-side monitoring handles ALL exits (5ms checks with correct 50% SL, 14% TP)
-        logger.info("✅ Bot-side monitoring ONLY (no exchange-side TP/SL complexity)")
+        # 🚨 CRITICAL: Cancel ALL old TP/SL orders from previous runs!
+        # These could be limit orders placed by old code versions
+        # We rely on bot-side monitoring ONLY now (5ms checks with 50% SL, 10% TP)
+        logger.info("🧹 Cancelling all old TP/SL and pending orders...")
+        all_positions = self.position_manager.get_all_positions()
+        tpsl_cancelled = 0
+        pending_cancelled = 0
+        
+        for symbol in all_positions.keys():
+            # Cancel old TP/SL orders
+            try:
+                result = await self.rest_client.cancel_all_tpsl_orders(symbol)
+                if result.get("code") == "00000":
+                    msg = result.get("msg", "")
+                    if "Cancelled" in msg:
+                        count = int(msg.split()[1]) if len(msg.split()) > 1 else 0
+                        tpsl_cancelled += count
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to cancel TP/SL for {symbol}: {e}")
+            
+            # Cancel stuck pending orders
+            try:
+                result = await self.rest_client.cancel_all_pending_orders(symbol)
+                if result.get("code") == "00000":
+                    msg = result.get("msg", "")
+                    if "Cancelled" in msg:
+                        count = int(msg.split()[1]) if len(msg.split()) > 1 else 0
+                        pending_cancelled += count
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to cancel pending for {symbol}: {e}")
+        
+        logger.info(f"✅ Cancelled {tpsl_cancelled} TP/SL orders + {pending_cancelled} pending orders")
+        logger.info("✅ Bot-side monitoring ONLY (5ms checks with 50% SL, 10% TP, 4% trailing)")
 
         # Discover universe
         logger.info("🔍 Discovering tradable symbols...")
@@ -1046,8 +1076,8 @@ async def main() -> None:
         secret_key=secret_key,
         passphrase=passphrase,
         initial_capital=initial_capital,  # USE ACTUAL BALANCE!
-        leverage=int(os.getenv("LEVERAGE", "25")),  # 25x for safety (was 50x)
-        position_size_pct=float(os.getenv("POSITION_SIZE_PCT", "0.20")),  # Doubled (was 0.10)
+        leverage=int(os.getenv("LEVERAGE", "25")),  # 25x for safety
+        position_size_pct=float(os.getenv("POSITION_SIZE_PCT", "0.05")),  # 5% per position (conservative)
         max_positions=int(os.getenv("MAX_POSITIONS", "10")),
         daily_loss_limit=float(os.getenv("DAILY_LOSS_LIMIT", "0.15")),
         paper_mode=paper_mode,

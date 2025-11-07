@@ -31,7 +31,7 @@ class Position:
     # With 25x leverage + 0.04% round-trip fees (SAFER than 50x!)
     trailing_stop_pct: float = 0.04  # 4% trailing from peak (0.16% price @ 25x) - ACTIVE!
     stop_loss_pct: float = 0.50   # 50% hard stop-loss (2% price @ 25x) - MAXIMUM ROOM, let winners run!
-    take_profit_pct: float = 0.14  # 14% take-profit (0.56% price @ 25x) - WITH trailing protection!
+    take_profit_pct: float = 0.10  # 10% take-profit (0.40% price @ 25x) - WITH 4% trailing protection!
     
     # Regime info
     regime: str = "ranging"  # Market regime at entry
@@ -76,7 +76,7 @@ class PositionManager:
         leverage: int,
         regime: str = "ranging",
         stop_loss_pct: float = 0.50,  # 50% capital (2% price @ 25x) - MAXIMUM ROOM!
-        take_profit_pct: float = 0.14,  # 14% capital (0.56% price @ 25x) - WITH trailing!
+        take_profit_pct: float = 0.10,  # 10% capital (0.40% price @ 25x) - WITH 4% trailing!
         trailing_stop_pct: float = 0.04,  # 4% capital (0.16% price @ 25x) - ACTIVE!
         metadata: dict = None,  # Entry quality metadata for loss tracking
     ) -> None:
