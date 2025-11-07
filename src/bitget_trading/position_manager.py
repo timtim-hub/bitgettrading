@@ -253,6 +253,23 @@ class PositionManager:
     def get_all_positions(self) -> dict[str, Position]:
         """Get all positions."""
         return self.positions.copy()
+    
+    def log_all_position_settings(self) -> None:
+        """Log TP/SL settings for all open positions (for debugging)."""
+        if not self.positions:
+            logger.info("📊 No open positions")
+            return
+        
+        logger.info(f"📊 === OPEN POSITIONS SETTINGS ({len(self.positions)} total) ===")
+        for symbol, pos in self.positions.items():
+            logger.info(
+                f"   {symbol}: "
+                f"Side={pos.side} | "
+                f"Leverage={pos.leverage}x | "
+                f"SL={pos.stop_loss_pct*100:.0f}% capital ({pos.stop_loss_pct/pos.leverage*100:.2f}% price) | "
+                f"TP={pos.take_profit_pct*100:.0f}% capital ({pos.take_profit_pct/pos.leverage*100:.2f}% price) | "
+                f"Trailing={pos.trailing_stop_pct*100:.0f}% capital"
+            )
 
     def save_positions(self) -> None:
         """Save positions to disk."""

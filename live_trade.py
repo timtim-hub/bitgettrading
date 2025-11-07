@@ -265,10 +265,21 @@ class LiveTrader:
                     # This ensures exchange-side orders match bot-side expectations
                     if regime_params:
                         # Use regime-specific values from regime_detector
-                        sl_price_pct = regime_params["stop_loss_pct"] / self.leverage  # e.g., 0.50 / 25 = 0.02 (2%)
-                        tp_price_pct = regime_params["take_profit_pct"] / self.leverage  # e.g., 0.14 / 25 = 0.0056 (0.56%)
+                        sl_capital_pct = regime_params["stop_loss_pct"]  # e.g., 0.50 (50% capital)
+                        tp_capital_pct = regime_params["take_profit_pct"]  # e.g., 0.14 (14% capital)
+                        sl_price_pct = sl_capital_pct / self.leverage  # e.g., 0.50 / 25 = 0.02 (2%)
+                        tp_price_pct = tp_capital_pct / self.leverage  # e.g., 0.14 / 25 = 0.0056 (0.56%)
+                        
+                        logger.info(
+                            f"📊 [TP/SL CALCULATION] {symbol} | "
+                            f"SL: {sl_capital_pct*100:.0f}% capital ({sl_price_pct*100:.2f}% price) | "
+                            f"TP: {tp_capital_pct*100:.0f}% capital ({tp_price_pct*100:.2f}% price) | "
+                            f"Leverage: {self.leverage}x | "
+                            f"Regime: {regime_params.get('position_size_multiplier', 'N/A')}"
+                        )
                     else:
                         # Fallback defaults (should never happen if regime_params passed correctly)
+                        logger.warning(f"⚠️  NO REGIME_PARAMS! Using fallback defaults for {symbol}")
                         sl_price_pct = 0.02  # 2% price move = 50% capital @ 25x
                         tp_price_pct = 0.0056  # 0.56% price move = 14% capital @ 25x
                     
@@ -707,6 +718,10 @@ class LiveTrader:
                 continue  # Move to next trade
         
         logger.info(f"📊 Trade execution complete: {trades_successful}/{trades_attempted} successful")
+        
+        # Log all position settings for debugging
+        if trades_successful > 0:
+            self.position_manager.log_all_position_settings()
 
     async def trading_loop(self) -> None:
         """
