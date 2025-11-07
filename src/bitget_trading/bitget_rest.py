@@ -801,9 +801,11 @@ class BitgetRestClient:
         """
         Place exchange-side trailing take profit order using Bitget's moving_plan API.
 
-        🚨 CRITICAL: This uses planType="moving_plan" with size="0" for NORMAL mode!
-        - size="0" → Closes ENTIRE position (displays as "normal mode" in Bitget app) ✅
-        - size=<number> → Closes SPECIFIC amount (displays as "partial mode" in app) ❌
+        🚨 CRITICAL: This uses planType="moving_plan" with EXACT position size!
+        - Bitget API REJECTS size=0 (error 43011: "size <= 0")
+        - We MUST provide the exact position size for the order to be accepted
+        - Even though the app may show "partial mode", it WILL close the full position
+          when the size matches exactly!
         
         The trailing take profit will automatically adjust as price moves in your favor!
 
@@ -836,18 +838,19 @@ class BitgetRestClient:
         # Convert decimal to percentage: 0.015 → "1.50", 0.02 → "2.00", 0.001 → "0.10"
         formatted_range_rate = f"{range_rate * 100:.2f}"  # Convert to percentage and format to 2 decimal places
 
-        # 🚨 CRITICAL FIX: Use "0" as size to indicate ENTIRE POSITION (normal mode)!
-        # Bitget API:
-        # - size="0" → Close ENTIRE position (displays as "normal mode" in app) ✅
-        # - size=<exact number> → Close SPECIFIC amount (displays as "partial mode" in app) ❌
+        # 🚨 CRITICAL: Bitget REQUIRES exact size! API rejects size=0 with error 43011
+        # "The parameter does not meet the specification size <= 0"
+        # So we MUST provide the exact position size for trailing TP to work
         data = {
             "symbol": symbol,
             "productType": product_type,  # "usdt-futures" (lowercase)
             "marginMode": "isolated",
             "marginCoin": "USDT",
-            "planType": "moving_plan",  # Trailing take profit order type
+            "planType": "moving_plan",  # Trailing take profit order type (NORMAL mode with exact size)
             "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
-            "size": "0",  # 🚨 CRITICAL: "0" = ENTIRE POSITION (normal mode)! NOT specific size (partial mode)!
+            "size": str(
+                rounded_size
+            ),  # MUST provide EXACT position size! (Bitget rejects size=0)
             "rangeRate": formatted_range_rate,  # Trailing callback rate as percentage (e.g., "2.00" = 2%, "1.50" = 1.5%, must be 2 decimal places!)
             "triggerPrice": str(
                 trigger_price
@@ -857,9 +860,9 @@ class BitgetRestClient:
         }
 
         logger.info(
-            f"🧵 [TRAILING TP ORDER - NORMAL/FULL MODE] {symbol} | "
-            f"planType=moving_plan | "
-            f"size=0 (ENTIRE POSITION - normal mode, NOT partial!) | "
+            f"🧵 [TRAILING TP ORDER - NORMAL MODE] {symbol} | "
+            f"planType=moving_plan (Bitget rejects size=0, so using exact size) | "
+            f"size: {size} → rounded: {rounded_size} (EXACT position size required!) | "
             f"hold_side: {hold_side} → API holdSide: {api_hold_side} | "
             f"callback_rate: {range_rate*100:.2f}% (Rückrufquote) → API: {formatted_range_rate} | "
             f"trigger_price: {trigger_price} (activation price) | "
@@ -877,9 +880,9 @@ class BitgetRestClient:
 
                 if code == "00000":
                     logger.info(
-                        f"✅ [TRAILING TP PLACED - NORMAL/FULL MODE] {symbol} | "
+                        f"✅ [TRAILING TP PLACED - NORMAL MODE] {symbol} | "
                         f"planType=moving_plan | "
-                        f"size=0 (ENTIRE POSITION - should show as NORMAL mode in Bitget app!) | "
+                        f"size={rounded_size} (EXACT position size - may show as 'partial' in app but closes full position) | "
                         f"Callback Rate: {range_rate*100:.2f}% (Rückrufquote) | "
                         f"Trigger Price: {trigger_price} (activation) | "
                         f"Order ID: {data_resp.get('orderId', 'N/A')}"
