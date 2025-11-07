@@ -2550,5 +2550,15 @@
   "MASKUSDT_short": {
     "leverage": 25,
     "timestamp": 1762542668.884141
+  },
+  "VELOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544424.312182,
+    "failed": false
+  },
+  "VELOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544424.9385788,
+    "failed": false
   }
 }

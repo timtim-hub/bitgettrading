@@ -75,13 +75,14 @@ class LeverageCache:
         entry = self.cache[cache_key]
         
         # 🚨 CRITICAL: Check if this was a failure (don't retry!)
+        # Failed entries should NEVER expire - they're permanent failures
         if entry.get("failed", False):
             logger.debug(
                 f"🚫 [LEVERAGE CACHE] {symbol} {hold_side}: Cached as failed (not supported by Bitget) - skipping"
             )
             return True  # Return True to skip API call (but it's not actually set)
         
-        # Check if cache is expired
+        # Check if cache is expired (only for successful entries, not failed ones)
         age = time.time() - entry["timestamp"]
         if age > self.cache_expiry_seconds:
             logger.debug(
@@ -141,14 +142,14 @@ class LeverageCache:
             "error_code": error_code,  # Store error code for debugging
         }
         
-        logger.debug(
+        logger.info(
             f"🚫 [LEVERAGE CACHE] {symbol} {hold_side}: Marked as failed "
             f"(error: {error_code or 'unknown'}) - will skip in future"
         )
         
-        # Save to disk periodically (every 50 symbols)
-        if len(self.cache) % 50 == 0:
-            self._save_cache()
+        # 🚨 CRITICAL: Save immediately for failed entries to ensure they're persisted!
+        # Failed entries should never expire, so save them right away
+        self._save_cache()
     
     def clear(self) -> None:
         """Clear entire cache."""
