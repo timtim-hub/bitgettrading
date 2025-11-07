@@ -2362,8 +2362,8 @@ class LiveTrader:
                     logger.error(f"❌ [PRICE ERROR] {symbol} | Price is 0, skipping trade")
                     continue
                 
-                # 🚀 PHASE 5.1: Spread Filter - reject if spread > 0.1% (10 bps)
-                # Only trades with tight spreads (better fills)
+                # 🚀 PHASE 5.1: Spread Filter - reject if spread > 0.2% (20 bps) - RELAXED for faster entry
+                # Only reject very wide spreads (relaxed threshold for faster trade placement)
                 try:
                     if ticker_data and ticker_data.get("code") == "00000":
                         ticker_list = ticker_data.get("data", [])
@@ -2373,9 +2373,9 @@ class LiveTrader:
                             ask_price = float(ticker.get("askPr", 0))
                             if bid_price > 0 and ask_price > 0:
                                 spread_pct = ((ask_price - bid_price) / bid_price) * 100
-                                if spread_pct > 0.1:  # Spread > 0.1% (10 bps)
+                                if spread_pct > 0.2:  # Spread > 0.2% (20 bps) - relaxed from 0.1% for faster entry
                                     logger.debug(
-                                        f"🚫 [ENTRY REJECTED] {symbol} | Spread ({spread_pct:.3f}%) too wide (>0.1%) - skipping for better fills"
+                                        f"🚫 [ENTRY REJECTED] {symbol} | Spread ({spread_pct:.3f}%) too wide (>0.2%) - skipping for better fills"
                                     )
                                     continue
                 except Exception as e:
@@ -2448,20 +2448,25 @@ class LiveTrader:
                         # For long: ALL timeframes should show rising price (positive change)
                         # For short: ALL timeframes should show falling price (negative change)
                         if signal_side == "long":
-                            # 🚀 PHASE 1.4: STRONG momentum confirmation - ALL timeframes must show rising
-                            # Long position: require ALL timeframes to show rising price
-                            if not (short_term_change > 0.03 and medium_term_change > 0.05 and long_term_change > 0.08):
-                                # Price is not rising across ALL timeframes - REJECT long entry!
-                                logger.warning(
-                                    f"🚫 [ENTRY REJECTED] {symbol} | LONG signal but price not rising across ALL timeframes! | "
-                                    f"Short: {short_term_change:.3f}% (need >0.03%) | Medium: {medium_term_change:.3f}% (need >0.05%) | "
-                                    f"Long: {long_term_change:.3f}% (need >0.08%) | Skipping to avoid entering during wrong momentum"
+                            # 🚀 OPTIMIZED: Relaxed momentum confirmation - require MOST timeframes (not ALL) to show rising
+                            # Long position: require at least 2 out of 3 timeframes to show rising price (faster entry)
+                            rising_count = sum([
+                                short_term_change > 0.02,  # Lowered threshold from 0.03% to 0.02%
+                                medium_term_change > 0.03,  # Lowered threshold from 0.05% to 0.03%
+                                long_term_change > 0.05     # Lowered threshold from 0.08% to 0.05%
+                            ])
+                            if rising_count < 2:  # Require at least 2 out of 3 (was ALL 3)
+                                # Price is not rising in most timeframes - REJECT long entry!
+                                logger.debug(
+                                    f"🚫 [ENTRY REJECTED] {symbol} | LONG signal but price not rising in most timeframes ({rising_count}/3) | "
+                                    f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
+                                    f"Long: {long_term_change:.3f}% | Skipping to avoid entering during wrong momentum"
                                 )
                                 continue
                             else:
-                                # Price is rising across ALL timeframes - good to enter
+                                # Price is rising in most timeframes - good to enter
                                 logger.info(
-                                    f"✅ [ENTRY CONFIRMED] {symbol} | LONG signal with STRONG RISING price across ALL timeframes | "
+                                    f"✅ [ENTRY CONFIRMED] {symbol} | LONG signal with RISING price in {rising_count}/3 timeframes | "
                                     f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
                                     f"Long: {long_term_change:.3f}%"
                                 )
