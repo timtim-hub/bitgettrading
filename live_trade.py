@@ -292,9 +292,11 @@ class LiveTrader:
                             sl_price_pct = sl_capital_pct / self.leverage
                             tp_price_pct = tp_capital_pct / self.leverage
                         else:
-                            # Fallback (should never happen)
-                            sl_price_pct = 0.02  # 50% capital @ 25x
-                            tp_price_pct = 0.004 # 10% capital @ 25x
+                            # Fallback (should never happen) - Use correct values: 25% SL, 6% TP
+                            sl_price_pct = 0.01  # 25% capital @ 25x = 1% price
+                            tp_price_pct = 0.0024  # 6% capital @ 25x = 0.24% price
+                            sl_capital_pct = 0.25  # For logging
+                            tp_capital_pct = 0.06  # For logging
                         
                         # Calculate actual prices
                         if side == "long":
