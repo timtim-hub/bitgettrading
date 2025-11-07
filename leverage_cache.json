@@ -2254,5 +2254,13 @@
   "SAFEUSDT_short": {
     "leverage": 25,
     "timestamp": 1762508966.3570318
+  },
+  "METUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762510701.7194781
+  },
+  "METUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762510702.217639
   }
 }

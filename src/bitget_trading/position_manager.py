@@ -153,13 +153,20 @@ class PositionManager:
         self, symbol: str, current_price: float
     ) -> tuple[bool, str]:
         """
-        Check if position should be closed.
+        🚨 DISABLED: We use EXCHANGE-SIDE TP/SL only!
         
-        Accounts for LEVERAGE: with 50x leverage, only need 0.2% price move for 10% return!
+        This function is NEVER called in live trading.
+        The exchange handles ALL exits via pos_profit and pos_loss orders.
         
         Returns:
-            (should_close, reason)
+            (False, "") - NEVER triggers bot-side exits
         """
+        # 🚨 ALWAYS RETURN FALSE - EXCHANGE HANDLES ALL EXITS!
+        return False, ""
+        
+        # OLD LOGIC BELOW - DISABLED TO PREVENT BOT-SIDE EXITS!
+        # ========================================================
+        
         if symbol not in self.positions:
             return False, ""
         
