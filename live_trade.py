@@ -343,6 +343,12 @@ class LiveTrader:
                                 pass  # Ignore if no orders exist
                             
                             # Place TP/SL plan orders with market execution
+                            logger.info(
+                                f"🚀 [TP/SL CALL] {symbol} | "
+                                f"About to call place_tpsl_order with: "
+                                f"side={side}, size={size}, "
+                                f"SL_price={stop_loss_price}, TP_price={take_profit_price}"
+                            )
                             try:
                                 tpsl_results = await self.rest_client.place_tpsl_order(
                                     symbol=symbol,
@@ -351,13 +357,29 @@ class LiveTrader:
                                     stop_loss_price=stop_loss_price,
                                     take_profit_price=take_profit_price,
                                 )
+                                sl_code = tpsl_results.get('sl', {}).get('code', 'N/A') if tpsl_results.get('sl') else 'N/A'
+                                tp_code = tpsl_results.get('tp', {}).get('code', 'N/A') if tpsl_results.get('tp') else 'N/A'
+                                sl_msg = tpsl_results.get('sl', {}).get('msg', 'N/A') if tpsl_results.get('sl') else 'N/A'
+                                tp_msg = tpsl_results.get('tp', {}).get('msg', 'N/A') if tpsl_results.get('tp') else 'N/A'
                                 logger.info(
                                     f"✅ [TP/SL PLACED] {symbol} | "
-                                    f"SL: {tpsl_results.get('sl', {}).get('code')} | "
-                                    f"TP: {tpsl_results.get('tp', {}).get('code')}"
+                                    f"SL: code={sl_code}, msg={sl_msg} | "
+                                    f"TP: code={tp_code}, msg={tp_msg} | "
+                                    f"Full results: {tpsl_results}"
                                 )
+                                if sl_code != "00000" or tp_code != "00000":
+                                    logger.warning(
+                                        f"⚠️  [TP/SL WARNING] {symbol} | "
+                                        f"One or both orders may have failed! "
+                                        f"Check Bitget app to verify."
+                                    )
                             except Exception as e:
-                                logger.error(f"❌ [TP/SL FAILED] {symbol}: {e}")
+                                import traceback
+                                logger.error(
+                                    f"❌ [TP/SL FAILED] {symbol} | "
+                                    f"Exception: {e} | Type: {type(e).__name__} | "
+                                    f"Traceback: {traceback.format_exc()}"
+                                )
                                 # Continue anyway - bot-side monitoring will handle it
 
                             return True

@@ -501,6 +501,14 @@ class BitgetRestClient:
         endpoint = "/api/v2/mix/order/place-tpsl-order"
         results: dict[str, Any] = {"sl": None, "tp": None}
         
+        # 🚨 EXTENSIVE LOGGING: Log all input parameters
+        logger.info(
+            f"🔍 [TP/SL START] {symbol} | "
+            f"hold_side: {hold_side} | size: {size} | "
+            f"SL price: {stop_loss_price} | TP price: {take_profit_price} | "
+            f"product_type: {product_type}"
+        )
+        
         # 🚨 CRITICAL FIX: Convert "long"/"short" to "buy"/"sell" for one-way mode
         # According to Bitget API docs, holdSide should be "buy" for long, "sell" for short in one-way mode
         api_hold_side = "buy" if hold_side == "long" else "sell"
@@ -510,15 +518,44 @@ class BitgetRestClient:
         )
         
         # Helper to post plan order with fallback triggerType
-        async def _post_plan(data: dict[str, str]) -> dict[str, Any]:
+        async def _post_plan(data: dict[str, str], order_type: str) -> dict[str, Any]:
+            # Log EXACT data being sent
+            logger.info(
+                f"📤 [TP/SL REQUEST] {symbol} | {order_type} | "
+                f"Data: {data}"
+            )
+            
             # First try mark_price (safer)
             data["triggerType"] = "mark_price"
             try:
-                return await self._request("POST", endpoint, data=data)
-            except Exception:
+                logger.info(f"🔄 [TP/SL TRY] {symbol} | {order_type} | triggerType: mark_price")
+                response = await self._request("POST", endpoint, data=data)
+                logger.info(
+                    f"✅ [TP/SL RESPONSE] {symbol} | {order_type} | "
+                    f"Full response: {response}"
+                )
+                return response
+            except Exception as e:
+                logger.warning(
+                    f"⚠️  [TP/SL FALLBACK] {symbol} | {order_type} | "
+                    f"mark_price failed: {e} | Trying market_price..."
+                )
                 # Fallback to market_price if exchange rejects mark_price
                 data["triggerType"] = "market_price"
-                return await self._request("POST", endpoint, data=data)
+                try:
+                    logger.info(f"🔄 [TP/SL TRY] {symbol} | {order_type} | triggerType: market_price")
+                    response = await self._request("POST", endpoint, data=data)
+                    logger.info(
+                        f"✅ [TP/SL RESPONSE] {symbol} | {order_type} | "
+                        f"Full response: {response}"
+                    )
+                    return response
+                except Exception as e2:
+                    logger.error(
+                        f"❌ [TP/SL FAILED] {symbol} | {order_type} | "
+                        f"Both triggerType attempts failed: {e2}"
+                    )
+                    raise
         
         # Place STOP-LOSS order (separate order #1)
         if stop_loss_price is not None:
@@ -533,14 +570,34 @@ class BitgetRestClient:
                 "executePrice": "0",  # MARKET on trigger
                 "size": str(size),  # REQUIRED!
             }
+            logger.info(
+                f"📋 [TP/SL SL DATA] {symbol} | "
+                f"Building SL order: symbol={symbol}, productType={product_type}, "
+                f"marginMode=isolated, marginCoin=USDT, planType=loss_plan, "
+                f"holdSide={api_hold_side}, triggerPrice={stop_loss_price}, "
+                f"executePrice=0, size={size}"
+            )
             try:
-                results["sl"] = await _post_plan(sl_data)
+                results["sl"] = await _post_plan(sl_data, "STOP-LOSS")
+                code = results["sl"].get("code") if results["sl"] else "NO_CODE"
+                msg = results["sl"].get("msg") if results["sl"] else "NO_MSG"
+                data = results["sl"].get("data") if results["sl"] else None
                 logger.info(
                     f"✅ [EXCHANGE SL] {symbol} @ ${stop_loss_price:.4f} | "
-                    f"Size: {size:.4f} | holdSide: {api_hold_side} | Response: {results['sl'].get('code')}"
+                    f"Size: {size:.4f} | holdSide: {api_hold_side} | "
+                    f"Code: {code} | Msg: {msg} | Data: {data}"
                 )
+                if code != "00000":
+                    logger.error(
+                        f"❌ [EXCHANGE SL ERROR] {symbol} | "
+                        f"API returned error code: {code} | Message: {msg} | Full response: {results['sl']}"
+                    )
             except Exception as e:
-                logger.error(f"❌ [EXCHANGE SL FAILED] {symbol}: {e}")
+                logger.error(
+                    f"❌ [EXCHANGE SL EXCEPTION] {symbol} | "
+                    f"Exception: {e} | Type: {type(e).__name__} | "
+                    f"Traceback: {str(e)}"
+                )
                 results["sl"] = {"code": "error", "msg": str(e)}
         
         # Place TAKE-PROFIT order (separate order #2)
@@ -556,15 +613,42 @@ class BitgetRestClient:
                 "executePrice": "0",  # MARKET on trigger
                 "size": str(size),  # REQUIRED!
             }
+            logger.info(
+                f"📋 [TP/SL TP DATA] {symbol} | "
+                f"Building TP order: symbol={symbol}, productType={product_type}, "
+                f"marginMode=isolated, marginCoin=USDT, planType=profit_plan, "
+                f"holdSide={api_hold_side}, triggerPrice={take_profit_price}, "
+                f"executePrice=0, size={size}"
+            )
             try:
-                results["tp"] = await _post_plan(tp_data)
+                results["tp"] = await _post_plan(tp_data, "TAKE-PROFIT")
+                code = results["tp"].get("code") if results["tp"] else "NO_CODE"
+                msg = results["tp"].get("msg") if results["tp"] else "NO_MSG"
+                data = results["tp"].get("data") if results["tp"] else None
                 logger.info(
                     f"✅ [EXCHANGE TP] {symbol} @ ${take_profit_price:.4f} | "
-                    f"Size: {size:.4f} | holdSide: {api_hold_side} | Response: {results['tp'].get('code')}"
+                    f"Size: {size:.4f} | holdSide: {api_hold_side} | "
+                    f"Code: {code} | Msg: {msg} | Data: {data}"
                 )
+                if code != "00000":
+                    logger.error(
+                        f"❌ [EXCHANGE TP ERROR] {symbol} | "
+                        f"API returned error code: {code} | Message: {msg} | Full response: {results['tp']}"
+                    )
             except Exception as e:
-                logger.error(f"❌ [EXCHANGE TP FAILED] {symbol}: {e}")
+                logger.error(
+                    f"❌ [EXCHANGE TP EXCEPTION] {symbol} | "
+                    f"Exception: {e} | Type: {type(e).__name__} | "
+                    f"Traceback: {str(e)}"
+                )
                 results["tp"] = {"code": "error", "msg": str(e)}
+        
+        # Final summary
+        logger.info(
+            f"📊 [TP/SL SUMMARY] {symbol} | "
+            f"SL result: {results.get('sl', {}).get('code', 'N/A')} | "
+            f"TP result: {results.get('tp', {}).get('code', 'N/A')}"
+        )
         
         return results
 
