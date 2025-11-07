@@ -832,12 +832,13 @@ class LiveTrader:
                     "asks": [[mid + spread/2, 1000], [mid + spread, 500]],
                 })
         
-        # CRITICAL: Accumulate 60 seconds of 1-second data for ultra-fast startup
-        # This is enough for ultra-short-term timeframes (1s, 3s, 5s, 10s, 15s, 30s)
-        logger.info("⏳ Accumulating price history (60 seconds at 1-second intervals - MAXIMUM SPEED)...")
+        # CRITICAL: Accumulate 180 seconds (3 minutes) for FULL multi-timeframe analysis
+        # This ensures ALL timeframes (1s, 3s, 5s, 10s, 15s, 30s, 1min, 3min) have complete data
+        logger.info("⏳ Accumulating price history (180 seconds for FULL multi-timeframe confluence)...")
         logger.info(f"   💪 Using all device power for 100 symbols in parallel...")
+        logger.info(f"   🎯 Why 3 minutes? Complete 3-minute trend context = better signals!")
         
-        for i in range(60):  # 60 iterations = 1 minute
+        for i in range(180):  # 180 iterations = 3 minutes
             await asyncio.sleep(1)
             # Fetch ALL tickers in ONE API call (Bitget returns all symbols at once - FAST!)
             ticker_dict = await self.universe_manager.fetch_tickers()
@@ -847,12 +848,12 @@ class LiveTrader:
                 if symbol in self.symbols:
                     self.state_manager.update_ticker(symbol, ticker)
             
-            # Log progress every 15 seconds
-            if (i + 1) % 15 == 0:
+            # Log progress every 30 seconds
+            if (i + 1) % 30 == 0:
                 active_count = len([s for s in self.symbols if s in ticker_dict])
-                logger.info(f"   📊 {i+1}/60s complete ({(i+1)/60:.0%}) | {active_count} symbols active")
+                logger.info(f"   📊 {i+1}/180s complete ({(i+1)/180:.0%}) | {active_count} symbols active")
 
-        logger.info("✅ 60 seconds of data ready! Multi-timeframe signals active. Starting trading...\n")
+        logger.info("✅ 180 seconds of data ready! ALL timeframes fully loaded. Starting trading...\n")
 
         # Start trading
         await self.trading_loop()

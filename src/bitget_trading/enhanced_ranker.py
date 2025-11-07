@@ -262,20 +262,23 @@ class EnhancedRanker:
                 )
                 return 0.0, "neutral", {"reason": "against_structure", "structure": market_structure["structure"]}
             
-            # PRO RULE: ONLY take A-grade trades! (4+ factors, not 3)
-            # B-grade trades (3 factors) have too many losses!
-            if trade_grade["grade"] != "A":
+            # PRO RULE: Prefer A-grade trades (4+ factors), but allow B-grade (3+ factors) with lower multiplier
+            # C-grade and below (2 or fewer factors) = REJECT
+            if trade_grade["grade"] not in ["A", "B"]:
                 logger.debug(
-                    f"trade_rejected_not_A_grade",
+                    f"trade_rejected_low_grade",
                     symbol=state.symbol,
                     grade=trade_grade["grade"],
                     factors=trade_grade["factors_met"],
                     reasons=trade_grade["reasons"]
                 )
-                return 0.0, "neutral", {"reason": "not_A_grade", "grade": trade_grade["grade"]}
+                return 0.0, "neutral", {"reason": "low_grade", "grade": trade_grade["grade"]}
             
-            # A-grade only = maximum win rate!
-            final_score *= 2.0  # 100% bonus for A-grade setups!
+            # Score multipliers based on grade (A-grade gets priority!)
+            if trade_grade["grade"] == "A":
+                final_score *= 2.0  # 100% bonus for A-grade setups!
+            elif trade_grade["grade"] == "B":
+                final_score *= 1.3  # 30% bonus for B-grade (still good, not amazing)
             
             logger.debug(
                 f"trade_quality_check",
