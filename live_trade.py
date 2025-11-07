@@ -254,31 +254,79 @@ class LiveTrader:
                         f"Order ID: {order_id} | Status: FILLED (market order)"
                     )
                     
-                    # 🚨 CRITICAL: Place EXCHANGE-SIDE stop-loss/take-profit orders!
-                    # These execute on Bitget's servers instantly when price hits trigger
-                    # With 25x leverage, this prevents liquidation from bot-side delays
+                    # 🚨 CRITICAL: Place EXCHANGE-SIDE TP/SL orders as STOP-MARKET!
+                    # These execute on Bitget servers INSTANTLY when price hits trigger
+                    # With 25x leverage, this prevents liquidations if bot crashes!
                     
-                    # 🚨 SIMPLIFIED: Rely on BOT-SIDE monitoring ONLY!
-                    # Exchange-side TP/SL keeps failing with API errors ("trigger price empty", "planType not empty")
-                    # Bot-side monitoring is RELIABLE and has correct values:
-                    # - Checks every 5ms (200x per second!)
-                    # - Has correct TP/SL values (50% SL, 14% TP)
-                    # - Emergency exit at 15 minutes
-                    # - Trailing stop active
-                    #
-                    # DECISION: DISABLE exchange-side TP/SL, use bot-side ONLY!
-                    # Benefits:
-                    # - No API complexity
-                    # - No "trigger price empty" errors  
-                    # - Simpler, more reliable
-                    # - Bot-side already has correct values!
+                    # Calculate TP/SL prices from regime_params
+                    if regime_params:
+                        sl_capital_pct = regime_params["stop_loss_pct"]  # e.g., 0.50 (50%)
+                        tp_capital_pct = regime_params["take_profit_pct"]  # e.g., 0.10 (10%)
+                        sl_price_pct = sl_capital_pct / self.leverage  # e.g., 0.50 / 25 = 0.02 (2%)
+                        tp_price_pct = tp_capital_pct / self.leverage  # e.g., 0.10 / 25 = 0.004 (0.4%)
+                    else:
+                        # Fallback (should never happen)
+                        sl_price_pct = 0.02  # 2% price = 50% capital @ 25x
+                        tp_price_pct = 0.004  # 0.4% price = 10% capital @ 25x
+                    
+                    # Calculate actual prices
+                    if side == "long":
+                        stop_loss_price = price * (1 - sl_price_pct)
+                        take_profit_price = price * (1 + tp_price_pct)
+                    else:  # short
+                        stop_loss_price = price * (1 + sl_price_pct)
+                        take_profit_price = price * (1 - tp_price_pct)
+                    
+                    # Round to correct precision
+                    contract_info = self.universe_manager.get_contract_info(symbol)
+                    if contract_info:
+                        price_place = contract_info.get("price_place", 4)
+                        stop_loss_price = round(stop_loss_price, price_place)
+                        take_profit_price = round(take_profit_price, price_place)
+                    else:
+                        # Fallback rounding
+                        stop_loss_price = round(stop_loss_price, 4 if price < 10 else 2)
+                        take_profit_price = round(take_profit_price, 4 if price < 10 else 2)
                     
                     logger.info(
-                        f"🛡️  [BOT-SIDE MONITORING] {symbol} @ {self.leverage}x | "
-                        f"SL: 50% capital (2% price) | "
-                        f"TP: 14% capital (0.56% price) | "
-                        f"Checking every 5ms (200x/sec)"
+                        f"📊 [TP/SL CALC] {symbol} | "
+                        f"SL: {sl_capital_pct*100:.0f}% capital (${stop_loss_price:.4f}) | "
+                        f"TP: {tp_capital_pct*100:.0f}% capital (${take_profit_price:.4f}) | "
+                        f"Entry: ${price:.4f}"
                     )
+                    
+                    # Cancel old TP/SL orders first!
+                    try:
+                        await self.rest_client.cancel_all_tpsl_orders(symbol)
+                    except Exception as e:
+                        logger.warning(f"⚠️  Failed to cancel old TP/SL: {e}")
+                    
+                    # Place NEW exchange-side TP/SL orders as STOP-MARKET
+                    try:
+                        results = await self.rest_client.place_tpsl_order(
+                            symbol=symbol,
+                            hold_side=side,  # "long" or "short"
+                            size=size,  # Position size
+                            stop_loss_price=stop_loss_price,
+                            take_profit_price=take_profit_price,
+                        )
+                        
+                        # Check if successful
+                        sl_ok = results.get("sl_result", {}).get("code") == "00000"
+                        tp_ok = results.get("tp_result", {}).get("code") == "00000"
+                        
+                        if sl_ok and tp_ok:
+                            logger.info(f"✅ [EXCHANGE TP/SL] Both orders placed successfully!")
+                        elif sl_ok:
+                            logger.warning(f"⚠️  [EXCHANGE TP/SL] SL placed, TP failed (bot-side will handle TP)")
+                        elif tp_ok:
+                            logger.warning(f"⚠️  [EXCHANGE TP/SL] TP placed, SL failed (bot-side will handle SL)")
+                        else:
+                            logger.error(f"❌ [EXCHANGE TP/SL] Both failed! Relying on bot-side monitoring only")
+                    
+                    except Exception as e:
+                        logger.error(f"❌ [EXCHANGE TP/SL ERROR] {symbol}: {e}")
+                        logger.info("🛡️  Bot-side monitoring will handle exits (checking every 5ms)")
                     
                     return True
                 else:

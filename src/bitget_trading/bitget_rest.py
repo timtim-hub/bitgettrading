@@ -463,63 +463,84 @@ class BitgetRestClient:
         self,
         symbol: str,
         hold_side: str,  # "long" or "short" - which position to protect
+        size: float,  # Position size in contracts
         stop_loss_price: float | None = None,
         take_profit_price: float | None = None,
         product_type: str = "USDT-FUTURES",
     ) -> dict[str, Any]:
         """
-        Place EXCHANGE-SIDE stop-loss/take-profit order.
+        Place EXCHANGE-SIDE stop-loss AND take-profit orders as STOP-MARKET.
         
-        CRITICAL: This executes on Bitget's servers, NOT bot-side!
-        With 50x leverage, this is essential to prevent liquidations.
+        🚨 CRITICAL: These execute on Bitget servers as MARKET orders when triggered!
+        With 25x leverage, this prevents liquidations if bot crashes.
         
-        IMPORTANT: Call cancel_all_tpsl_orders() first to clear old orders!
+        Bitget requires SEPARATE orders for SL and TP - we place 2 orders.
         
         Args:
             symbol: Trading pair (e.g., "BTCUSDT")
             hold_side: "long" or "short" - which position to protect
+            size: Position size in contracts (must match position size!)
             stop_loss_price: Stop loss trigger price (optional)
             take_profit_price: Take profit trigger price (optional)
             product_type: Product type
         
         Returns:
-            Order response
+            Dict with results of both orders
         """
         endpoint = "/api/v2/mix/order/place-tpsl-order"
+        results = {"sl_result": None, "tp_result": None}
         
-        data = {
-            "symbol": symbol,
-            "productType": product_type,
-            "marginCoin": "USDT",
-            "planType": "profit_loss",  # REQUIRED: Must specify plan type!
-            "holdSide": hold_side,
-        }
-        
-        # Add stop-loss (executes at market when price hits trigger)
+        # Place STOP-LOSS order (separate order #1)
         if stop_loss_price:
-            data["triggerPrice"] = str(stop_loss_price)  # Trigger price for SL
-            data["executePrice"] = str(stop_loss_price)  # Execute at market
-            data["triggerType"] = "market_price"  # Trigger based on mark price
-            data["side"] = "sell" if hold_side == "long" else "buy"  # Close position
+            sl_data = {
+                "symbol": symbol,
+                "productType": product_type,
+                "marginMode": "isolated",  # Match our trading mode
+                "marginCoin": "USDT",
+                "planType": "loss_plan",  # STOP-LOSS type
+                "holdSide": hold_side,
+                "triggerPrice": str(stop_loss_price),
+                "triggerType": "mark_price",  # Use mark price (safer than last price)
+                "size": str(size),  # REQUIRED!
+            }
+            
+            try:
+                sl_response = await self._request("POST", endpoint, data=sl_data)
+                results["sl_result"] = sl_response
+                logger.info(
+                    f"✅ [EXCHANGE SL] {symbol} @ ${stop_loss_price:.4f} | "
+                    f"Size: {size:.4f} | Response: {sl_response.get('code')}"
+                )
+            except Exception as e:
+                logger.error(f"❌ [EXCHANGE SL FAILED] {symbol}: {e}")
+                results["sl_result"] = {"code": "error", "msg": str(e)}
         
-        # Add take-profit (executes at market when price hits trigger)
+        # Place TAKE-PROFIT order (separate order #2)
         if take_profit_price:
-            # For TP+SL combined, Bitget might need separate orders
-            # Let's use SL only first to prevent liquidations
-            pass
+            tp_data = {
+                "symbol": symbol,
+                "productType": product_type,
+                "marginMode": "isolated",
+                "marginCoin": "USDT",
+                "planType": "profit_plan",  # TAKE-PROFIT type
+                "holdSide": hold_side,
+                "triggerPrice": str(take_profit_price),
+                "triggerType": "mark_price",
+                "size": str(size),  # REQUIRED!
+            }
+            
+            try:
+                tp_response = await self._request("POST", endpoint, data=tp_data)
+                results["tp_result"] = tp_response
+                logger.info(
+                    f"✅ [EXCHANGE TP] {symbol} @ ${take_profit_price:.4f} | "
+                    f"Size: {size:.4f} | Response: {tp_response.get('code')}"
+                )
+            except Exception as e:
+                logger.error(f"❌ [EXCHANGE TP FAILED] {symbol}: {e}")
+                results["tp_result"] = {"code": "error", "msg": str(e)}
         
-        response = await self._request("POST", endpoint, data=data)
-        
-        logger.info(
-            "tpsl_order_placed",
-            symbol=symbol,
-            hold_side=hold_side,
-            stop_loss_price=stop_loss_price,
-            take_profit_price=take_profit_price,
-            response=response,
-        )
-        
-        return response
+        return results
 
     async def get_ticker(
         self, symbol: str, product_type: str = "USDT-FUTURES"
