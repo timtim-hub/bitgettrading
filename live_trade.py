@@ -19,6 +19,8 @@ import sys
 from datetime import datetime
 from typing import Any
 
+import numpy as np
+
 from src.bitget_trading.bitget_rest import BitgetRestClient
 from src.bitget_trading.cross_sectional_ranker import CrossSectionalRanker
 from src.bitget_trading.enhanced_ranker import EnhancedRanker
