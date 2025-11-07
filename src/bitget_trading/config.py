@@ -61,9 +61,9 @@ class TradingConfig(BaseSettings):
     # Backtesting
     backtest_enabled: bool = Field(default=True, alias="BACKTEST_ENABLED")
     backtest_interval_hours: int = Field(default=6, ge=1, alias="BACKTEST_INTERVAL_HOURS")
-    backtest_lookback_days: int = Field(default=7, ge=1, alias="BACKTEST_LOOKBACK_DAYS")
-    backtest_min_trades: int = Field(default=10, ge=1, alias="BACKTEST_MIN_TRADES")
-    backtest_parallel_tokens: int = Field(default=20, ge=1, alias="BACKTEST_PARALLEL_TOKENS")
+    backtest_lookback_days: int = Field(default=3, ge=1, alias="BACKTEST_LOOKBACK_DAYS")  # Reduced from 7 to 3 for speed
+    backtest_min_trades: int = Field(default=5, ge=1, alias="BACKTEST_MIN_TRADES")  # Reduced from 10 to 5 for speed
+    backtest_parallel_tokens: int = Field(default=50, ge=1, alias="BACKTEST_PARALLEL_TOKENS")  # Increased from 20 to 50 for speed
     
     # Filtering
     filter_losing_tokens: bool = Field(default=True, alias="FILTER_LOSING_TOKENS")

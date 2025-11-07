@@ -2542,5 +2542,13 @@
   "DYMUSDT_short": {
     "leverage": 25,
     "timestamp": 1762542386.3997178
+  },
+  "MASKUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762542668.3334389
+  },
+  "MASKUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762542668.884141
   }
 }

@@ -142,9 +142,7 @@ class BacktestScheduler:
                         f"Trades {result.total_trades}"
                     )
             
-            # Small delay between batches to avoid rate limits
-            if batch_idx < len(batches) - 1:
-                await asyncio.sleep(1)
+            # No delay between batches - we're already rate-limited by parallel processing
         
         # Generate stats file
         self.stats_generator.generate_stats()

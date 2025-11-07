@@ -85,38 +85,32 @@ class SymbolBacktester:
             BacktestResult or None if insufficient data
         """
         try:
-            # Fetch historical candles (1m candles, ~200 per request = ~3.3 hours)
-            # For 7 days, we need ~500 candles (7 * 24 * 60 / 1 = 10,080 candles)
-            # But Bitget only returns 200 per request, so we'll use 1m candles
-            # and fetch multiple batches if needed
-            candles_needed = lookback_days * 24 * 60  # 1m candles
-            batches_needed = (candles_needed + 199) // 200  # Round up
-            
+            # 🚀 OPTIMIZATION: Use 5m candles instead of 1m for faster backtesting
+            # 5m candles = 12 per hour, 288 per day, ~2000 for 7 days
+            # But we only need 200 candles (200 * 5m = 16.7 hours) for fast backtest
+            # This reduces API calls from 5 batches to 1 batch per symbol!
             all_candles = []
-            for batch in range(min(batches_needed, 5)):  # Max 5 batches = ~16.7 hours
-                # Fetch 1m candles (most granular for fast backtesting)
-                response = await self.rest_client.get_historical_candles(
-                    symbol=symbol,
-                    granularity="1m",
-                    limit=200,
-                )
-                
-                if response.get("code") != "00000":
-                    logger.warning(f"⚠️ Failed to fetch candles for {symbol}: {response.get('msg')}")
-                    return None
-                
-                candles = response.get("data", [])
-                if not candles:
-                    break
-                
-                all_candles.extend(candles)
-                
-                # If we got less than 200, we've reached the end
-                if len(candles) < 200:
-                    break
+            
+            # Fetch 5m candles (faster, fewer API calls)
+            response = await self.rest_client.get_historical_candles(
+                symbol=symbol,
+                granularity="5m",  # Changed from 1m to 5m for speed
+                limit=200,  # 200 * 5m = 16.7 hours of data (enough for backtest)
+            )
+            
+            if response.get("code") != "00000":
+                logger.debug(f"⚠️ Failed to fetch candles for {symbol}: {response.get('msg')}")
+                return None
+            
+            candles = response.get("data", [])
+            if not candles:
+                logger.debug(f"⚠️ No candles available for {symbol}")
+                return None
+            
+            all_candles.extend(candles)
             
             if not all_candles:
-                logger.warning(f"⚠️ No candles available for {symbol}")
+                logger.debug(f"⚠️ No candles available for {symbol}")
                 return None
             
             # Reverse to get oldest -> newest
