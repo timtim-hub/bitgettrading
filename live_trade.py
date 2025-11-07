@@ -640,11 +640,10 @@ class LiveTrader:
                                 trailing_tp_retry_delay = 2.0  # Wait longer between retries
                                 
                                 for trailing_attempt in range(max_trailing_tp_retries):
-                                    # 🎯 USE NEW GESAMTER TP/SL MODE (track_plan + tradeSide=close)!
-                                    tp_side = "sell" if side == "long" else "buy"  # Opposite side to close
+                                    # 🎯 USE NEW GESAMTER TP/SL MODE (pos_profit - FULL POSITION)!
                                     tp_results = await self.rest_client.place_trailing_stop_full_position(
                                         symbol=symbol,
-                                        side=tp_side,  # "sell" to close long, "buy" to close short
+                                        hold_side=side,  # "long" or "short"
                                         callback_ratio=trailing_range_rate,  # 1.5% trailing distance
                                         trigger_price=trailing_trigger_price,  # Activate at TP threshold
                                     )
@@ -798,10 +797,9 @@ class LiveTrader:
                                         logger.info(f"🔄 [TP/SL RETRY] {symbol} | Retrying trailing TP order...")
                                         try:
                                             trailing_range_rate = regime_params.get("trailing_stop_pct", 0.015) if regime_params else 0.015  # 1.5% callback rate (Rückrufquote)
-                                            tp_side = "sell" if side == "long" else "buy"  # Opposite side to close
                                             retry_tp = await self.rest_client.place_trailing_stop_full_position(
                                                 symbol=symbol,
-                                                side=tp_side,
+                                                hold_side=side,
                                                 callback_ratio=trailing_range_rate,
                                                 trigger_price=take_profit_price,
                                             )
@@ -841,12 +839,11 @@ class LiveTrader:
                                     )
                                     retry_sl_code = retry_sl_results.get('sl', {}).get('code', 'N/A') if retry_sl_results and retry_sl_results.get('sl') else 'N/A'
                                     
-                                    # Retry trailing TP using GESAMTER TP/SL mode
+                                    # Retry trailing TP using GESAMTER TP/SL mode (pos_profit)
                                     trailing_range_rate = regime_params.get("trailing_stop_pct", 0.01) if regime_params else 0.01
-                                    tp_side = "sell" if side == "long" else "buy"  # Opposite side to close
                                     retry_tp_results = await self.rest_client.place_trailing_stop_full_position(
                                         symbol=symbol,
-                                        side=tp_side,
+                                        hold_side=side,
                                         callback_ratio=trailing_range_rate,
                                         trigger_price=take_profit_price,
                                     )
