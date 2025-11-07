@@ -2500,6 +2500,81 @@ class LiveTrader:
                         continue
                 except Exception as e:
                     logger.warning(f"⚠️ [ENTRY CONFIRMATION ERROR] {symbol} | Error: {e} | Proceeding with caution")
+                
+                # 🚀 PHASE 1: PULLBACK DETECTION - Wait for retracements instead of entering at peaks!
+                # This is CRITICAL to avoid buying tops and selling bottoms
+                try:
+                    prices_for_pullback = [p for _, p in list(state.price_history)[-50:]] if state.price_history else []
+                    if len(prices_for_pullback) >= 20:
+                        prices_arr = np.array(prices_for_pullback)
+                        is_pullback, pullback_pct, trend = self.indicators.detect_pullback(prices_arr, lookback=10)
+                        
+                        # For LONG: Only enter in uptrend with pullback OR ranging market
+                        if signal_side == "long":
+                            if trend == "uptrend" and not is_pullback:
+                                logger.info(
+                                    f"🚫 [ENTRY REJECTED] {symbol} | LONG signal but NO PULLBACK detected (buying top risk) | "
+                                    f"Trend: {trend} | Wait for 0.3-1.5% retracement from high"
+                                )
+                                continue
+                            elif trend == "downtrend":
+                                logger.debug(f"🚫 [ENTRY REJECTED] {symbol} | LONG signal but in DOWNTREND | Trend: {trend}")
+                                continue
+                        
+                        # For SHORT: Only enter in downtrend with pullback OR ranging market
+                        elif signal_side == "short":
+                            if trend == "downtrend" and not is_pullback:
+                                logger.info(
+                                    f"🚫 [ENTRY REJECTED] {symbol} | SHORT signal but NO PULLBACK detected (selling bottom risk) | "
+                                    f"Trend: {trend} | Wait for 0.3-1.5% bounce from low"
+                                )
+                                continue
+                            elif trend == "uptrend":
+                                logger.debug(f"🚫 [ENTRY REJECTED] {symbol} | SHORT signal but in UPTREND | Trend: {trend}")
+                                continue
+                        
+                        if is_pullback:
+                            logger.info(
+                                f"✅ [PULLBACK CONFIRMED] {symbol} | {signal_side.upper()} signal with valid pullback | "
+                                f"Trend: {trend} | Pullback: {pullback_pct:.2f}% | PERFECT ENTRY SETUP!"
+                            )
+                except Exception as e:
+                    logger.debug(f"⚠️ Failed to check pullback for {symbol}: {e}")
+                
+                # 🚀 PHASE 2: VELOCITY FILTER - Skip if price moved too fast (parabolic move)
+                try:
+                    prices_for_velocity = [p for _, p in list(state.price_history)[-10:]] if state.price_history else []
+                    if len(prices_for_velocity) >= 6:
+                        prices_arr = np.array(prices_for_velocity)
+                        should_skip, velocity_pct = self.indicators.check_velocity_filter(prices_arr, window=6)
+                        
+                        if should_skip:
+                            logger.info(
+                                f"🚫 [ENTRY REJECTED] {symbol} | Price moved too fast: {velocity_pct:.2f}% in 30s (>1%) | "
+                                f"Parabolic move - likely to reverse! Wait for consolidation"
+                            )
+                            continue
+                except Exception as e:
+                    logger.debug(f"⚠️ Failed to check velocity for {symbol}: {e}")
+                
+                # 🚀 PHASE 3: VWAP DISTANCE CHECK - Skip if too far from VWAP (mean reversion expected)
+                try:
+                    prices_for_vwap = [p for _, p in list(state.price_history)[-20:]] if state.price_history else []
+                    volumes_for_vwap = [state.features.get("volume", 1000) for _ in range(min(20, len(prices_for_vwap)))]
+                    
+                    if len(prices_for_vwap) >= 20:
+                        prices_arr = np.array(prices_for_vwap)
+                        volumes_arr = np.array(volumes_for_vwap)
+                        distance_pct, is_extended = self.indicators.calculate_distance_from_vwap(prices_arr, volumes_arr)
+                        
+                        if is_extended:
+                            logger.info(
+                                f"🚫 [ENTRY REJECTED] {symbol} | Price too far from VWAP: {distance_pct:.2f}% (>1.5%) | "
+                                f"Mean reversion expected! Wait for return to VWAP"
+                            )
+                            continue
+                except Exception as e:
+                    logger.debug(f"⚠️ Failed to check VWAP distance for {symbol}: {e}")
 
                 # 🚨 CRITICAL: Use TOTAL EQUITY (available + margin in positions + unrealized PnL) for position sizing
                 # This ensures each trade gets 10% of TOTAL capital, not just remaining available balance
