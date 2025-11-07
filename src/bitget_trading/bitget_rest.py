@@ -1000,32 +1000,33 @@ class BitgetRestClient:
         self,
         symbol: str,
         hold_side: str,  # "long" or "short" - which position we're closing
-        callback_ratio: float,  # Callback rate as decimal (e.g., 0.015 = 1.5%)
+        callback_ratio: float,  # Callback rate as decimal (e.g., 0.10 = 10%)
         trigger_price: float,  # Activation price
-        size: float,  # EXACT position size for full position close
-        size_precision: int | None = None,
+        size: float,  # NOT USED for pos_profit (kept for API compatibility)
+        size_precision: int | None = None,  # NOT USED
         product_type: str = "usdt-futures",
     ) -> dict[str, Any]:
         """
-        Place FULL POSITION TRAILING take-profit using moving_plan.
+        Place FULL POSITION TRAILING take-profit using pos_profit.
         
-        🎯 THIS IS "NORMAL TRAILING TP/SL" MODE (trails + full position)!
+        🎯 USER DISCOVERY: Use pos_profit (SAME as pos_loss for SL!)
         
-        Discovery:
-        - planType: "pos_profit" = STATIC full position (Gesamter TP/SL - NO trailing) ❌
-        - planType: "moving_plan" with SIZE = TRAILING full position (Normal mode) ✅
+        This ensures TP shows in "Entire TP/SL" section (same as SL):
+        - planType: "pos_profit" with rangeRate = TRAILING full position ✅
+        - planType: "moving_plan" = Shows in different section ❌
         
-        By providing exact position size with moving_plan, we get:
-        - ✅ Trailing capability (rangeRate parameter)
-        - ✅ Full position close (when size matches exactly)
+        By using pos_profit with rangeRate, we get:
+        - ✅ Trailing capability (rangeRate makes it trail!)
+        - ✅ Full position (no size parameter)
+        - ✅ Shows in "Entire TP/SL" tab (same as SL!)
         
         Args:
             symbol: Trading pair
             hold_side: "long" or "short" - which position to protect
             callback_ratio: Trailing callback rate as decimal (e.g., 0.10 = 10%)
             trigger_price: Activation price
-            size: EXACT position size
-            size_precision: Size precision
+            size: NOT USED (kept for backwards compatibility)
+            size_precision: NOT USED
             product_type: Product type
             
         Returns:
@@ -1039,34 +1040,25 @@ class BitgetRestClient:
         # Convert "long"/"short" to "buy"/"sell" for API
         api_hold_side = "buy" if hold_side == "long" else "sell"
         
-        # Round size to correct precision
-        if size_precision is None:
-            size_str = f"{size:.10f}".rstrip('0').rstrip('.')
-            if '.' in size_str:
-                size_precision = len(size_str.split('.')[1])
-            else:
-                size_precision = 0
-        rounded_size = round(size, size_precision)
-        
         data = {
             "symbol": symbol,
             "productType": product_type,
             "marginMode": "isolated",
             "marginCoin": "USDT",
-            "planType": "moving_plan",  # 🚨 moving_plan for TRAILING (NOT pos_profit!)
+            "planType": "pos_profit",  # 🚨 CRITICAL: pos_profit (SAME as pos_loss for SL!)
             "holdSide": api_hold_side,  # "buy" or "sell"
             "triggerPrice": str(trigger_price),
             "triggerType": "mark_price",
-            "size": str(rounded_size),  # EXACT size = full position close
-            "rangeRate": formatted_range_rate,  # Trailing callback rate
+            "rangeRate": formatted_range_rate,  # Trailing callback rate (makes it TRAIL!)
+            # 🚨 NO size parameter = applies to ENTIRE position (same logic as pos_loss for SL!)
         }
         
         logger.info(
-            f"🎯 [NORMAL TRAILING TP - FULL POSITION!] {symbol} | "
-            f"planType=moving_plan (TRAILING + full position with exact size!) | "
+            f"🎯 [TRAILING TP - ENTIRE TP/SL MODE!] {symbol} | "
+            f"planType=pos_profit (SAME LOGIC AS pos_loss for SL!) | "
             f"holdSide={hold_side} → API: {api_hold_side} | "
-            f"size={size} → rounded={rounded_size} (EXACT match for full close!) | "
-            f"callback_ratio={callback_ratio*100:.2f}% → rangeRate: {formatted_range_rate} | "
+            f"NO size parameter (full position - same as SL!) | "
+            f"callback_ratio={callback_ratio*100:.2f}% → rangeRate: {formatted_range_rate} (TRAILING!) | "
             f"trigger_price={trigger_price}"
         )
         
@@ -1079,16 +1071,17 @@ class BitgetRestClient:
             if code == "00000":
                 order_id = data_resp.get('orderId', 'N/A')
                 logger.info(
-                    f"✅ [NORMAL TRAILING TP PLACED!] {symbol} | "
-                    f"planType=moving_plan (TRAILING + full position!) | "
-                    f"size={rounded_size} | "
+                    f"✅ [TRAILING TP PLACED - ENTIRE TP/SL!] {symbol} | "
+                    f"planType=pos_profit (SAME LOGIC AS SL!) | "
+                    f"No size (full position) | "
                     f"Callback: {callback_ratio*100:.2f}% (TRAILS!) | "
                     f"Trigger: {trigger_price} | "
                     f"Order ID: {order_id}"
                 )
                 logger.warning(
-                    f"🔍 [DEBUG] CHECK BITGET APP: Is order ID {order_id} visible in TP/SL tab for {symbol}? "
-                    f"If NOT visible = order was silently cancelled by exchange!"
+                    f"🔍 [DEBUG] CHECK BITGET APP 'Entire TP/SL' TAB: "
+                    f"Is TRAILING TP order ID {order_id} visible for {symbol}? "
+                    f"Should show in SAME section as SL!"
                 )
             else:
                 logger.error(

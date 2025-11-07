@@ -2278,5 +2278,125 @@
   "CROUSDT_short": {
     "leverage": 25,
     "timestamp": 1762511591.0198889
+  },
+  "EGLDUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531510.735569
+  },
+  "EGLDUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531511.111149
+  },
+  "GMTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531511.537236
+  },
+  "GMTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531511.936896
+  },
+  "IMXUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531512.3304949
+  },
+  "IMXUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531512.709413
+  },
+  "WOOUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531513.0969112
+  },
+  "WOOUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531513.492036
+  },
+  "LUNCUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531513.9095418
+  },
+  "LUNCUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531514.288481
+  },
+  "UMAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531514.691654
+  },
+  "UMAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531515.073066
+  },
+  "ZETAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531517.125814
+  },
+  "ZETAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531517.4961321
+  },
+  "NFPUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531517.888404
+  },
+  "NFPUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531518.276778
+  },
+  "OMUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531518.700473
+  },
+  "OMUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531519.10166
+  },
+  "AIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531520.33829
+  },
+  "AIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531520.735332
+  },
+  "SAGAUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531521.125778
+  },
+  "SAGAUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531521.51965
+  },
+  "NOTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531521.916269
+  },
+  "NOTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531522.291241
+  },
+  "THEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531525.12933
+  },
+  "THEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531525.6193259
+  },
+  "PROMUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531526.907265
+  },
+  "PROMUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531527.352371
+  },
+  "NXPCUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762531535.0512168
+  },
+  "NXPCUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762531535.466517
   }
 }
