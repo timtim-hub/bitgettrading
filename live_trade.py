@@ -2471,32 +2471,23 @@ class LiveTrader:
                                     f"Long: {long_term_change:.3f}%"
                                 )
                         else:  # short
-                            # 🚀 RELAXED: Allow shorts during pullbacks/consolidations, not just strong downtrends
-                            # Short position: Allow if price is falling OR neutral (not strongly rising)
-                            # This enables shorts during pullbacks in bull markets
-                            is_falling = short_term_change < -0.02 or medium_term_change < -0.03
-                            is_neutral = abs(short_term_change) < 0.05 and abs(medium_term_change) < 0.08
-                            is_strongly_rising = short_term_change > 0.05 and medium_term_change > 0.08 and long_term_change > 0.12
+                            # 🚀 OPTIMIZED: More relaxed short entry - only reject if STRONGLY rising
+                            # Short position: Allow if price is falling, neutral, OR slightly rising (faster entry)
+                            # This enables shorts during pullbacks and consolidations
+                            is_strongly_rising = short_term_change > 0.08 and medium_term_change > 0.12 and long_term_change > 0.15  # Higher thresholds
                             
                             if is_strongly_rising:
                                 # Price is STRONGLY rising - REJECT short entry!
-                                logger.warning(
+                                logger.debug(
                                     f"🚫 [ENTRY REJECTED] {symbol} | SHORT signal but price is STRONGLY RISING! | "
                                     f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
-                                    f"Long: {long_term_change:.3f}% | Skipping to avoid entering during strong uptrend"
+                                    f"Long: {long_term_change:.3f}% | Skipping to avoid entering during wrong momentum"
                                 )
                                 continue
-                            elif is_falling or is_neutral:
-                                # Price is falling or neutral - good to enter short (pullback/consolidation)
-                                logger.info(
-                                    f"✅ [ENTRY CONFIRMED] {symbol} | SHORT signal with falling/neutral price | "
-                                    f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
-                                    f"Long: {long_term_change:.3f}% | {'Falling' if is_falling else 'Neutral'}"
-                                )
                             else:
-                                # Mildly rising but not strongly - allow if other conditions are met
+                                # Price is falling, neutral, or slightly rising - good to enter short
                                 logger.info(
-                                    f"✅ [ENTRY CONFIRMED] {symbol} | SHORT signal with mild rise (pullback opportunity) | "
+                                    f"✅ [ENTRY CONFIRMED] {symbol} | SHORT signal with acceptable price action | "
                                     f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
                                     f"Long: {long_term_change:.3f}%"
                                 )
