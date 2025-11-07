@@ -1567,6 +1567,32 @@ class LiveTrader:
         # Bitget API fetches all in one call anyway, so no speed penalty
         total_available = len(self.symbols)
         logger.info(f"✅ Using ALL {len(self.symbols)} symbols (maximum opportunities!)")
+        
+        # 🚨 CRITICAL: Set leverage to 25x for all symbols at startup
+        logger.info(f"🔧 [STARTUP] Setting leverage to {self.leverage}x for all symbols...")
+        try:
+            # Set leverage for top 50 symbols (most likely to trade)
+            for symbol in self.symbols[:50]:
+                for hold_side in ["long", "short"]:
+                    try:
+                        response = await self.rest_client.set_leverage(
+                            symbol=symbol,
+                            leverage=self.leverage,
+                            hold_side=hold_side,
+                        )
+                        if response.get("code") == "00000":
+                            logger.debug(f"✅ [STARTUP] {symbol} {hold_side}: {self.leverage}x")
+                        else:
+                            logger.warning(
+                                f"⚠️ [STARTUP] {symbol} {hold_side}: Failed to set {self.leverage}x | "
+                                f"Code: {response.get('code')} | Msg: {response.get('msg', 'Unknown')}"
+                            )
+                    except Exception as e:
+                        logger.warning(f"⚠️ [STARTUP] {symbol} {hold_side}: Error setting leverage: {e}")
+            
+            logger.info(f"✅ [STARTUP] Leverage setting complete for top 50 symbols")
+        except Exception as e:
+            logger.error(f"❌ [STARTUP] Failed to set leverage at startup: {e}")
 
         # Initialize state with current market data
         logger.info("📊 Fetching initial market data...")
