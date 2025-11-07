@@ -140,14 +140,21 @@ class EnhancedRanker:
         bullish_timeframes = []
         bearish_timeframes = []
 
+        # 🚀 FIX FOR SHORT SIGNALS: Use thresholds to filter noise
+        bullish_threshold = 0.00005  # 0.005% minimum for bullish (very relaxed)
+        bearish_threshold = -0.00005  # -0.005% minimum for bearish (very relaxed)
+        
         for name, ret, weight in available_timeframes:
             total_weight += weight
-            if ret > 0:
+            # Only count as bullish if above threshold
+            if ret > bullish_threshold:
                 weighted_sum_bullish += ret * weight
                 bullish_timeframes.append((name, ret))
-            else:
+            # Only count as bearish if below threshold
+            elif ret < bearish_threshold:
                 weighted_sum_bearish += abs(ret) * weight
                 bearish_timeframes.append((name, ret))
+            # else: neutral, don't count
 
         # Calculate weighted average returns
         if weighted_sum_bullish > 0:
@@ -166,22 +173,23 @@ class EnhancedRanker:
         bullish_count = len(bullish_timeframes)
         bearish_count = len(bearish_timeframes)
 
-        # 🚀 PHASE 2.3: Strengthen multi-timeframe confluence to require 75%+ agreement minimum
-        # This ensures strong multi-timeframe alignment before entering trades
+        # 🚀 BALANCED: Use different thresholds for longs vs shorts
+        # Longs: stricter (75%) | Shorts: more relaxed (60%) to enable short trades
         if regime == "trending":
-            # Stricter: avoid chop
-            required_agreement_pct = 0.75  # 75% agreement
+            required_agreement_pct_long = 0.75  # 75% for longs
+            required_agreement_pct_short = 0.60  # 60% for shorts (RELAXED)
         elif regime == "breakout":
-            # Still require 75% for quality (was 60%)
-            required_agreement_pct = 0.75  # 75% agreement (strengthened)
+            required_agreement_pct_long = 0.75
+            required_agreement_pct_short = 0.60  # 60% for shorts (RELAXED)
         elif regime == "volatile":
-            # Strictest: maximum safety
-            required_agreement_pct = 0.85  # 85% agreement
+            required_agreement_pct_long = 0.85
+            required_agreement_pct_short = 0.70  # 70% for shorts (more relaxed than longs)
         else:  # ranging
-            # Balanced but still strict
-            required_agreement_pct = 0.75  # 75% agreement (strengthened from 70%)
+            required_agreement_pct_long = 0.75
+            required_agreement_pct_short = 0.60  # 60% for shorts (RELAXED)
 
-        required_agreement = max(2, int(total_timeframes * required_agreement_pct))
+        required_agreement_long = max(2, int(total_timeframes * required_agreement_pct_long))
+        required_agreement_short = max(2, int(total_timeframes * required_agreement_pct_short))
 
         # 🔥 LAYER 6: MOMENTUM ACCELERATION CHECK
         # Track if confluence is strengthening (catching rockets 🚀)
@@ -209,10 +217,11 @@ class EnhancedRanker:
             "bullish_count": bullish_count,
             "bearish_count": bearish_count,
             "total_timeframes": total_timeframes,
-            "required_agreement": required_agreement,
+            "required_agreement_long": required_agreement_long,
+            "required_agreement_short": required_agreement_short,
         }
 
-        if bullish_count >= required_agreement:
+        if bullish_count >= required_agreement_long:
             # Bullish confluence detected
             # LAYER 3: Confirm with orderbook (adaptive for simulated data)
             if orderbook_validated or ob_imbalance < -orderbook_threshold:
@@ -240,12 +249,12 @@ class EnhancedRanker:
                     {**metadata, "reason": "orderbook_conflict"},
                 )
 
-        elif bearish_count >= required_agreement:
+        elif bearish_count >= required_agreement_short:
             # Bearish confluence detected
             # LAYER 3: Confirm with orderbook (adaptive for simulated data)
             # 🚀 RELAXED: In bull markets, orderbook often shows bid pressure even during bearish moves
-            # If we have strong bearish confluence (>=75% agreement), allow shorts even with neutral/weak orderbook
-            strong_bearish_confluence = bearish_count >= int(total_timeframes * 0.75)
+            # If we have strong bearish confluence (>=60% agreement), allow shorts even with neutral/weak orderbook
+            strong_bearish_confluence = bearish_count >= int(total_timeframes * 0.60)  # Relaxed from 0.75
             
             # Allow short if:
             # 1. Orderbook validated (simulated data) OR
