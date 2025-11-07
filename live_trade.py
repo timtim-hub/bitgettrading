@@ -305,11 +305,18 @@ class LiveTrader:
                             stop_loss_price = round(stop_loss_price, 4)
                             take_profit_price = round(take_profit_price, 4)
                     
-                    # Try to place exchange-side TP/SL with retry logic
+                    # 🚨 CRITICAL: Cancel OLD TP/SL orders FIRST!
+                    # Old exchange-side orders with wrong values override bot-side monitoring!
+                    try:
+                        await self.rest_client.cancel_all_tpsl_orders(symbol)
+                    except Exception as e:
+                        logger.warning(f"⚠️  Failed to cancel old TP/SL orders: {e}")
+                    
+                    # Try to place NEW exchange-side TP/SL with retry logic
                     tpsl_success = False
                     for attempt in range(3):  # 3 attempts with retry
                         try:
-                            # Place exchange-side TP/SL orders
+                            # Place exchange-side TP/SL orders with CORRECT values
                             tpsl_order = await self.rest_client.place_tpsl_order(
                                 symbol=symbol,
                                 hold_side=side,  # "long" or "short"
@@ -849,6 +856,27 @@ class LiveTrader:
 
         # Fetch current positions
         await self.fetch_current_positions()
+        
+        # 🚨 CRITICAL: Cancel ALL old TP/SL orders on startup!
+        # Old exchange-side orders with WRONG values override bot-side monitoring!
+        logger.info("🧹 Canceling all old exchange-side TP/SL orders (cleanup)...")
+        all_positions = self.position_manager.get_all_positions()
+        cancelled_total = 0
+        for symbol in all_positions.keys():
+            try:
+                result = await self.rest_client.cancel_all_tpsl_orders(symbol)
+                if result.get("code") == "00000":
+                    msg = result.get("msg", "")
+                    if "Cancelled" in msg:
+                        count = int(msg.split()[1]) if len(msg.split()) > 1 else 0
+                        cancelled_total += count
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to cancel old TP/SL for {symbol}: {e}")
+        
+        if cancelled_total > 0:
+            logger.info(f"✅ Cancelled {cancelled_total} old TP/SL orders (preventing wrong exits!)")
+        else:
+            logger.info("✅ No old TP/SL orders found (clean state)")
 
         # Discover universe
         logger.info("🔍 Discovering tradable symbols...")
