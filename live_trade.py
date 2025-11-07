@@ -796,9 +796,16 @@ class LiveTrader:
                                 sl_msg = sl_results.get('sl', {}).get('msg', 'N/A') if sl_results and sl_results.get('sl') else 'N/A'
                                 tp_msg = tp_results.get('msg', 'N/A') if tp_results else 'N/A'
                                 
+                                # 🚨 CRITICAL: Store stop-loss order ID for verification!
+                                # This fixes the root cause of SAPIENUSDT (-42% loss) - we need to verify orders are active!
+                                sl_order_id = None
+                                if sl_code == "00000" and sl_results and sl_results.get('sl'):
+                                    sl_data = sl_results.get('sl', {}).get('data', {})
+                                    sl_order_id = sl_data.get('orderId') if sl_data else None
+                                
                                 logger.info(
                                     f"✅ [TP/SL PLACED] {symbol} | "
-                                    f"SL (static): code={sl_code}, msg={sl_msg} | "
+                                    f"SL (static): code={sl_code}, msg={sl_msg}, order_id={sl_order_id or 'N/A'} | "
                                     f"TP (trailing): code={tp_code}, msg={tp_msg} | "
                                     f"Trailing callback: {trailing_stop_pct_capital*100:.1f}% capital ({trailing_range_rate*100:.3f}% price @ {actual_leverage}x) | "
                                     f"Trigger price: ${trailing_trigger_price:.4f}"
@@ -807,6 +814,49 @@ class LiveTrader:
                                 # Verify both orders were placed successfully
                                 sl_success = sl_code == "00000"
                                 tp_success = tp_code == "00000"
+                                
+                                # 🚨 CRITICAL: Verify stop-loss order is actually active on exchange!
+                                # This fixes the root cause - stop-loss orders can be silently cancelled!
+                                if sl_success and sl_order_id:
+                                    try:
+                                        # Wait a moment for order to propagate
+                                        await asyncio.sleep(0.5)
+                                        
+                                        # Verify stop-loss order is active
+                                        verification = await self.rest_client.verify_stop_loss_order(
+                                            symbol=symbol,
+                                            expected_order_id=sl_order_id,
+                                        )
+                                        
+                                        if verification.get("exists"):
+                                            logger.info(
+                                                f"✅ [STOP-LOSS VERIFIED] {symbol} | "
+                                                f"Order ID {sl_order_id} is active on exchange | "
+                                                f"Trigger price: ${verification.get('trigger_price', 0):.4f}"
+                                            )
+                                        else:
+                                            logger.error(
+                                                f"🚨 [STOP-LOSS NOT VERIFIED!] {symbol} | "
+                                                f"Order ID {sl_order_id} is NOT active on exchange! | "
+                                                f"This is the root cause of SAPIENUSDT (-42% loss)! | "
+                                                f"Re-placing stop-loss immediately..."
+                                            )
+                                            # Re-place stop-loss immediately
+                                            retry_sl = await self.rest_client.place_tpsl_order(
+                                                symbol=symbol,
+                                                hold_side=side,
+                                                size=actual_position_size,
+                                                stop_loss_price=stop_loss_price,
+                                                take_profit_price=None,
+                                                size_precision=size_precision,
+                                            )
+                                            retry_sl_code = retry_sl.get('sl', {}).get('code', 'N/A') if retry_sl and retry_sl.get('sl') else 'N/A'
+                                            if retry_sl_code == "00000":
+                                                retry_sl_data = retry_sl.get('sl', {}).get('data', {}) if retry_sl and retry_sl.get('sl') else {}
+                                                sl_order_id = retry_sl_data.get('orderId') if retry_sl_data else sl_order_id
+                                                logger.info(f"✅ [STOP-LOSS RE-PLACED] {symbol} | New order ID: {sl_order_id}")
+                                    except Exception as e:
+                                        logger.warning(f"⚠️ Failed to verify stop-loss for {symbol}: {e}")
                                 
                                 if not sl_success or not tp_success:
                                     logger.warning(
@@ -862,6 +912,20 @@ class LiveTrader:
                                         f"Both SL (static) and TP (trailing) orders placed successfully! "
                                         f"SL: ${stop_loss_price:.4f} | TP (trailing): {trailing_stop_pct_capital*100:.1f}% capital ({trailing_range_rate*100:.3f}% price @ {actual_leverage}x) trailing from ${trailing_trigger_price:.4f}"
                                     )
+                                
+                                # 🚨 CRITICAL: Store stop-loss order ID in position metadata for verification!
+                                # This fixes the root cause of SAPIENUSDT (-42% loss) - we need to verify orders are active!
+                                if sl_order_id and sl_success:
+                                    # Update position metadata with stop-loss order ID
+                                    position = self.position_manager.get_position(symbol)
+                                    if position:
+                                        position.metadata["stop_loss_order_id"] = sl_order_id
+                                        position.metadata["stop_loss_price"] = stop_loss_price
+                                        self.position_manager.save_positions()
+                                        logger.info(
+                                            f"💾 [STOP-LOSS STORED] {symbol} | "
+                                            f"Order ID {sl_order_id} stored in position metadata for verification"
+                                        )
                             except Exception as e:
                                 import traceback
                                 logger.error(
@@ -1247,56 +1311,134 @@ class LiveTrader:
             except Exception as e:
                 logger.error(f"Failed to sync positions with exchange: {e}")
         
-        # 🚨 TIME-BASED EXIT FOR LOSING POSITIONS: Prevent small losses from becoming large!
-        # Check every position for time-based exit conditions
+        # 🚨 ROOT CAUSE FIX: Verify stop-loss orders are active and re-place if missing!
+        # This fixes the SAPIENUSDT issue (-42% loss) - stop-loss orders can be silently cancelled!
+        # Check every 20 iterations (1 second @ 50ms interval) to verify stop-loss orders
         from datetime import datetime
         current_time = datetime.now()
         
-        for symbol, position in list(self.position_manager.positions.items()):
-            try:
-                # Get current price and calculate PnL
-                state = self.state_manager.get_state(symbol)
-                if not state or state.last_price <= 0:
-                    continue
-                
-                current_price = state.last_price
-                
-                # Calculate PnL
-                if position.side == "long":
-                    price_change_pct = ((current_price - position.entry_price) / position.entry_price)
-                else:
-                    price_change_pct = ((position.entry_price - current_price) / position.entry_price)
-                
-                return_on_capital_pct = price_change_pct * position.leverage
-                pnl_pct = return_on_capital_pct * 100
-                
-                # Calculate time in position
-                entry_time = datetime.fromisoformat(position.entry_time.replace('Z', '+00:00'))
-                time_in_position_sec = (current_time - entry_time).total_seconds()
-                time_in_position_min = time_in_position_sec / 60
-                
-                # 🚨 TIME-BASED EXIT: Close losing positions after 3-5 minutes to prevent large losses!
-                # This prevents small losses from becoming massive losses like SAPIENUSDT (-42%!)
-                if pnl_pct < -10.0:  # Losing more than 10% capital
-                    if time_in_position_min >= 3.0:  # After 3 minutes
-                        logger.warning(
-                            f"⏰ [TIME-BASED EXIT] {symbol} | "
-                            f"Losing {pnl_pct:.2f}% after {time_in_position_min:.1f}min | "
-                            f"Closing to prevent larger loss (like SAPIENUSDT -42%!)"
+        verification_count = getattr(self, '_sl_verification_count', 0)
+        self._sl_verification_count = verification_count + 1
+        
+        # Verify stop-loss orders every 20 iterations (1 second)
+        if verification_count % 20 == 0:
+            for symbol, position in list(self.position_manager.positions.items()):
+                try:
+                    # Get stored stop-loss order ID from position metadata
+                    sl_order_id = position.metadata.get("stop_loss_order_id")
+                    sl_price = position.metadata.get("stop_loss_price")
+                    
+                    if not sl_order_id or not sl_price:
+                        continue  # No stop-loss order ID stored, skip verification
+                    
+                    # Verify stop-loss order is still active on exchange
+                    verification = await self.rest_client.verify_stop_loss_order(
+                        symbol=symbol,
+                        expected_order_id=sl_order_id,
+                    )
+                    
+                    if not verification.get("exists"):
+                        # Stop-loss order is missing! This is the root cause of SAPIENUSDT!
+                        logger.error(
+                            f"🚨 [STOP-LOSS MISSING!] {symbol} | "
+                            f"Stop-loss order {sl_order_id} is NOT active on exchange! | "
+                            f"This is why SAPIENUSDT closed at -42% instead of -50%! | "
+                            f"Re-placing stop-loss immediately..."
                         )
-                        await self.close_position(symbol, exit_reason=f"TIME-BASED-EXIT (losing {pnl_pct:.2f}% after {time_in_position_min:.1f}min)")
-                        continue
-                    elif time_in_position_min >= 5.0 and pnl_pct < -5.0:  # After 5 minutes, even smaller losses
-                        logger.warning(
-                            f"⏰ [TIME-BASED EXIT] {symbol} | "
-                            f"Losing {pnl_pct:.2f}% after {time_in_position_min:.1f}min | "
-                            f"Closing to prevent larger loss"
-                        )
-                        await self.close_position(symbol, exit_reason=f"TIME-BASED-EXIT (losing {pnl_pct:.2f}% after {time_in_position_min:.1f}min)")
-                        continue
+                        
+                        # Re-place stop-loss order immediately
+                        try:
+                            # Get current position size from exchange
+                            endpoint = "/api/v2/mix/position/all-position"
+                            params = {"productType": "USDT-FUTURES", "marginCoin": "USDT"}
+                            response = await self.rest_client._request("GET", endpoint, params=params)
+                            
+                            actual_size = 0.0
+                            if response.get("code") == "00000" and "data" in response:
+                                for pos in response.get("data", []):
+                                    if pos.get("symbol") == symbol:
+                                        actual_size = float(pos.get("total", 0))
+                                        break
+                            
+                            if actual_size > 0:
+                                # Re-place stop-loss order
+                                regime_params = self.regime_detector.get_regime_parameters(position.regime)
+                                sl_pct = regime_params.get("stop_loss_pct", 0.50)
+                                
+                                # Calculate stop-loss price
+                                if position.side == "long":
+                                    sl_price_new = position.entry_price * (1 - sl_pct / position.leverage)
+                                else:
+                                    sl_price_new = position.entry_price * (1 + sl_pct / position.leverage)
+                                
+                                # Round to correct precision
+                                contract_info = self.universe_manager.get_contract_info(symbol)
+                                if contract_info:
+                                    price_place = contract_info.get("price_place", 4)
+                                    sl_price_new = round(sl_price_new, price_place)
+                                
+                                # Re-place stop-loss
+                                sl_result = await self.rest_client.place_tpsl_order(
+                                    symbol=symbol,
+                                    hold_side=position.side,
+                                    size=actual_size,
+                                    stop_loss_price=sl_price_new,
+                                    take_profit_price=None,
+                                    size_precision=None,
+                                )
+                                
+                                sl_code = sl_result.get('sl', {}).get('code', 'N/A') if sl_result and sl_result.get('sl') else 'N/A'
+                                if sl_code == "00000":
+                                    sl_order_id_new = sl_result.get('sl', {}).get('data', {}).get('orderId', 'N/A') if sl_result and sl_result.get('sl') and sl_result.get('sl').get('data') else 'N/A'
+                                    # Update position metadata with new order ID
+                                    position.metadata["stop_loss_order_id"] = sl_order_id_new
+                                    position.metadata["stop_loss_price"] = sl_price_new
+                                    self.position_manager.save_positions()
+                                    logger.info(
+                                        f"✅ [STOP-LOSS RE-PLACED] {symbol} | "
+                                        f"New order ID: {sl_order_id_new} | "
+                                        f"Price: ${sl_price_new:.4f}"
+                                    )
+                                else:
+                                    logger.error(
+                                        f"❌ [STOP-LOSS RE-PLACE FAILED] {symbol} | "
+                                        f"Failed to re-place stop-loss! Code: {sl_code} | "
+                                        f"Position is UNPROTECTED!"
+                                    )
+                            else:
+                                logger.warning(f"⚠️ [STOP-LOSS RE-PLACE SKIPPED] {symbol} | Position size is 0, may be closing")
+                        except Exception as e:
+                            logger.error(f"❌ [STOP-LOSS RE-PLACE EXCEPTION] {symbol} | Exception: {e}")
+                    
+                    # Also check if price has hit stop-loss level (bot-side backup)
+                    state = self.state_manager.get_state(symbol)
+                    if state and state.last_price > 0:
+                        current_price = state.last_price
+                        
+                        # Calculate if price has hit stop-loss level
+                        if position.side == "long":
+                            price_change_pct = ((current_price - position.entry_price) / position.entry_price)
+                            hit_sl = current_price <= sl_price
+                        else:
+                            price_change_pct = ((position.entry_price - current_price) / position.entry_price)
+                            hit_sl = current_price >= sl_price
+                        
+                        return_on_capital_pct = price_change_pct * position.leverage
+                        pnl_pct = return_on_capital_pct * 100
+                        
+                        # If price has hit stop-loss level but position is still open, close manually (backup)
+                        if hit_sl and pnl_pct < -25.0:  # Only if losing more than 25% (tighter than 50%)
+                            logger.error(
+                                f"🚨 [BOT-SIDE STOP-LOSS] {symbol} | "
+                                f"Price hit stop-loss level (${sl_price:.4f}) but position still open! | "
+                                f"PnL: {pnl_pct:.2f}% | "
+                                f"Closing manually as backup (exchange stop-loss may have failed!)"
+                            )
+                            await self.close_position(symbol, exit_reason=f"BOT-SIDE-STOP-LOSS (price hit ${sl_price:.4f}, PnL: {pnl_pct:.2f}%)")
+                            continue
                 
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to check time-based exit for {symbol}: {e}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to verify stop-loss for {symbol}: {e}")
         
         # Now check exit conditions for remaining positions
         positions_checked = 0

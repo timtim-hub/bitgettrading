@@ -412,6 +412,83 @@ class BitgetRestClient:
             logger.error("cancel_orders_error", symbol=symbol, error=str(e))
             return {"code": "error", "msg": str(e)}
 
+    async def verify_stop_loss_order(
+        self,
+        symbol: str,
+        expected_order_id: str | None = None,
+        product_type: str = "usdt-futures",
+    ) -> dict[str, Any]:
+        """
+        Verify that a stop-loss order is actually active on the exchange.
+        
+        This fixes the root cause of SAPIENUSDT (-42% loss) - stop-loss orders
+        can be silently cancelled by the exchange, so we need to verify they exist!
+        
+        Args:
+            symbol: Trading pair (e.g., "BTCUSDT")
+            expected_order_id: Expected order ID (optional, for verification)
+            product_type: Product type (default: "usdt-futures")
+            
+        Returns:
+            {
+                "exists": bool,
+                "order_id": str | None,
+                "trigger_price": float | None,
+                "orders": list  # All pending stop-loss orders
+            }
+        """
+        try:
+            query_endpoint = "/api/v2/mix/order/orders-plan-pending"
+            params = {
+                "symbol": symbol,
+                "productType": product_type,
+                "planType": "pos_loss",  # Stop-loss orders (pos_loss for full position)
+            }
+            response = await self._request("GET", query_endpoint, params=params)
+            
+            if response.get("code") != "00000":
+                return {"exists": False, "order_id": None, "trigger_price": None, "orders": []}
+            
+            orders = response.get("data", {}).get("entrustedList", [])
+            
+            # Filter for stop-loss orders (pos_loss plan type)
+            sl_orders = [o for o in orders if o.get("planType") == "pos_loss"]
+            
+            if not sl_orders:
+                return {"exists": False, "order_id": None, "trigger_price": None, "orders": []}
+            
+            # If expected_order_id provided, check if it exists
+            if expected_order_id:
+                for order in sl_orders:
+                    if order.get("orderId") == expected_order_id:
+                        return {
+                            "exists": True,
+                            "order_id": expected_order_id,
+                            "trigger_price": float(order.get("triggerPrice", 0)),
+                            "orders": sl_orders,
+                        }
+                # Expected order not found, but other orders exist
+                first_order = sl_orders[0]
+                return {
+                    "exists": False,  # Expected order not found
+                    "order_id": first_order.get("orderId"),
+                    "trigger_price": float(first_order.get("triggerPrice", 0)),
+                    "orders": sl_orders,
+                }
+            
+            # No expected order ID, just return first stop-loss order
+            first_order = sl_orders[0]
+            return {
+                "exists": True,
+                "order_id": first_order.get("orderId"),
+                "trigger_price": float(first_order.get("triggerPrice", 0)),
+                "orders": sl_orders,
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to verify stop-loss order for {symbol}: {e}")
+            return {"exists": False, "order_id": None, "trigger_price": None, "orders": []}
+
     async def cancel_all_tpsl_orders(
         self,
         symbol: str,
