@@ -268,6 +268,7 @@ class LiveTrader:
                     pass  # May already be set, ignore error
                 
                 # 🚨 CRITICAL: Set leverage to 25x for both sides (MUST BE SET!)
+                leverage_set_success = False
                 for hold_side in ["long", "short"]:
                     try:
                         response = await self.rest_client.set_leverage(
@@ -280,6 +281,7 @@ class LiveTrader:
                                 f"✅ [LEVERAGE SET] {symbol} {hold_side}: {self.leverage}x | "
                                 f"Response: {response.get('msg', 'OK')}"
                             )
+                            leverage_set_success = True
                         else:
                             logger.error(
                                 f"❌ [LEVERAGE SET FAILED] {symbol} {hold_side}: {self.leverage}x | "
@@ -290,6 +292,11 @@ class LiveTrader:
                             f"❌ [LEVERAGE SET ERROR] {symbol} {hold_side}: {self.leverage}x | Error: {e}"
                         )
                         # Don't pass silently - log the error!
+                
+                # 🚨 CRITICAL: Wait 1 second after setting leverage to ensure it's applied
+                if leverage_set_success:
+                    await asyncio.sleep(1.0)
+                    logger.info(f"⏳ [LEVERAGE WAIT] {symbol}: Waited 1s after setting leverage to ensure it's applied")
                 
                 if self.can_open_new_position():
                     try:
