@@ -827,15 +827,6 @@ class BitgetRestClient:
                 f"Exception: {e} | Type: {type(e).__name__}"
             )
             return {"code": "error", "msg": str(e)}
-        
-        # Final summary
-        logger.info(
-            f"📊 [TP/SL SUMMARY] {symbol} | "
-            f"SL result: {results.get('sl', {}).get('code', 'N/A')} | "
-            f"TP result: {results.get('tp', {}).get('code', 'N/A')}"
-        )
-        
-        return results
 
     async def get_ticker(
         self, symbol: str, product_type: str = "USDT-FUTURES"
