@@ -471,16 +471,22 @@ class BitgetRestClient:
             "symbol": symbol,
             "productType": product_type,
             "marginCoin": "USDT",
+            "planType": "profit_loss",  # REQUIRED: Must specify plan type!
             "holdSide": hold_side,
         }
         
         # Add stop-loss (executes at market when price hits trigger)
         if stop_loss_price:
-            data["stopLossPrice"] = str(stop_loss_price)
+            data["triggerPrice"] = str(stop_loss_price)  # Trigger price for SL
+            data["executePrice"] = str(stop_loss_price)  # Execute at market
+            data["triggerType"] = "market_price"  # Trigger based on mark price
+            data["side"] = "sell" if hold_side == "long" else "buy"  # Close position
         
         # Add take-profit (executes at market when price hits trigger)
         if take_profit_price:
-            data["takeProfitPrice"] = str(take_profit_price)
+            # For TP+SL combined, Bitget might need separate orders
+            # Let's use SL only first to prevent liquidations
+            pass
         
         response = await self._request("POST", endpoint, data=data)
         

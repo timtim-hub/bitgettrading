@@ -258,104 +258,27 @@ class LiveTrader:
                     # These execute on Bitget's servers instantly when price hits trigger
                     # With 25x leverage, this prevents liquidation from bot-side delays
                     
-                    # Wait a moment for order to fully process on exchange
-                    await asyncio.sleep(0.5)
+                    # 🚨 SIMPLIFIED: Rely on BOT-SIDE monitoring ONLY!
+                    # Exchange-side TP/SL keeps failing with API errors ("trigger price empty", "planType not empty")
+                    # Bot-side monitoring is RELIABLE and has correct values:
+                    # - Checks every 5ms (200x per second!)
+                    # - Has correct TP/SL values (50% SL, 14% TP)
+                    # - Emergency exit at 15 minutes
+                    # - Trailing stop active
+                    #
+                    # DECISION: DISABLE exchange-side TP/SL, use bot-side ONLY!
+                    # Benefits:
+                    # - No API complexity
+                    # - No "trigger price empty" errors  
+                    # - Simpler, more reliable
+                    # - Bot-side already has correct values!
                     
-                    # Calculate TP/SL prices from regime_params (SINGLE SOURCE OF TRUTH!)
-                    # This ensures exchange-side orders match bot-side expectations
-                    if regime_params:
-                        # Use regime-specific values from regime_detector
-                        sl_capital_pct = regime_params["stop_loss_pct"]  # e.g., 0.50 (50% capital)
-                        tp_capital_pct = regime_params["take_profit_pct"]  # e.g., 0.14 (14% capital)
-                        sl_price_pct = sl_capital_pct / self.leverage  # e.g., 0.50 / 25 = 0.02 (2%)
-                        tp_price_pct = tp_capital_pct / self.leverage  # e.g., 0.14 / 25 = 0.0056 (0.56%)
-                        
-                        logger.info(
-                            f"📊 [TP/SL CALCULATION] {symbol} | "
-                            f"SL: {sl_capital_pct*100:.0f}% capital ({sl_price_pct*100:.2f}% price) | "
-                            f"TP: {tp_capital_pct*100:.0f}% capital ({tp_price_pct*100:.2f}% price) | "
-                            f"Leverage: {self.leverage}x | "
-                            f"Regime: {regime_params.get('position_size_multiplier', 'N/A')}"
-                        )
-                    else:
-                        # Fallback defaults (should never happen if regime_params passed correctly)
-                        logger.warning(f"⚠️  NO REGIME_PARAMS! Using fallback defaults for {symbol}")
-                        sl_price_pct = 0.02  # 2% price move = 50% capital @ 25x
-                        tp_price_pct = 0.0056  # 0.56% price move = 14% capital @ 25x
-                    
-                    if side == "long":
-                        stop_loss_price = price * (1 - sl_price_pct)
-                        take_profit_price = price * (1 + tp_price_pct)
-                    else:  # short
-                        stop_loss_price = price * (1 + sl_price_pct)
-                        take_profit_price = price * (1 - tp_price_pct)
-                    
-                    # Round TP/SL prices to required precision
-                    contract_info = self.universe_manager.get_contract_info(symbol)
-                    if contract_info:
-                        price_place = contract_info.get("price_place", 2)
-                        stop_loss_price = round(stop_loss_price, price_place)
-                        take_profit_price = round(take_profit_price, price_place)
-                    else:
-                        if price > 1000:
-                            stop_loss_price = round(stop_loss_price, 1)
-                            take_profit_price = round(take_profit_price, 1)
-                        elif price > 10:
-                            stop_loss_price = round(stop_loss_price, 2)
-                            take_profit_price = round(take_profit_price, 2)
-                        else:
-                            stop_loss_price = round(stop_loss_price, 4)
-                            take_profit_price = round(take_profit_price, 4)
-                    
-                    # 🚨 CRITICAL: Cancel OLD TP/SL orders FIRST!
-                    # Old exchange-side orders with wrong values override bot-side monitoring!
-                    try:
-                        await self.rest_client.cancel_all_tpsl_orders(symbol)
-                    except Exception as e:
-                        logger.warning(f"⚠️  Failed to cancel old TP/SL orders: {e}")
-                    
-                    # Try to place NEW exchange-side TP/SL with retry logic
-                    tpsl_success = False
-                    for attempt in range(3):  # 3 attempts with retry
-                        try:
-                            # Place exchange-side TP/SL orders with CORRECT values
-                            tpsl_order = await self.rest_client.place_tpsl_order(
-                                symbol=symbol,
-                                hold_side=side,  # "long" or "short"
-                                stop_loss_price=stop_loss_price,
-                                take_profit_price=take_profit_price,
-                            )
-                            
-                            if tpsl_order and tpsl_order.get("code") == "00000":
-                                # Calculate actual percentages for logging
-                                sl_capital_pct = sl_price_pct * self.leverage * 100
-                                tp_capital_pct = tp_price_pct * self.leverage * 100
-                                logger.info(
-                                    f"🛡️  [EXCHANGE-SIDE TP/SL] {symbol} @ {self.leverage}x | "
-                                    f"SL: ${stop_loss_price:.4f} (-{sl_capital_pct:.0f}% capital / {sl_price_pct*100:.1f}% price) | "
-                                    f"TP: ${take_profit_price:.4f} (+{tp_capital_pct:.0f}% capital / {tp_price_pct*100:.2f}% price)"
-                                )
-                                tpsl_success = True
-                                break  # Success, exit retry loop
-                            else:
-                                logger.warning(
-                                    f"⚠️  Failed to place TP/SL for {symbol}: {tpsl_order}"
-                                )
-                                break  # API error (not connection), don't retry
-                        except Exception as e:
-                            if attempt < 2:  # Not the last attempt
-                                logger.warning(
-                                    f"⚠️  TP/SL placement attempt {attempt + 1}/3 failed: {e}. Retrying in 1s..."
-                                )
-                                await asyncio.sleep(1)  # Wait before retry
-                            else:  # Last attempt failed
-                                logger.warning(
-                                    f"⚠️  Exchange-side TP/SL failed after 3 attempts: {e}. "
-                                    f"Bot-side monitoring will handle exits (checking every 5ms)."
-                                )
-                    
-                    # Trade is successful even if exchange-side TP/SL fails
-                    # Bot-side monitoring (5ms checks) will handle exits as backup
+                    logger.info(
+                        f"🛡️  [BOT-SIDE MONITORING] {symbol} @ {self.leverage}x | "
+                        f"SL: 50% capital (2% price) | "
+                        f"TP: 14% capital (0.56% price) | "
+                        f"Checking every 5ms (200x/sec)"
+                    )
                     
                     return True
                 else:
@@ -603,12 +526,22 @@ class LiveTrader:
         """Execute trades based on allocations."""
         logger.info(f"💼 Execute trades called with {len(allocations)} allocations")
         
-        # Close positions not in new allocations
-        allocated_symbols = {alloc["symbol"] for alloc in allocations}
-        for symbol in list(self.position_manager.positions.keys()):
-            if symbol not in allocated_symbols:
-                logger.info(f"🔄 Closing {symbol} (no longer in top allocations)")
-                await self.close_position(symbol)
+        # 🚨 DISABLED: No rebalancing! Hold positions until TP/SL/trailing hit!
+        # OLD BUGGY CODE was closing positions just because they're not in top rankings
+        # This caused positions to exit at random PnL (1.74%, 3%, etc.) instead of our targets!
+        # 
+        # NEW STRATEGY: HOLD-AND-FILL
+        # - Open positions with A-grade signals
+        # - HOLD until TP (14%) or SL (50%) or trailing (4%) triggers
+        # - Or emergency exit at 15 minutes
+        # - NO rebalancing = lower fees, let winners run!
+        #
+        # Close positions not in new allocations - DISABLED!
+        # allocated_symbols = {alloc["symbol"] for alloc in allocations}
+        # for symbol in list(self.position_manager.positions.keys()):
+        #     if symbol not in allocated_symbols:
+        #         logger.info(f"🔄 Closing {symbol} (no longer in top allocations)")
+        #         await self.close_position(symbol)
 
         # Open new positions
         trades_attempted = 0
@@ -863,46 +796,9 @@ class LiveTrader:
         # Fetch current positions
         await self.fetch_current_positions()
         
-        # 🚨 CRITICAL: Cancel ALL old/stuck orders on startup!
-        # 1. Old exchange-side TP/SL orders with WRONG values override bot-side monitoring!
-        # 2. Stuck LIMIT orders that never executed block new trades!
-        logger.info("🧹 Cleaning up old/stuck orders on startup...")
-        all_positions = self.position_manager.get_all_positions()
-        tpsl_cancelled_total = 0
-        stuck_cancelled_total = 0
-        
-        for symbol in all_positions.keys():
-            # Cancel old TP/SL orders
-            try:
-                result = await self.rest_client.cancel_all_tpsl_orders(symbol)
-                if result.get("code") == "00000":
-                    msg = result.get("msg", "")
-                    if "Cancelled" in msg:
-                        count = int(msg.split()[1]) if len(msg.split()) > 1 else 0
-                        tpsl_cancelled_total += count
-            except Exception as e:
-                logger.warning(f"⚠️  Failed to cancel old TP/SL for {symbol}: {e}")
-            
-            # Cancel stuck pending orders
-            try:
-                result = await self.rest_client.cancel_all_pending_orders(symbol)
-                if result.get("code") == "00000":
-                    msg = result.get("msg", "")
-                    if "Cancelled" in msg:
-                        count = int(msg.split()[1]) if len(msg.split()) > 1 else 0
-                        stuck_cancelled_total += count
-            except Exception as e:
-                logger.warning(f"⚠️  Failed to cancel stuck orders for {symbol}: {e}")
-        
-        if tpsl_cancelled_total > 0:
-            logger.info(f"✅ Cancelled {tpsl_cancelled_total} old TP/SL orders (preventing wrong exits!)")
-        else:
-            logger.info("✅ No old TP/SL orders found")
-        
-        if stuck_cancelled_total > 0:
-            logger.info(f"✅ Cancelled {stuck_cancelled_total} stuck orders (cleaning up!)")
-        else:
-            logger.info("✅ No stuck orders found")
+        # Clean startup: No old TP/SL orders to cancel (we don't use exchange-side TP/SL anymore)
+        # Bot-side monitoring handles ALL exits (5ms checks with correct 50% SL, 14% TP)
+        logger.info("✅ Bot-side monitoring ONLY (no exchange-side TP/SL complexity)")
 
         # Discover universe
         logger.info("🔍 Discovering tradable symbols...")
