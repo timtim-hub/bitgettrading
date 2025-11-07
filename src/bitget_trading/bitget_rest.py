@@ -624,6 +624,7 @@ class BitgetRestClient:
         # Place STOP-LOSS order (separate order #1)
         # Place STOP-LOSS order with retry logic
         if stop_loss_price is not None:
+            # 🚨 CRITICAL: OMIT size parameter for "Gesamter TP/SL" mode (closes ENTIRE position)!
             sl_data = {
                 "symbol": symbol,
                 "productType": product_type,  # "usdt-futures" (lowercase)
@@ -633,17 +634,15 @@ class BitgetRestClient:
                 "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
                 "triggerPrice": str(stop_loss_price),
                 "executePrice": "0",  # MARKET on trigger
-                "size": str(
-                    rounded_size
-                ),  # Size in contracts (MUST match position size EXACTLY!)
+                # 🚨 CRITICAL: NO "size" parameter = "Gesamter TP/SL" mode (closes ENTIRE position)!
                 # NOTE: reduceOnly is NOT supported for plan orders - removed
             }
             logger.info(
-                f"📋 [STOP-LOSS ORDER] {symbol} | "
+                f"📋 [STOP-LOSS ORDER - GESAMTER TP/SL MODE] {symbol} | "
                 f"symbol={symbol}, productType={product_type}, "
                 f"marginMode=isolated, planType=loss_plan, "
                 f"holdSide={api_hold_side}, triggerPrice={stop_loss_price}, "
-                f"executePrice=0 (market), size={rounded_size} (MUST match position EXACTLY!)"
+                f"executePrice=0 (market), size=OMITTED (closes ENTIRE position!)"
             )
             # Retry logic for SL placement
             max_retries = 3
@@ -801,11 +800,13 @@ class BitgetRestClient:
         """
         Place exchange-side trailing take profit order using Bitget's moving_plan API.
 
-        🚨 CRITICAL: This uses planType="moving_plan" with EXACT position size!
-        - Bitget API REJECTS size=0 (error 43011: "size <= 0")
-        - We MUST provide the exact position size for the order to be accepted
-        - Even though the app may show "partial mode", it WILL close the full position
-          when the size matches exactly!
+        🚨 CRITICAL: This uses planType="moving_plan" WITHOUT size parameter!
+        - OMIT the "size" parameter entirely → "Gesamter TP/SL" mode (closes ENTIRE position) ✅
+        - Include "size" parameter → "Teilweise TP/SL" mode (closes PARTIAL amount) ❌
+        - size=0 → API rejects with error 43011 ❌
+        
+        By NOT including "size" in the API request, Bitget automatically applies the 
+        trailing TP to the ENTIRE position! This is the "Gesamter TP/SL" mode.
         
         The trailing take profit will automatically adjust as price moves in your favor!
 
@@ -838,19 +839,20 @@ class BitgetRestClient:
         # Convert decimal to percentage: 0.015 → "1.50", 0.02 → "2.00", 0.001 → "0.10"
         formatted_range_rate = f"{range_rate * 100:.2f}"  # Convert to percentage and format to 2 decimal places
 
-        # 🚨 CRITICAL: Bitget REQUIRES exact size! API rejects size=0 with error 43011
-        # "The parameter does not meet the specification size <= 0"
-        # So we MUST provide the exact position size for trailing TP to work
+        # 🚨 CRITICAL FIX: OMIT size parameter entirely for "Gesamter TP/SL" (entire position) mode!
+        # User confirmed Bitget app has two modes:
+        # - "Gesamter TP/SL" (Entire TP/SL) = NO size parameter → closes ENTIRE position ✅
+        # - "Teilweise TP/SL" (Partial TP/SL) = WITH size parameter → closes SPECIFIC amount ❌
+        # 
+        # By NOT including "size" in the request, Bitget automatically applies to ENTIRE position!
         data = {
             "symbol": symbol,
             "productType": product_type,  # "usdt-futures" (lowercase)
             "marginMode": "isolated",
             "marginCoin": "USDT",
-            "planType": "moving_plan",  # Trailing take profit order type (NORMAL mode with exact size)
+            "planType": "moving_plan",  # Trailing take profit order type
             "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
-            "size": str(
-                rounded_size
-            ),  # MUST provide EXACT position size! (Bitget rejects size=0)
+            # 🚨 CRITICAL: NO "size" parameter = "Gesamter TP/SL" mode (closes ENTIRE position)!
             "rangeRate": formatted_range_rate,  # Trailing callback rate as percentage (e.g., "2.00" = 2%, "1.50" = 1.5%, must be 2 decimal places!)
             "triggerPrice": str(
                 trigger_price
@@ -860,9 +862,9 @@ class BitgetRestClient:
         }
 
         logger.info(
-            f"🧵 [TRAILING TP ORDER - NORMAL MODE] {symbol} | "
-            f"planType=moving_plan (Bitget rejects size=0, so using exact size) | "
-            f"size: {size} → rounded: {rounded_size} (EXACT position size required!) | "
+            f"🧵 [TRAILING TP ORDER - GESAMTER TP/SL MODE] {symbol} | "
+            f"planType=moving_plan | "
+            f"size: OMITTED (NO size parameter = closes ENTIRE position!) | "
             f"hold_side: {hold_side} → API holdSide: {api_hold_side} | "
             f"callback_rate: {range_rate*100:.2f}% (Rückrufquote) → API: {formatted_range_rate} | "
             f"trigger_price: {trigger_price} (activation price) | "
@@ -880,9 +882,9 @@ class BitgetRestClient:
 
                 if code == "00000":
                     logger.info(
-                        f"✅ [TRAILING TP PLACED - NORMAL MODE] {symbol} | "
+                        f"✅ [TRAILING TP PLACED - GESAMTER TP/SL MODE!] {symbol} | "
                         f"planType=moving_plan | "
-                        f"size={rounded_size} (EXACT position size - may show as 'partial' in app but closes full position) | "
+                        f"size=OMITTED (closes ENTIRE position - app should show 'Gesamter TP/SL'!) | "
                         f"Callback Rate: {range_rate*100:.2f}% (Rückrufquote) | "
                         f"Trigger Price: {trigger_price} (activation) | "
                         f"Order ID: {data_resp.get('orderId', 'N/A')}"
