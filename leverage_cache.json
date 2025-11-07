@@ -2980,5 +2980,17 @@
     "timestamp": 1762544747.341808,
     "failed": true,
     "error_code": "40797"
+  },
+  "OBOLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762544891.026857,
+    "failed": true,
+    "error_code": "40797"
+  },
+  "OBOLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762544891.667456,
+    "failed": true,
+    "error_code": "40797"
   }
 }

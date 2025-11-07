@@ -1869,6 +1869,41 @@ class LiveTrader:
                     f"Adjusted Value (Multiplier {position_size_multiplier:.2f}x): ${adjusted_position_value:.2f}"
                 )
                 
+                # 🚨 CRITICAL: Final margin check after applying multipliers!
+                # Re-check available balance to ensure we maintain minimum margin
+                try:
+                    balance = await self.rest_client.get_account_balance()
+                    if balance and balance.get("code") == "00000":
+                        data = balance.get("data", [{}])[0]
+                        available_balance = float(data.get("available", 0))
+                        total_equity = float(data.get("equity", 0)) or self.equity
+                        
+                        # Check if we have enough margin for the adjusted position
+                        required_margin = adjusted_position_value
+                        min_available_margin = total_equity * 0.05  # 5% minimum
+                        min_order_value = 5.0 / self.leverage  # Minimum order value in margin terms
+                        
+                        if available_balance - required_margin < min_available_margin:
+                            # Reduce position size to maintain minimum margin
+                            max_allowed = available_balance - min_available_margin
+                            if max_allowed < min_order_value:
+                                logger.error(
+                                    f"🚨 [INSUFFICIENT MARGIN] {symbol} | "
+                                    f"Adjusted position requires ${required_margin:.2f} margin | "
+                                    f"Available: ${available_balance:.2f} | "
+                                    f"Would leave: ${available_balance - required_margin:.2f} (need ${min_available_margin:.2f}) | "
+                                    f"SKIPPING TRADE!"
+                                )
+                                continue
+                            
+                            adjusted_position_value = max_allowed
+                            logger.warning(
+                                f"⚠️ [MARGIN ADJUSTMENT] {symbol} | "
+                                f"Reduced adjusted position to ${adjusted_position_value:.2f} to maintain minimum margin"
+                            )
+                except Exception as e:
+                    logger.warning(f"⚠️ [MARGIN CHECK ERROR] {symbol} | Error: {e} | Proceeding with calculated size")
+                
                 # CRITICAL: Ensure minimum order value of 5 USDT (Bitget requirement)
                 # Notional value = adjusted_position_value * leverage
                 notional_value = adjusted_position_value * self.leverage
