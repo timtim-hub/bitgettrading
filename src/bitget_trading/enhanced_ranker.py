@@ -104,7 +104,9 @@ class EnhancedRanker:
         # 🔥 LAYER 2: VOLUME-CONFIRMED CONFLUENCE
         # Require volume surge when timeframes align (institutional activity)
         volume_ratio = features.get("volume_ratio", 1.0)
-        volume_confirmed = volume_ratio >= 1.5  # At least 150% of average volume
+        # 🚨 RELAXED: 24h rolling volume doesn't show real-time surges
+        # Accept normal volume (>=0.8x) to avoid rejecting all signals
+        volume_confirmed = volume_ratio >= 0.8  # At least 80% of average volume (relaxed from 150%)
 
         if not volume_confirmed:
             return (
