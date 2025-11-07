@@ -262,23 +262,20 @@ class EnhancedRanker:
                 )
                 return 0.0, "neutral", {"reason": "against_structure", "structure": market_structure["structure"]}
             
-            # PRO RULE: Prefer A-grade trades (4+ factors), but allow B-grade (3+ factors) with lower multiplier
-            # C-grade and below (2 or fewer factors) = REJECT
-            if trade_grade["grade"] not in ["A", "B"]:
+            # PRO RULE: ONLY A-grade trades! (4+ factors required)
+            # B-grade and below are causing too many losses!
+            if trade_grade["grade"] != "A":
                 logger.debug(
-                    f"trade_rejected_low_grade",
+                    f"trade_rejected_not_A_grade",
                     symbol=state.symbol,
                     grade=trade_grade["grade"],
                     factors=trade_grade["factors_met"],
                     reasons=trade_grade["reasons"]
                 )
-                return 0.0, "neutral", {"reason": "low_grade", "grade": trade_grade["grade"]}
+                return 0.0, "neutral", {"reason": "not_A_grade", "grade": trade_grade["grade"]}
             
-            # Score multipliers based on grade (A-grade gets priority!)
-            if trade_grade["grade"] == "A":
-                final_score *= 2.0  # 100% bonus for A-grade setups!
-            elif trade_grade["grade"] == "B":
-                final_score *= 1.3  # 30% bonus for B-grade (still good, not amazing)
+            # A-grade ONLY = maximum win rate!
+            final_score *= 2.0  # 100% bonus for A-grade setups!
             
             logger.debug(
                 f"trade_quality_check",
@@ -290,8 +287,8 @@ class EnhancedRanker:
                 rr=f"{rr_calc['risk_reward_ratio']:.1f}:1"
             )
         
-        # STRICT: Only take EXCELLENT signals (A-grade + high score)
-        if final_score < 0.6:  # High quality bar for maximum win rate
+        # ULTRA-STRICT: Only take PERFECT signals (A-grade + very high score)
+        if final_score < 0.8:  # VERY high quality bar for 70%+ win rate
             return 0.0, "neutral", {"reason": "low_score"}
         
         # Build metadata with trade quality info for loss tracking

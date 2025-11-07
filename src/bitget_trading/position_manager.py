@@ -165,6 +165,18 @@ class PositionManager:
         
         position = self.positions[symbol]
         
+        # EMERGENCY EXIT: Close positions stuck for too long (prevent losses from accumulating)
+        # For ultra-short-term trading, 15 minutes is TOO LONG!
+        from datetime import datetime, timedelta
+        entry_time = datetime.fromisoformat(position.entry_time.replace('Z', '+00:00'))
+        time_in_position = (datetime.now(entry_time.tzinfo) - entry_time).total_seconds()
+        
+        if time_in_position > 900:  # 15 minutes = 900 seconds
+            logger.warning(
+                f"⏰ EMERGENCY EXIT: {symbol} held for {time_in_position/60:.1f} minutes - CLOSING!"
+            )
+            return True, f"EMERGENCY-EXIT (held {time_in_position/60:.1f} min - cut losses!)"
+        
         # Calculate current price change % (currency move)
         if position.side == "long":
             price_change_pct = ((current_price - position.entry_price) / position.entry_price)
@@ -209,12 +221,14 @@ class PositionManager:
             )
             return True, f"TAKE-PROFIT (Capital: {return_on_capital_pct*100:.2f}%, Price: {price_change_pct*100:.4f}%)"
         
-        # 3. MINIMUM PROFIT LOCK: Don't close tiny winners/losers (avoid fee erosion)
-        # Between -0.5% and +0.5% capital return, hold position (fees cost ~0.08%)
-        # FIXED: Made this much tighter so it doesn't block TP!
-        if -0.005 < return_on_capital_pct < 0.005:
-            # Too small to justify closing - would lose to fees
-            return False, ""
+        # 3. REMOVED: Minimum profit lock was TRAPPING positions in losses!
+        # Old logic: Held positions between -0.5% to +0.5%, but this caused:
+        # - Small losses to turn into BIG losses
+        # - Positions stuck without exit_reason
+        # - Fees accumulating while waiting
+        # 
+        # NEW APPROACH: Let stop-loss handle downside, let TP/trailing handle upside
+        # NO artificial holds - trust our SL/TP/trailing logic!
         
         # 4. Trailing stop (only if in profit on capital basis)
         min_profit_for_trailing = 0.01 / position.leverage  # 1% capital return = 0.02% price move @ 50x
