@@ -131,43 +131,45 @@ class RegimeDetector:
         Returns:
             Dict with stop_loss_pct, take_profit_pct, trailing_stop_pct, position_size_multiplier
         """
+        # 🎯 USER REQUEST: 12% TP activation + 4% callback rate (both from capital)
+        # All regimes use same TP/SL settings for consistency
         if regime == MarketRegime.TRENDING:
             return {
                 "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM for big moves!
-                "take_profit_pct": 0.10,    # 10% capital (0.4% price @ 25x) - Activate trailing at 10%
-                "trailing_stop_pct": 0.10,  # 10% callback rate - LOOSE! Lets +30% drop to +20% before exit
+                "take_profit_pct": 0.12,    # 12% capital (0.48% price @ 25x) - Activate trailing at 12%
+                "trailing_stop_pct": 0.04,  # 4% callback rate from capital (0.16% price @ 25x)
                 "position_size_multiplier": 1.5,  # 50% larger for trending (was 1.2)
             }
         
         elif regime == MarketRegime.RANGING:
             return {
                 "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM for big moves!
-                "take_profit_pct": 0.08,    # 8% capital (0.32% price @ 25x) - Activate trailing at 8%
-                "trailing_stop_pct": 0.06,  # 6% callback rate - Moderate trailing
+                "take_profit_pct": 0.12,    # 12% capital (0.48% price @ 25x) - Activate trailing at 12%
+                "trailing_stop_pct": 0.04,  # 4% callback rate from capital (0.16% price @ 25x)
                 "position_size_multiplier": 1.0,  # Normal size for ranging
             }
         
         elif regime == MarketRegime.BREAKOUT:
             return {
                 "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM for big moves!
-                "take_profit_pct": 0.12,    # 12% capital (0.48% price @ 25x) - Activate trailing
-                "trailing_stop_pct": 0.12,  # 12% callback rate - VERY LOOSE! Let breakouts run!
+                "take_profit_pct": 0.12,    # 12% capital (0.48% price @ 25x) - Activate trailing at 12%
+                "trailing_stop_pct": 0.04,  # 4% callback rate from capital (0.16% price @ 25x)
                 "position_size_multiplier": 1.3,  # 30% larger for breakouts (high conviction)
             }
         
         elif regime == MarketRegime.VOLATILE:
             return {
                 "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM for big moves!
-                "take_profit_pct": 0.08,    # 8% capital (0.32% price @ 25x) - Activate trailing
-                "trailing_stop_pct": 0.05,  # 5% callback rate - Moderate for volatility
+                "take_profit_pct": 0.12,    # 12% capital (0.48% price @ 25x) - Activate trailing at 12%
+                "trailing_stop_pct": 0.04,  # 4% callback rate from capital (0.16% price @ 25x)
                 "position_size_multiplier": 0.8,  # 20% smaller in volatile (risk reduction)
             }
         
         else:  # Default
             return {
                 "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM for big moves!
-                "take_profit_pct": 0.08,    # 8% capital (0.32% price @ 25x) - WITH trailing!
-                "trailing_stop_pct": 0.015,  # 1.5% callback rate (Rückrufquote) - More room for price movement
+                "take_profit_pct": 0.12,    # 12% capital (0.48% price @ 25x) - Activate trailing at 12%
+                "trailing_stop_pct": 0.04,  # 4% callback rate from capital (0.16% price @ 25x)
                 "position_size_multiplier": 1.0,
             }
 

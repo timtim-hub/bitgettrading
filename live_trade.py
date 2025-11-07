@@ -558,11 +558,13 @@ class LiveTrader:
                                     size_precision=size_precision,
                                 )
                                 
-                                # 2. Place trailing take profit order (moving_plan)
+                                # 2. Place trailing take profit order (track_plan)
                                 # Calculate trailing TP parameters
-                                # "Rückrufquote" (callback rate) = percentage retracement from peak before TP triggers
-                                # Higher = more room for price movement before triggering (recommended: 1.5-2%)
-                                trailing_range_rate = regime_params.get("trailing_stop_pct", 0.015) if regime_params else 0.015  # 1.5% callback rate (Rückrufquote)
+                                # 🚨 CRITICAL: Bitget's callbackRatio is PRICE-BASED, not capital-based!
+                                # We need to convert capital-based trailing_stop_pct to price-based
+                                # Example: 4% capital @ 25x leverage = 4% / 25 = 0.16% price callback
+                                trailing_stop_pct_capital = regime_params.get("trailing_stop_pct", 0.04) if regime_params else 0.04  # 4% callback from capital
+                                trailing_range_rate = trailing_stop_pct_capital / self.leverage  # Convert to price-based (0.04 / 25 = 0.0016 = 0.16% price)
                                 
                                 # 🚨 CRITICAL: Get FRESH current market price RIGHT BEFORE placing order
                                 # Bitget API requires: trigger price ≥ current market price (for longs)
@@ -636,7 +638,7 @@ class LiveTrader:
                                     f"🧵 [TRAILING TP SETUP] {symbol} | "
                                     f"Side: {side.upper()} | Current Price: ${current_market_price:.4f} | "
                                     f"Trigger Price (Rückrufpreis): ${trailing_trigger_price:.4f} | "
-                                    f"Range Rate: {trailing_range_rate*100:.2f}% | "
+                                    f"Callback Rate: {trailing_stop_pct_capital*100:.1f}% capital ({trailing_range_rate*100:.3f}% price @ {self.leverage}x) | "
                                     f"TP Threshold: ${take_profit_price:.4f}"
                                 )
                                 
@@ -767,7 +769,7 @@ class LiveTrader:
                                     f"✅ [TP/SL PLACED] {symbol} | "
                                     f"SL (static): code={sl_code}, msg={sl_msg} | "
                                     f"TP (trailing): code={tp_code}, msg={tp_msg} | "
-                                    f"Trailing range: {trailing_range_rate*100:.2f}% | "
+                                    f"Trailing callback: {trailing_stop_pct_capital*100:.1f}% capital ({trailing_range_rate*100:.3f}% price @ {self.leverage}x) | "
                                     f"Trigger price: ${trailing_trigger_price:.4f}"
                                 )
                                 
@@ -805,7 +807,9 @@ class LiveTrader:
                                     if not tp_success and take_profit_price is not None:
                                         logger.info(f"🔄 [TP/SL RETRY] {symbol} | Retrying trailing TP order...")
                                         try:
-                                            trailing_range_rate = regime_params.get("trailing_stop_pct", 0.06) if regime_params else 0.06
+                                            # Convert capital-based to price-based callback ratio
+                                            trailing_stop_pct_capital = regime_params.get("trailing_stop_pct", 0.04) if regime_params else 0.04
+                                            trailing_range_rate = trailing_stop_pct_capital / self.leverage  # 4% capital / 25x = 0.16% price
                                             retry_tp = await self.rest_client.place_trailing_stop_full_position(
                                                 symbol=symbol,
                                                 hold_side=side,
@@ -825,7 +829,7 @@ class LiveTrader:
                                     logger.info(
                                         f"✅ [TP/SL VERIFIED] {symbol} | "
                                         f"Both SL (static) and TP (trailing) orders placed successfully! "
-                                        f"SL: ${stop_loss_price:.4f} | TP (trailing): {trailing_range_rate*100:.2f}% trailing from ${trailing_trigger_price:.4f}"
+                                        f"SL: ${stop_loss_price:.4f} | TP (trailing): {trailing_stop_pct_capital*100:.1f}% capital ({trailing_range_rate*100:.3f}% price) trailing from ${trailing_trigger_price:.4f}"
                                     )
                             except Exception as e:
                                 import traceback
@@ -850,8 +854,10 @@ class LiveTrader:
                                     )
                                     retry_sl_code = retry_sl_results.get('sl', {}).get('code', 'N/A') if retry_sl_results and retry_sl_results.get('sl') else 'N/A'
                                     
-                                    # Retry trailing TP using Normal Trailing mode (moving_plan)
-                                    trailing_range_rate = regime_params.get("trailing_stop_pct", 0.06) if regime_params else 0.06
+                                    # Retry trailing TP using track_plan (Normal Trailing mode)
+                                    # Convert capital-based to price-based callback ratio
+                                    trailing_stop_pct_capital = regime_params.get("trailing_stop_pct", 0.04) if regime_params else 0.04
+                                    trailing_range_rate = trailing_stop_pct_capital / self.leverage  # 4% capital / 25x = 0.16% price
                                     retry_tp_results = await self.rest_client.place_trailing_stop_full_position(
                                         symbol=symbol,
                                         hold_side=side,

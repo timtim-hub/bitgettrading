@@ -2470,5 +2470,13 @@
   "FLUXUSDT_short": {
     "leverage": 25,
     "timestamp": 1762535494.534821
+  },
+  "SLPUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762537141.863425
+  },
+  "SLPUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762537142.5277262
   }
 }
