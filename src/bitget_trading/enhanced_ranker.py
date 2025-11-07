@@ -5,6 +5,7 @@ import numpy as np
 from bitget_trading.logger import get_logger
 from bitget_trading.multi_symbol_state import MultiSymbolStateManager, SymbolState
 from bitget_trading.regime_detector import MarketRegime, RegimeDetector
+from bitget_trading.pro_trader_indicators import ProTraderIndicators, is_near_level
 
 logger = get_logger()
 
@@ -38,6 +39,9 @@ class EnhancedRanker:
         
         # NEW: Regime detector
         self.regime_detector = RegimeDetector()
+        
+        # NEW: PRO TRADER indicators (S/R, market structure, trade grading)
+        self.pro_indicators = ProTraderIndicators()
         
         # NEW: BTC correlation tracking (for diversification)
         self.btc_correlations: dict[str, float] = {}
@@ -211,6 +215,64 @@ class EnhancedRanker:
             self.bandit_alpha * np.clip(base_score, -5, 5) / 5.0 +
             (1 - self.bandit_alpha) * bandit_norm
         )
+        
+        # PRO TRADER QUALITY CHECK: Analyze market structure and trade quality
+        prices = np.array([p for _, p in state.price_history]) if state.price_history else np.array([])
+        
+        if len(prices) >= 30:
+            # 1. Detect support/resistance
+            support_levels, resistance_levels = self.pro_indicators.detect_support_resistance(prices)
+            current_price = state.last_price
+            
+            # Check if near S/R
+            near_sr = is_near_level(current_price, support_levels + resistance_levels)
+            
+            # 2. Analyze market structure
+            market_structure = self.pro_indicators.analyze_market_structure(prices)
+            
+            # 3. Calculate expected R:R (simplified - use TP/SL from position manager)
+            # For 50x leverage: 8% capital stop = 0.16% price, 20% capital TP = 0.4% price
+            if direction == "long":
+                estimated_stop = current_price * 0.9984  # 0.16% below
+                estimated_tp = current_price * 1.004    # 0.4% above
+            else:  # short
+                estimated_stop = current_price * 1.0016
+                estimated_tp = current_price * 0.996
+            
+            rr_calc = self.pro_indicators.calculate_risk_reward(
+                current_price, estimated_stop, estimated_tp, direction
+            )
+            
+            # 4. Grade the trade (A/B/C/D/F)
+            trade_grade = self.pro_indicators.grade_trade_quality(
+                features, direction, rr_calc["risk_reward_ratio"], 
+                market_structure, near_sr
+            )
+            
+            # PRO RULE: Only take A or B grade trades!
+            if trade_grade["grade"] not in ["A", "B"]:
+                logger.debug(
+                    f"trade_rejected_low_grade",
+                    symbol=state.symbol,
+                    grade=trade_grade["grade"],
+                    factors=trade_grade["factors_met"],
+                    reasons=trade_grade["reasons"]
+                )
+                return 0.0, "neutral", {"reason": "low_trade_grade", "grade": trade_grade["grade"]}
+            
+            # BOOST score for A-grade trades
+            if trade_grade["grade"] == "A":
+                final_score *= 1.5  # 50% bonus for perfect setups!
+            
+            logger.debug(
+                f"trade_quality_check",
+                symbol=state.symbol,
+                grade=trade_grade["grade"],
+                score=trade_grade["score"],
+                structure=market_structure["structure"],
+                near_sr=near_sr,
+                rr=f"{rr_calc['risk_reward_ratio']:.1f}:1"
+            )
         
         # BALANCED: Accept good signals for ultra-short-term scalping
         if final_score < 0.3:  # Realistic quality bar for fast scalping

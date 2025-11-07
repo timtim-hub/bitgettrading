@@ -639,8 +639,10 @@ class LiveTrader:
         # Discover universe
         logger.info("🔍 Discovering tradable symbols...")
         self.symbols = await self.universe_manager.get_tradeable_universe()
-        self.symbols = self.symbols[:100]  # Limit to top 100 for speed
-        logger.info(f"✅ Found {len(self.symbols)} tradable symbols")
+        # Bitget has 300+ active futures - use MORE for better opportunities!
+        total_available = len(self.symbols)
+        self.symbols = self.symbols[:200]  # Increased from 100 to 200 (more opportunities!)
+        logger.info(f"✅ Using {len(self.symbols)} symbols (from {total_available} available)")
 
         # Initialize state with current market data
         logger.info("📊 Fetching initial market data...")
