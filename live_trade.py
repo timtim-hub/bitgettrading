@@ -1528,7 +1528,7 @@ class LiveTrader:
                             except Exception as e:
                                 logger.warning(f"⚠️ Failed to cancel TP/SL orders for {symbol} after position closed: {e}")
                         
-                        self.position_manager.remove_position(symbol)
+                        # 🚀 FIX: Position already removed by close_position() at line 1402/1410, so no need to remove again
             except Exception as e:
                 logger.error(f"Failed to sync positions with exchange: {e}")
         
