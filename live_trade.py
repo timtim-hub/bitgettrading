@@ -335,6 +335,46 @@ class LiveTrader:
                                 f"Order ID: {order_id}"
                             )
                             
+                            # 🚨 CRITICAL: Wait for order to fill, then get ACTUAL position size from exchange
+                            # The calculated size might not match the actual filled size
+                            # This prevents "Insufficient position" errors (code 43023)
+                            await asyncio.sleep(1.0)  # Wait 1 second for market order to fill
+                            
+                            # Query actual position from exchange
+                            actual_position_size = size  # Fallback to calculated size
+                            try:
+                                positions = await self.rest_client.get_positions(symbol)
+                                if positions:
+                                    pos = positions[0]
+                                    actual_position_size = float(pos.get("total", size))
+                                    actual_side = pos.get("holdSide", "long")
+                                    logger.info(
+                                        f"📊 [POSITION QUERY] {symbol} | "
+                                        f"Actual size from exchange: {actual_position_size} | "
+                                        f"Calculated size: {size} | "
+                                        f"Side: {actual_side}"
+                                    )
+                                    if actual_position_size <= 0:
+                                        logger.warning(
+                                            f"⚠️  [POSITION WARNING] {symbol} | "
+                                            f"Position size is 0 or negative! "
+                                            f"Order might not have filled yet. Skipping TP/SL."
+                                        )
+                                        return True  # Order placed, but position not filled yet
+                                else:
+                                    logger.warning(
+                                        f"⚠️  [POSITION WARNING] {symbol} | "
+                                        f"No position found on exchange! "
+                                        f"Order might not have filled yet. Skipping TP/SL."
+                                    )
+                                    return True  # Order placed, but position not filled yet
+                            except Exception as e:
+                                logger.warning(
+                                    f"⚠️  [POSITION QUERY ERROR] {symbol} | "
+                                    f"Failed to query position: {e} | "
+                                    f"Using calculated size: {size}"
+                                )
+                            
                             # 🚨 CRITICAL: Place TP/SL as separate plan orders (visible in app)
                             # Cancel any old TP/SL orders first
                             try:
@@ -355,13 +395,13 @@ class LiveTrader:
                             # Based on errors: some contracts need 0 decimals, some need 1
                             if contract_info:
                                 # Check if size is close to whole number
-                                if abs(size - round(size)) < 0.01:
+                                if abs(actual_position_size - round(actual_position_size)) < 0.01:
                                     size_precision = 0  # Whole number
                                 else:
                                     size_precision = 1  # 1 decimal place
                             else:
                                 # No contract info, infer from size
-                                if abs(size - round(size)) < 0.01:
+                                if abs(actual_position_size - round(actual_position_size)) < 0.01:
                                     size_precision = 0
                                 else:
                                     size_precision = 1
@@ -369,14 +409,14 @@ class LiveTrader:
                             logger.info(
                                 f"🚀 [TP/SL CALL] {symbol} | "
                                 f"About to call place_tpsl_order with: "
-                                f"side={side}, size={size} (precision: {size_precision}), "
+                                f"side={side}, actual_size={actual_position_size} (precision: {size_precision}), "
                                 f"SL_price={stop_loss_price}, TP_price={take_profit_price}"
                             )
                             try:
                                 tpsl_results = await self.rest_client.place_tpsl_order(
                                     symbol=symbol,
                                     hold_side=side,  # "long" or "short"
-                                    size=size,
+                                    size=actual_position_size,  # 🚨 USE ACTUAL POSITION SIZE!
                                     stop_loss_price=stop_loss_price,
                                     take_profit_price=take_profit_price,
                                     size_precision=size_precision,  # Pass size precision
