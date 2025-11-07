@@ -138,7 +138,7 @@ class EnhancedRanker:
         
         # 2. Volume filter CHECK (MINIMAL: Just avoid dead symbols)
         volume_ratio = features.get("volume_ratio", 1.0)
-        if volume_ratio < 0.8:  # STRICT: need at least 80% of average volume
+        if volume_ratio < 1.2:  # STRICTER: need at least 120% of average volume
             return 0.0, "neutral", {"reason": "insufficient_volume"}
         
         # 3. Detect market regime
