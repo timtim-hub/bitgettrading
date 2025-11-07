@@ -998,24 +998,30 @@ class BitgetRestClient:
         hold_side: str,  # "long" or "short" - which position we're closing
         callback_ratio: float,  # Callback rate as decimal (e.g., 0.015 = 1.5%)
         trigger_price: float,  # Activation price
+        size: float,  # EXACT position size for full position close
+        size_precision: int | None = None,
         product_type: str = "usdt-futures",
     ) -> dict[str, Any]:
         """
-        Place FULL POSITION trailing take-profit using pos_profit planType.
+        Place FULL POSITION TRAILING take-profit using moving_plan.
         
-        🎯 THIS IS THE TRUE "GESAMTER TP/SL" (ENTIRE TP/SL) MODE!
+        🎯 THIS IS "NORMAL TRAILING TP/SL" MODE (trails + full position)!
         
-        Research Discovery:
-        - planType: "pos_profit" (position take-profit) = FULL position ✅
-        - planType: "moving_plan" = partial mode (requires size) ❌
+        Discovery:
+        - planType: "pos_profit" = STATIC full position (Gesamter TP/SL - NO trailing) ❌
+        - planType: "moving_plan" with SIZE = TRAILING full position (Normal mode) ✅
         
-        This applies to the ENTIRE position automatically (NO size parameter needed)!
+        By providing exact position size with moving_plan, we get:
+        - ✅ Trailing capability (rangeRate parameter)
+        - ✅ Full position close (when size matches exactly)
         
         Args:
             symbol: Trading pair
             hold_side: "long" or "short" - which position to protect
-            callback_ratio: Trailing callback rate as decimal (e.g., 0.015 = 1.5%)
+            callback_ratio: Trailing callback rate as decimal (e.g., 0.10 = 10%)
             trigger_price: Activation price
+            size: EXACT position size
+            size_precision: Size precision
             product_type: Product type
             
         Returns:
@@ -1029,23 +1035,33 @@ class BitgetRestClient:
         # Convert "long"/"short" to "buy"/"sell" for API
         api_hold_side = "buy" if hold_side == "long" else "sell"
         
+        # Round size to correct precision
+        if size_precision is None:
+            size_str = f"{size:.10f}".rstrip('0').rstrip('.')
+            if '.' in size_str:
+                size_precision = len(size_str.split('.')[1])
+            else:
+                size_precision = 0
+        rounded_size = round(size, size_precision)
+        
         data = {
             "symbol": symbol,
             "productType": product_type,
             "marginMode": "isolated",
             "marginCoin": "USDT",
-            "planType": "pos_profit",  # 🚨 CRITICAL: pos_profit for FULL POSITION trailing TP!
+            "planType": "moving_plan",  # 🚨 moving_plan for TRAILING (NOT pos_profit!)
             "holdSide": api_hold_side,  # "buy" or "sell"
             "triggerPrice": str(trigger_price),
             "triggerType": "mark_price",
-            "rangeRate": formatted_range_rate,  # Trailing callback rate as percentage
-            # 🚨 NO size parameter for pos_profit = applies to ENTIRE position!
+            "size": str(rounded_size),  # EXACT size = full position close
+            "rangeRate": formatted_range_rate,  # Trailing callback rate
         }
         
         logger.info(
-            f"🎯 [GESAMTER TP/SL - POS_PROFIT MODE!] {symbol} | "
-            f"planType=pos_profit (FULL POSITION - no size needed!) | "
+            f"🎯 [NORMAL TRAILING TP - FULL POSITION!] {symbol} | "
+            f"planType=moving_plan (TRAILING + full position with exact size!) | "
             f"holdSide={hold_side} → API: {api_hold_side} | "
+            f"size={size} → rounded={rounded_size} (EXACT match for full close!) | "
             f"callback_ratio={callback_ratio*100:.2f}% → rangeRate: {formatted_range_rate} | "
             f"trigger_price={trigger_price}"
         )
@@ -1058,12 +1074,12 @@ class BitgetRestClient:
             
             if code == "00000":
                 logger.info(
-                    f"✅ [GESAMTER TP/SL PLACED!] {symbol} | "
-                    f"planType=pos_profit (FULL POSITION!) | "
-                    f"Callback: {callback_ratio*100:.2f}% | "
+                    f"✅ [NORMAL TRAILING TP PLACED!] {symbol} | "
+                    f"planType=moving_plan (TRAILING + full position!) | "
+                    f"size={rounded_size} | "
+                    f"Callback: {callback_ratio*100:.2f}% (TRAILS!) | "
                     f"Trigger: {trigger_price} | "
-                    f"Order ID: {data_resp.get('orderId', 'N/A')} | "
-                    f"✨ App will show 'Gesamter TP/SL' (FULL mode)!"
+                    f"Order ID: {data_resp.get('orderId', 'N/A')}"
                 )
             else:
                 logger.error(

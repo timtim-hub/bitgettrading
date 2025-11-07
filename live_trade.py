@@ -640,12 +640,14 @@ class LiveTrader:
                                 trailing_tp_retry_delay = 2.0  # Wait longer between retries
                                 
                                 for trailing_attempt in range(max_trailing_tp_retries):
-                                    # 🎯 USE NEW GESAMTER TP/SL MODE (pos_profit - FULL POSITION)!
+                                    # 🎯 USE NORMAL TRAILING MODE (moving_plan + exact size)!
                                     tp_results = await self.rest_client.place_trailing_stop_full_position(
                                         symbol=symbol,
                                         hold_side=side,  # "long" or "short"
-                                        callback_ratio=trailing_range_rate,  # 1.5% trailing distance
+                                        callback_ratio=trailing_range_rate,  # LOOSE trailing (5-12%)
                                         trigger_price=trailing_trigger_price,  # Activate at TP threshold
+                                        size=actual_position_size,  # EXACT size for full position
+                                        size_precision=size_precision,
                                     )
                                     
                                     # Verify trailing TP was placed successfully
@@ -796,12 +798,14 @@ class LiveTrader:
                                     if not tp_success and take_profit_price is not None:
                                         logger.info(f"🔄 [TP/SL RETRY] {symbol} | Retrying trailing TP order...")
                                         try:
-                                            trailing_range_rate = regime_params.get("trailing_stop_pct", 0.015) if regime_params else 0.015  # 1.5% callback rate (Rückrufquote)
+                                            trailing_range_rate = regime_params.get("trailing_stop_pct", 0.06) if regime_params else 0.06
                                             retry_tp = await self.rest_client.place_trailing_stop_full_position(
                                                 symbol=symbol,
                                                 hold_side=side,
                                                 callback_ratio=trailing_range_rate,
                                                 trigger_price=take_profit_price,
+                                                size=actual_position_size,
+                                                size_precision=size_precision,
                                             )
                                             retry_tp_code = retry_tp.get('code', 'N/A') if retry_tp else 'N/A'
                                             if retry_tp_code == "00000":
@@ -839,13 +843,15 @@ class LiveTrader:
                                     )
                                     retry_sl_code = retry_sl_results.get('sl', {}).get('code', 'N/A') if retry_sl_results and retry_sl_results.get('sl') else 'N/A'
                                     
-                                    # Retry trailing TP using GESAMTER TP/SL mode (pos_profit)
-                                    trailing_range_rate = regime_params.get("trailing_stop_pct", 0.01) if regime_params else 0.01
+                                    # Retry trailing TP using Normal Trailing mode (moving_plan)
+                                    trailing_range_rate = regime_params.get("trailing_stop_pct", 0.06) if regime_params else 0.06
                                     retry_tp_results = await self.rest_client.place_trailing_stop_full_position(
                                         symbol=symbol,
                                         hold_side=side,
                                         callback_ratio=trailing_range_rate,
                                         trigger_price=take_profit_price,
+                                        size=actual_position_size,
+                                        size_precision=size_precision,
                                     )
                                     retry_tp_code = retry_tp_results.get('code', 'N/A') if retry_tp_results else 'N/A'
                                     
