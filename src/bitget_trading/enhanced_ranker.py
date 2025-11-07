@@ -802,15 +802,16 @@ class EnhancedRanker:
 
             # 🚨 CRITICAL: Check if trading AGAINST market structure - INSTANT REJECTION!
             # This is the #1 cause of losses - NEVER trade against the trend!
-            if (
-                direction == "long" and market_structure["structure"] == "downtrend"
-            ) or (direction == "short" and market_structure["structure"] == "uptrend"):
+            # 🚀 FIX: Allow shorts in uptrends IF strong bearish confluence (pullbacks/reversals)
+            # Allow shorts in ranging markets (consolidation)
+            if direction == "long" and market_structure["structure"] == "downtrend":
+                # REJECT longs in downtrends (strict)
                 logger.debug(
                     "trade_rejected_against_structure",
                     symbol=state.symbol,
                     direction=direction,
                     structure=market_structure["structure"],
-                    reason="NEVER trade against market structure!",
+                    reason="NEVER trade LONG against downtrend!",
                 )
                 return (
                     0.0,
@@ -820,6 +821,33 @@ class EnhancedRanker:
                         "structure": market_structure["structure"],
                     },
                 )
+            elif direction == "short" and market_structure["structure"] == "uptrend":
+                # RELAXED: Only reject shorts in STRONG uptrends (8+ votes out of 10)
+                # Allow shorts in weak/moderate uptrends (pullbacks/reversals)
+                uptrend_votes = market_structure.get("uptrend_votes", 10)
+                if uptrend_votes >= 8:  # Very strong uptrend (80%+)
+                    logger.debug(
+                        "trade_rejected_against_structure",
+                        symbol=state.symbol,
+                        direction=direction,
+                        structure=market_structure["structure"],
+                        uptrend_votes=uptrend_votes,
+                        reason="SHORT rejected: STRONG uptrend (8+ votes)",
+                    )
+                    return (
+                        0.0,
+                        "neutral",
+                        {
+                            "reason": "against_structure",
+                            "structure": market_structure["structure"],
+                        },
+                    )
+                else:
+                    # Allow shorts in weak/moderate uptrends (pullbacks)
+                    logger.info(
+                        f"✅ [SHORT ALLOWED IN UPTREND] {state.symbol} | "
+                        f"Weak uptrend ({uptrend_votes}/10 votes) allows short entry (pullback/reversal)"
+                    )
 
             # PRO RULE: ONLY A-grade trades! (5+ factors required out of 10)
             # B-grade and below are causing too many losses!
