@@ -946,8 +946,10 @@ class LiveTrader:
                     fees_paid = (position.capital * 0.0002) + (position.capital * 0.0006)
                     net_pnl = position.unrealized_pnl - fees_paid
                     
-                    # Get exit reason from position manager check
-                    _, exit_reason = self.position_manager.check_exit_conditions(symbol, current_price)
+                    # 🚨 REMOVED: check_exit_conditions call - we use EXCHANGE-SIDE TP/SL!
+                    # The exchange handles all exits automatically via TP/SL orders.
+                    # We only call close_position when manually closing or when exchange already closed it.
+                    # exit_reason is already passed as parameter to this function.
                     
                     # Get entry metrics from position metadata
                     entry_grade = position.metadata.get("grade", "Unknown")
@@ -1166,25 +1168,23 @@ class LiveTrader:
             if current_price == 0:
                 continue
 
-            # Update position price and trailing stop levels (for tracking only)
+            # 🚨 CRITICAL: We use EXCHANGE-SIDE TP/SL orders - NO bot-side exit checking!
+            # The exchange automatically closes positions when TP/SL triggers.
+            # We only update position tracking data - we NEVER trigger exits from the bot!
+            # 
+            # What we do:
+            # 1. Update prices for tracking (for PnL display and logging)
+            # 2. Detect when exchange closes positions (done in sync logic above, lines 1097-1139)
+            # 
+            # What we DON'T do:
+            # - Check exit conditions (disabled - exchange handles it)
+            # - Manually close positions (only when exchange already closed them)
+            # - Trigger any exits (exchange TP/SL handles all exits automatically)
+            # 
+            # This ensures positions close at EXACTLY the TP/SL prices we set on the exchange!
             self.position_manager.update_position_price(symbol, current_price)
             
             positions_checked += 1
-
-            # 🚨 CRITICAL: DISABLED bot-side exit checking!
-            # We now use EXCHANGE-SIDE TP/SL orders (static SL + trailing TP via moving_plan)
-            # The exchange will automatically close positions when TP/SL triggers
-            # We only need to:
-            # 1. Update prices for tracking (done above)
-            # 2. Detect when exchange closes positions (done in sync logic above, lines 847-867)
-            # 
-            # Bot-side exit checking was causing premature closes before exchange TP/SL could trigger!
-            # 
-            # OLD CODE (DISABLED):
-            # should_close, reason = self.position_manager.check_exit_conditions(symbol, current_price)
-            # if should_close:
-            #     await self.close_position(symbol, exit_reason=reason)
-            #     continue
 
     async def execute_trades(self, allocations: list[dict[str, Any]]) -> None:
         """Execute trades based on allocations."""
