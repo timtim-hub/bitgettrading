@@ -165,11 +165,6 @@ class PositionManager:
         
         position = self.positions[symbol]
         
-        # Calculate time in position (for logging)
-        from datetime import datetime
-        entry_time = datetime.fromisoformat(position.entry_time.replace('Z', '+00:00'))
-        time_in_position = (datetime.now(entry_time.tzinfo) - entry_time).total_seconds()
-        
         # Calculate current price change % (currency move)
         if position.side == "long":
             price_change_pct = ((current_price - position.entry_price) / position.entry_price)
@@ -196,8 +191,7 @@ class PositionManager:
             f"Capital PnL: {return_on_capital_pct*100:.2f}% | "
             f"Leverage: {position.leverage}x | "
             f"SL target: {-target_price_move_for_stop*100:.2f}% price ({-position.stop_loss_pct*100:.0f}% capital) | "
-            f"TP target: {target_price_move_for_tp*100:.2f}% price ({position.take_profit_pct*100:.0f}% capital) | "
-            f"Time held: {time_in_position/60:.1f}min"
+            f"TP target: {target_price_move_for_tp*100:.2f}% price ({position.take_profit_pct*100:.0f}% capital)"
         )
         
         # 1. Hard stop-loss (on capital, not price) - ALWAYS HONOR
