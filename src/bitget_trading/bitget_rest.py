@@ -387,3 +387,44 @@ class BitgetRestClient:
         
         response = await self._request("GET", endpoint, params=params)
         return response
+    
+    async def get_historical_candles(
+        self,
+        symbol: str,
+        granularity: str = "1m",  # 1m, 3m, 5m, 15m, 30m, 1H, 4H, 1D
+        limit: int = 200,  # Max 200 per request
+        product_type: str = "USDT-FUTURES",
+    ) -> dict[str, Any]:
+        """
+        Get historical candlestick data (INSTANT data loading!).
+        
+        This replaces the 60-second wait time by fetching historical data directly.
+        Bitget returns up to 200 candles per request.
+        
+        Args:
+            symbol: Trading pair (e.g., "BTCUSDT")
+            granularity: Candle interval (1m, 3m, 5m, 15m, 30m, 1H, 4H, 1D)
+            limit: Number of candles to fetch (max 200)
+            product_type: Product type
+        
+        Returns:
+            Response with candle data [timestamp, open, high, low, close, volume, ...]
+        """
+        endpoint = "/api/v2/mix/market/candles"
+        params = {
+            "symbol": symbol,
+            "productType": product_type,
+            "granularity": granularity,
+            "limit": str(limit),
+        }
+        
+        response = await self._request("GET", endpoint, params=params)
+        
+        logger.info(
+            "fetched_historical_candles",
+            symbol=symbol,
+            granularity=granularity,
+            count=len(response.get("data", [])) if response.get("code") == "00000" else 0,
+        )
+        
+        return response

@@ -175,13 +175,24 @@ class PositionManager:
         return_on_capital_pct = price_change_pct * position.leverage
         
         # CRITICAL: Targets are based on CAPITAL return, not price move!
-        # With 50x leverage:
-        # - 10% capital return = 0.2% price move
-        # - 2% capital loss = 0.04% price move
+        # With 25x leverage:
+        # - 20% capital return = 0.8% price move
+        # - 15% capital loss = 0.6% price move
         
-        target_price_move_for_stop = position.stop_loss_pct / position.leverage  # e.g., 2% / 50 = 0.04%
-        target_price_move_for_tp = position.take_profit_pct / position.leverage  # e.g., 10% / 50 = 0.2%
-        target_price_move_for_trail = position.trailing_stop_pct / position.leverage  # e.g., 3% / 50 = 0.06%
+        target_price_move_for_stop = position.stop_loss_pct / position.leverage  # e.g., 0.15 / 25 = 0.006 (0.6%)
+        target_price_move_for_tp = position.take_profit_pct / position.leverage  # e.g., 0.20 / 25 = 0.008 (0.8%)
+        target_price_move_for_trail = position.trailing_stop_pct / position.leverage  # e.g., 0.04 / 25 = 0.0016 (0.16%)
+        
+        # DEBUG: Log exit check details every time (to find why TP isn't triggering)
+        logger.debug(
+            f"📊 Exit check: {symbol} | "
+            f"Leverage: {position.leverage}x | "
+            f"Price Δ: {price_change_pct*100:.4f}% | "
+            f"Capital: {return_on_capital_pct*100:.2f}% | "
+            f"TP target: {target_price_move_for_tp*100:.4f}% price | "
+            f"Entry: ${position.entry_price:.4f} | "
+            f"Current: ${current_price:.4f}"
+        )
         
         # 1. Hard stop-loss (on capital, not price) - ALWAYS HONOR
         if price_change_pct < -target_price_move_for_stop:
@@ -189,6 +200,13 @@ class PositionManager:
         
         # 2. Take-profit (on capital, not price) - CHECK THIS FIRST!
         if price_change_pct > target_price_move_for_tp:
+            logger.info(
+                f"🎯 TP TRIGGERED! {symbol} | "
+                f"Capital: {return_on_capital_pct*100:.2f}% | "
+                f"Price: {price_change_pct*100:.4f}% | "
+                f"Target: {target_price_move_for_tp*100:.4f}% | "
+                f"Leverage: {position.leverage}x"
+            )
             return True, f"TAKE-PROFIT (Capital: {return_on_capital_pct*100:.2f}%, Price: {price_change_pct*100:.4f}%)"
         
         # 3. MINIMUM PROFIT LOCK: Don't close tiny winners/losers (avoid fee erosion)

@@ -832,29 +832,75 @@ class LiveTrader:
                     "asks": [[mid + spread/2, 1000], [mid + spread, 500]],
                 })
         
-        # CRITICAL: Accumulate 60 seconds for FAST startup (1 minute)
-        # This covers ultra-short-term timeframes (1s, 3s, 5s, 10s, 15s, 30s, 1min)
-        # For SCALPING (seconds to minutes), we don't need 3+ minute history!
-        logger.info("⏳ Accumulating price history (60 seconds for FAST startup)...")
-        logger.info(f"   💪 Using all device power for 100 symbols in parallel...")
-        logger.info(f"   ⚡ SCALPING MODE: 1 minute is enough for ultra-short-term timeframes!")
+        # 🚀 INSTANT DATA LOADING using Bitget's historical candles API!
+        # Instead of waiting 60 seconds, fetch 200 1-minute candles for each symbol
+        # This gives us INSTANT startup with 200 minutes (3+ hours) of data!
+        logger.info("⚡ INSTANT DATA LOADING - Fetching historical candles from Bitget API...")
+        logger.info(f"   🎯 Loading 200 1-minute candles per symbol (200 minutes of history)")
+        logger.info(f"   💪 Processing {len(self.symbols)} symbols in parallel...")
         
-        for i in range(60):  # 60 iterations = 1 minute (FAST!)
-            await asyncio.sleep(1)
-            # Fetch ALL tickers in ONE API call (Bitget returns all symbols at once - FAST!)
-            ticker_dict = await self.universe_manager.fetch_tickers()
+        # Fetch historical candles for all symbols in parallel
+        async def load_symbol_history(symbol: str) -> tuple[str, bool]:
+            """Load historical data for one symbol."""
+            try:
+                # Fetch last 200 1-minute candles (max allowed per request)
+                candles_response = await self.rest_client.get_historical_candles(
+                    symbol=symbol,
+                    granularity="1m",  # 1-minute candles
+                    limit=200,  # Maximum per request
+                )
+                
+                if candles_response.get("code") != "00000":
+                    return (symbol, False)
+                
+                candles = candles_response.get("data", [])
+                if not candles:
+                    return (symbol, False)
+                
+                # Each candle: [timestamp, open, high, low, close, volume, ...]
+                # Populate price history with close prices from candles
+                for candle in reversed(candles):  # Oldest first
+                    timestamp_ms = int(candle[0])
+                    close_price = float(candle[4])
+                    volume = float(candle[5]) if len(candle) > 5 else 0.0
+                    
+                    # Create ticker-like data from candle
+                    ticker_data = {
+                        "last_price": close_price,
+                        "bid_price": close_price,  # Approximate
+                        "ask_price": close_price,  # Approximate
+                        "volume_24h": volume,
+                        "quote_volume_24h": 0.0,
+                        "open_interest": 0.0,
+                    }
+                    
+                    self.state_manager.update_ticker(symbol, ticker_data)
+                
+                return (symbol, True)
+                
+            except Exception as e:
+                logger.warning(f"load_history_failed", symbol=symbol, error=str(e))
+                return (symbol, False)
+        
+        # Load all symbols in parallel (batches of 20 to avoid rate limits)
+        batch_size = 20
+        successful = 0
+        failed = 0
+        
+        for i in range(0, len(self.symbols), batch_size):
+            batch = self.symbols[i:i + batch_size]
+            results = await asyncio.gather(*[load_symbol_history(s) for s in batch])
             
-            # Batch update all symbols (Python is fast enough, no multiprocessing overhead)
-            for symbol, ticker in ticker_dict.items():
-                if symbol in self.symbols:
-                    self.state_manager.update_ticker(symbol, ticker)
+            for symbol, success in results:
+                if success:
+                    successful += 1
+                else:
+                    failed += 1
             
-            # Log progress every 15 seconds
-            if (i + 1) % 15 == 0:
-                active_count = len([s for s in self.symbols if s in ticker_dict])
-                logger.info(f"   📊 {i+1}/60s complete ({(i+1)/60:.0%}) | {active_count} symbols active")
-
-        logger.info("✅ 60 seconds of data ready! Ultra-short-term timeframes loaded. Starting trading...\n")
+            logger.info(f"   📊 Loaded {successful}/{successful+failed} symbols ({successful/(successful+failed)*100:.0f}%)")
+        
+        logger.info(f"✅ INSTANT STARTUP COMPLETE! {successful} symbols loaded with 200 minutes of history!")
+        logger.info(f"   ⚡ NO WAITING! Starting trading immediately...\n")
 
         # Start trading
         await self.trading_loop()
