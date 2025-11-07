@@ -30,7 +30,7 @@ class Position:
     # OPTIMIZED for ultra-short-term scalping with fees in mind
     # With 25x leverage + 0.04% round-trip fees (SAFER than 50x!)
     trailing_stop_pct: float = 0.04  # 4% trailing from peak (0.16% price @ 25x) - ACTIVE!
-    stop_loss_pct: float = 0.20   # 20% hard stop-loss (0.8% price @ 25x) - WIDER ROOM, NO liquidations!
+    stop_loss_pct: float = 0.50   # 50% hard stop-loss (2% price @ 25x) - MAXIMUM ROOM, let winners run!
     take_profit_pct: float = 0.14  # 14% take-profit (0.56% price @ 25x) - WITH trailing protection!
     
     # Regime info
@@ -75,9 +75,9 @@ class PositionManager:
         capital: float,
         leverage: int,
         regime: str = "ranging",
-        stop_loss_pct: float = 0.15,  # 15% capital (0.3% price @ 50x) - TIGHTER to prevent liquidations!
-        take_profit_pct: float = 0.20,  # 20% capital (0.4% price @ 50x) - let winners run!
-        trailing_stop_pct: float = 0.04,  # 4% capital (0.08% price @ 50x) - tighter trailing
+        stop_loss_pct: float = 0.50,  # 50% capital (2% price @ 25x) - MAXIMUM ROOM!
+        take_profit_pct: float = 0.14,  # 14% capital (0.56% price @ 25x) - WITH trailing!
+        trailing_stop_pct: float = 0.04,  # 4% capital (0.16% price @ 25x) - ACTIVE!
         metadata: dict = None,  # Entry quality metadata for loss tracking
     ) -> None:
         """Add a new position with regime-based parameters and metadata."""
@@ -189,9 +189,9 @@ class PositionManager:
         # CRITICAL: Targets are based on CAPITAL return, not price move!
         # With 25x leverage:
         # - 14% capital TP = 0.56% price move - WITH trailing protection!
-        # - 20% capital SL = 0.8% price move - WIDER ROOM for volatility!
+        # - 50% capital SL = 2.0% price move - MAXIMUM ROOM for big moves!
         
-        target_price_move_for_stop = position.stop_loss_pct / position.leverage  # e.g., 0.20 / 25 = 0.008 (0.8%)
+        target_price_move_for_stop = position.stop_loss_pct / position.leverage  # e.g., 0.50 / 25 = 0.02 (2%)
         target_price_move_for_tp = position.take_profit_pct / position.leverage  # e.g., 0.14 / 25 = 0.0056 (0.56%)
         target_price_move_for_trail = position.trailing_stop_pct / position.leverage  # e.g., 0.04 / 25 = 0.0016 (0.16%)
         

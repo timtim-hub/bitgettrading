@@ -180,12 +180,15 @@ class LiveTrader:
             logger.error(f"❌ Failed to fetch/sync positions: {e}")
 
     async def place_order(
-        self, symbol: str, side: str, size: float, price: float
+        self, symbol: str, side: str, size: float, price: float, regime_params: dict = None
     ) -> bool:
         """
         Place order (paper or live).
         
         IMPROVED: Places 2-3 bps inside spread for better fills + maker fee!
+        
+        Args:
+            regime_params: Dict with stop_loss_pct, take_profit_pct from regime_detector (SINGLE SOURCE OF TRUTH)
         """
         if self.paper_mode:
             # Paper trading
@@ -268,10 +271,16 @@ class LiveTrader:
                     # Wait a moment for order to fill
                     await asyncio.sleep(0.5)
                     
-                    # Calculate TP/SL prices (14% TP, 20% SL @ 25x)
-                    # WIDER stops for 25x = MUCH MORE ROOM, NO liquidations!
-                    sl_price_pct = 0.008  # 0.8% price move = 20% capital @ 25x - SUPER SAFE!
-                    tp_price_pct = 0.0056  # 0.56% price move = 14% capital @ 25x - WITH trailing!
+                    # Calculate TP/SL prices from regime_params (SINGLE SOURCE OF TRUTH!)
+                    # This ensures exchange-side orders match bot-side expectations
+                    if regime_params:
+                        # Use regime-specific values from regime_detector
+                        sl_price_pct = regime_params["stop_loss_pct"] / self.leverage  # e.g., 0.50 / 25 = 0.02 (2%)
+                        tp_price_pct = regime_params["take_profit_pct"] / self.leverage  # e.g., 0.14 / 25 = 0.0056 (0.56%)
+                    else:
+                        # Fallback defaults (should never happen if regime_params passed correctly)
+                        sl_price_pct = 0.02  # 2% price move = 50% capital @ 25x
+                        tp_price_pct = 0.0056  # 0.56% price move = 14% capital @ 25x
                     
                     if side == "long":
                         stop_loss_price = price * (1 - sl_price_pct)
@@ -306,10 +315,13 @@ class LiveTrader:
                         )
                         
                         if tpsl_order and tpsl_order.get("code") == "00000":
+                            # Calculate actual percentages for logging
+                            sl_capital_pct = sl_price_pct * self.leverage * 100
+                            tp_capital_pct = tp_price_pct * self.leverage * 100
                             logger.info(
-                                f"🛡️  [EXCHANGE-SIDE TP/SL] {symbol} @ 25x | "
-                                f"SL: ${stop_loss_price:.4f} (-20% capital / 0.8% price - WIDE!) | "
-                                f"TP: ${take_profit_price:.4f} (+14% capital / 0.56% price)"
+                                f"🛡️  [EXCHANGE-SIDE TP/SL] {symbol} @ {self.leverage}x | "
+                                f"SL: ${stop_loss_price:.4f} (-{sl_capital_pct:.0f}% capital / {sl_price_pct*100:.1f}% price) | "
+                                f"TP: ${take_profit_price:.4f} (+{tp_capital_pct:.0f}% capital / {tp_price_pct*100:.2f}% price)"
                             )
                         else:
                             logger.warning(
@@ -632,9 +644,9 @@ class LiveTrader:
                     f"Regime: {regime} | TP: {regime_params['take_profit_pct']*100:.1f}%"
                 )
 
-                # Place order
+                # Place order (pass regime_params for exchange-side TP/SL)
                 trades_attempted += 1
-                success = await self.place_order(symbol, signal_side, size, price)
+                success = await self.place_order(symbol, signal_side, size, price, regime_params)
 
                 if success:
                     trades_successful += 1

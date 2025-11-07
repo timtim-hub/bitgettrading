@@ -133,7 +133,7 @@ class RegimeDetector:
         """
         if regime == MarketRegime.TRENDING:
             return {
-                "stop_loss_pct": 0.20,      # 20% capital (0.8% price @ 25x) - WIDER ROOM!
+                "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM!
                 "take_profit_pct": 0.14,    # 14% capital (0.56% price @ 25x) - WITH trailing protection!
                 "trailing_stop_pct": 0.04,  # 4% capital (0.16% price @ 25x) - ACTIVE!
                 "position_size_multiplier": 1.5,  # 50% larger for trending (was 1.2)
@@ -141,7 +141,7 @@ class RegimeDetector:
         
         elif regime == MarketRegime.RANGING:
             return {
-                "stop_loss_pct": 0.20,      # 20% capital (0.8% price @ 25x) - WIDER ROOM!
+                "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM!
                 "take_profit_pct": 0.14,    # 14% in ranging (0.56% price @ 25x) - WITH trailing!
                 "trailing_stop_pct": 0.04,  # 4% trailing (0.16% price @ 25x)
                 "position_size_multiplier": 1.0,  # Normal size for ranging (was 0.8)
@@ -149,7 +149,7 @@ class RegimeDetector:
         
         elif regime == MarketRegime.BREAKOUT:
             return {
-                "stop_loss_pct": 0.20,      # 20% capital (0.8% price @ 25x) - WIDER ROOM!
+                "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM!
                 "take_profit_pct": 0.14,    # 14% for breakouts (0.56% price @ 25x) - WITH trailing!
                 "trailing_stop_pct": 0.04,  # 4% trailing (0.16% price @ 25x) - ACTIVE!
                 "position_size_multiplier": 1.3,  # 30% larger for breakouts (high conviction)
@@ -157,7 +157,7 @@ class RegimeDetector:
         
         elif regime == MarketRegime.VOLATILE:
             return {
-                "stop_loss_pct": 0.20,      # 20% capital (0.8% price @ 25x) - WIDER ROOM!
+                "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM!
                 "take_profit_pct": 0.14,    # 14% in volatile (0.56% price @ 25x) - WITH trailing!
                 "trailing_stop_pct": 0.04,  # 4% trailing (0.16% price @ 25x) - ACTIVE!
                 "position_size_multiplier": 0.8,  # 20% smaller in volatile (risk reduction)
@@ -165,7 +165,7 @@ class RegimeDetector:
         
         else:  # Default
             return {
-                "stop_loss_pct": 0.20,      # 20% capital (0.8% price @ 25x) - WIDER ROOM!
+                "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM!
                 "take_profit_pct": 0.14,    # 14% default (0.56% price @ 25x) - WITH trailing!
                 "trailing_stop_pct": 0.04,  # OPTIMIZED: Same 4% trailing
                 "position_size_multiplier": 1.0,
