@@ -165,6 +165,11 @@ class PositionManager:
         
         position = self.positions[symbol]
         
+        # Calculate time in position (for logging)
+        from datetime import datetime
+        entry_time = datetime.fromisoformat(position.entry_time.replace('Z', '+00:00'))
+        time_in_position = (datetime.now(entry_time.tzinfo) - entry_time).total_seconds()
+        
         # Calculate current price change % (currency move)
         if position.side == "long":
             price_change_pct = ((current_price - position.entry_price) / position.entry_price)
