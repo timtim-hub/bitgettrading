@@ -87,31 +87,45 @@ class LiveTrader:
         )
 
     async def verify_api_credentials(self) -> bool:
-        """Verify API credentials work."""
-        try:
-            logger.info("🔑 Verifying API credentials...")
-            balance = await self.rest_client.get_account_balance()
+        """Verify API credentials work with retry logic for network issues."""
+        logger.info("🔑 Verifying API credentials...")
+        
+        # Retry logic for transient network issues
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                balance = await self.rest_client.get_account_balance()
 
-            if not balance:
-                logger.error("❌ Could not fetch account balance - invalid credentials?")
-                return False
+                if not balance:
+                    logger.error("❌ Could not fetch account balance - invalid credentials?")
+                    return False
 
-            logger.info("✅ API credentials verified!")
-            
-            # Parse balance correctly (nested structure)
-            if balance.get("code") == "00000" and "data" in balance:
-                data = balance.get("data", [{}])[0]
-                equity = float(data.get("equity", 0))
-                available = float(data.get("available", 0))
-                logger.info(f"💰 Account balance: ${equity:.2f} USDT (Available: ${available:.2f})")
-            else:
-                logger.info(f"💰 Account balance: Verified (details parsed at startup)")
+                logger.info("✅ API credentials verified!")
+                
+                # Parse balance correctly (nested structure)
+                if balance.get("code") == "00000" and "data" in balance:
+                    data = balance.get("data", [{}])[0]
+                    equity = float(data.get("equity", 0))
+                    available = float(data.get("available", 0))
+                    logger.info(f"💰 Account balance: ${equity:.2f} USDT (Available: ${available:.2f})")
+                else:
+                    logger.info(f"💰 Account balance: Verified (details parsed at startup)")
 
-            return True
+                return True
 
-        except Exception as e:
-            logger.error(f"❌ API verification failed: {e}")
-            return False
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2  # 2s, 4s, 6s, 8s
+                    logger.warning(f"⚠️  API verification attempt {attempt + 1}/{max_retries} failed: {e}")
+                    logger.info(f"   Retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"❌ API verification failed after {max_retries} attempts: {e}")
+                    logger.error("   Network connectivity issues detected.")
+                    logger.error("   Please check your internet connection and try again.")
+                    return False
+        
+        return False
 
     async def check_account_balance(self) -> bool:
         """Check if account has sufficient balance."""
