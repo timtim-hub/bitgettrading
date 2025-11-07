@@ -233,80 +233,81 @@ class LiveTrader:
                     except Exception:
                         pass  # May already be set
                 
-                try:
-                    # 🚨 NEW STRATEGY: ATOMIC TP/SL on MARKET orders!
-                    # This places the TP/SL values in the SAME order request as the entry
-                    # Ensures TP/SL is active the MOMENT the position is opened
-                    # BUT: No stuck orders blocking capital = worth the extra 0.04% fee!
-                    
-                    # Calculate TP/SL prices from regime_params
-                    if regime_params:
-                        sl_capital_pct = regime_params["stop_loss_pct"]
-                        tp_capital_pct = regime_params["take_profit_pct"]
-                        sl_price_pct = sl_capital_pct / self.leverage
-                        tp_price_pct = tp_capital_pct / self.leverage
-                    else:
-                        # Fallback (should never happen)
-                        sl_price_pct = 0.02  # 50% capital @ 25x
-                        tp_price_pct = 0.004 # 10% capital @ 25x
-                    
-                    # Calculate actual prices
-                    if side == "long":
-                        stop_loss_price = price * (1 - sl_price_pct)
-                        take_profit_price = price * (1 + tp_price_pct)
-                    else:  # short
-                        stop_loss_price = price * (1 + sl_price_pct)
-                        take_profit_price = price * (1 - tp_price_pct)
-                    
-                    # Round to correct precision
-                    contract_info = self.universe_manager.get_contract_info(symbol)
-                    if contract_info:
-                        price_place = contract_info.get("price_place", 4)
-                        stop_loss_price = round(stop_loss_price, price_place)
-                        take_profit_price = round(take_profit_price, price_place)
-                    
-                    logger.info(
-                        f"📊 [TP/SL CALC] {symbol} | Entry: ${price:.4f} "
-                        f"| TP: ${take_profit_price:.4f} ({tp_capital_pct*100:.0f}%) "
-                        f"| SL: ${stop_loss_price:.4f} ({sl_capital_pct*100:.0f}%)"
-                    )
+                if self.can_open_new_position():
+                    try:
+                        # 🚨 NEW STRATEGY: ATOMIC TP/SL on MARKET orders!
+                        # This places the TP/SL values in the SAME order request as the entry
+                        # Ensures TP/SL is active the MOMENT the position is opened
+                        # BUT: No stuck orders blocking capital = worth the extra 0.04% fee!
+                        
+                        # Calculate TP/SL prices from regime_params
+                        if regime_params:
+                            sl_capital_pct = regime_params["stop_loss_pct"]
+                            tp_capital_pct = regime_params["take_profit_pct"]
+                            sl_price_pct = sl_capital_pct / self.leverage
+                            tp_price_pct = tp_capital_pct / self.leverage
+                        else:
+                            # Fallback (should never happen)
+                            sl_price_pct = 0.02  # 50% capital @ 25x
+                            tp_price_pct = 0.004 # 10% capital @ 25x
+                        
+                        # Calculate actual prices
+                        if side == "long":
+                            stop_loss_price = price * (1 - sl_price_pct)
+                            take_profit_price = price * (1 + tp_price_pct)
+                        else:  # short
+                            stop_loss_price = price * (1 + sl_price_pct)
+                            take_profit_price = price * (1 - tp_price_pct)
+                        
+                        # Round to correct precision
+                        contract_info = self.universe_manager.get_contract_info(symbol)
+                        if contract_info:
+                            price_place = contract_info.get("price_place", 4)
+                            stop_loss_price = round(stop_loss_price, price_place)
+                            take_profit_price = round(take_profit_price, price_place)
+                        
+                        logger.info(
+                            f"📊 [TP/SL CALC] {symbol} | Entry: ${price:.4f} "
+                            f"| TP: ${take_profit_price:.4f} ({tp_capital_pct*100:.0f}%) "
+                            f"| SL: ${stop_loss_price:.4f} ({sl_capital_pct*100:.0f}%)"
+                        )
 
-                    # Place the actual MARKET order with atomic TP/SL
-                    order_response = await self.rest_client.place_order(
-                        symbol=symbol,
-                        side=side,
-                        size=size,
-                        order_type="market",
-                        take_profit_price=take_profit_price,
-                        stop_loss_price=stop_loss_price,
-                    )
-                    
-                    if order_response and order_response.get("code") == "00000":
-                        order_id = order_response.get("data", {}).get("orderId")
-                        self.position_manager.add_position(
+                        # Place the actual MARKET order with atomic TP/SL
+                        order_response = await self.rest_client.place_order(
                             symbol=symbol,
                             side=side,
                             size=size,
-                            entry_price=price,
-                            leverage=self.leverage,
-                            **regime_params,
-                            metadata=metadata
+                            order_type="market",
+                            take_profit_price=take_profit_price,
+                            stop_loss_price=stop_loss_price,
                         )
-                        logger.info(
-                            f"✅ [LIVE] MARKET {side.upper()} {symbol} | Size: {size:.4f} | "
-                            f"Order ID: {order_id} | TP/SL Placed Atomically"
-                        )
-                        return True
-                    else:
-                        logger.error(
-                            f"❌ Order placement failed for {symbol}: {order_response.get('msg')}"
-                        )
-                        return False
+                        
+                        if order_response and order_response.get("code") == "00000":
+                            order_id = order_response.get("data", {}).get("orderId")
+                            self.position_manager.add_position(
+                                symbol=symbol,
+                                side=side,
+                                size=size,
+                                entry_price=price,
+                                leverage=self.leverage,
+                                **regime_params,
+                                metadata=metadata
+                            )
+                            logger.info(
+                                f"✅ [LIVE] MARKET {side.upper()} {symbol} | Size: {size:.4f} | "
+                                f"Order ID: {order_id} | TP/SL Placed Atomically"
+                            )
+                            return True
+                        else:
+                            logger.error(
+                                f"❌ Order placement failed for {symbol}: {order_response.get('msg')}"
+                            )
+                            return False
 
-                except Exception as e:
-                    logger.error(f"❌ Order placement error: {e}")
-                    return False
-        return False
+                    except Exception as e:
+                        logger.error(f"❌ Order placement error: {e}")
+                        return False
+                return False # This is the misplaced line from 310, now correctly placed
 
     async def close_position(self, symbol: str, exit_reason: str = "MANUAL") -> bool:
         """Close an existing position."""
