@@ -446,7 +446,17 @@ class BitgetRestClient:
             }
             response = await self._request("GET", query_endpoint, params=params)
             
+            # Handle API errors gracefully (especially timing issues with Bitget API)
             if response.get("code") != "00000":
+                error_code = response.get("code", "UNKNOWN")
+                error_msg = response.get("msg", "Unknown error")
+                # Error 40812 = "The condition planType is not met" - known timing issue
+                # This can happen immediately after placing an order - it's not a critical error
+                if error_code == "40812":
+                    # This is a known Bitget API timing issue - order might not be registered yet
+                    # Return exists=False but don't treat it as a critical error
+                    return {"exists": False, "order_id": None, "trigger_price": None, "orders": [], "timing_issue": True}
+                # Other errors are more serious
                 return {"exists": False, "order_id": None, "trigger_price": None, "orders": []}
             
             orders = response.get("data", {}).get("entrustedList", [])

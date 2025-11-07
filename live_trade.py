@@ -1016,26 +1016,66 @@ class LiveTrader:
                                                 f"Trigger price: ${verification.get('trigger_price', 0):.4f}"
                                             )
                                         else:
-                                            logger.error(
-                                                f"🚨 [STOP-LOSS NOT VERIFIED!] {symbol} | "
-                                                f"Order ID {sl_order_id} is NOT active on exchange! | "
-                                                f"This is the root cause of SAPIENUSDT (-42% loss)! | "
-                                                f"Re-placing stop-loss immediately..."
-                                            )
-                                            # Re-place stop-loss immediately
-                                            retry_sl = await self.rest_client.place_tpsl_order(
-                                                symbol=symbol,
-                                                hold_side=side,
-                                                size=actual_position_size,
-                                                stop_loss_price=stop_loss_price,
-                                                take_profit_price=None,
-                                                size_precision=size_precision,
-                                            )
-                                            retry_sl_code = retry_sl.get('sl', {}).get('code', 'N/A') if retry_sl and retry_sl.get('sl') else 'N/A'
-                                            if retry_sl_code == "00000":
-                                                retry_sl_data = retry_sl.get('sl', {}).get('data', {}) if retry_sl and retry_sl.get('sl') else {}
-                                                sl_order_id = retry_sl_data.get('orderId') if retry_sl_data else sl_order_id
-                                                logger.info(f"✅ [STOP-LOSS RE-PLACED] {symbol} | New order ID: {sl_order_id}")
+                                            # Check if it's a timing issue (known Bitget API quirk)
+                                            if verification.get("timing_issue"):
+                                                logger.warning(
+                                                    f"⚠️ [STOP-LOSS VERIFICATION] {symbol} | "
+                                                    f"Timing issue (API error 40812) - order might not be registered yet. "
+                                                    f"Will retry verification in 2 seconds..."
+                                                )
+                                                # Wait 2 seconds and retry verification (don't re-place immediately)
+                                                await asyncio.sleep(2.0)
+                                                retry_verification = await self.rest_client.verify_stop_loss_order(
+                                                    symbol=symbol,
+                                                    expected_order_id=sl_order_id,
+                                                )
+                                                if retry_verification.get("exists"):
+                                                    logger.info(
+                                                        f"✅ [STOP-LOSS VERIFIED (RETRY)] {symbol} | "
+                                                        f"Order ID {sl_order_id} is now active on exchange"
+                                                    )
+                                                else:
+                                                    # Still not verified after retry - re-place it
+                                                    logger.error(
+                                                        f"🚨 [STOP-LOSS NOT VERIFIED!] {symbol} | "
+                                                        f"Order ID {sl_order_id} is NOT active on exchange after retry! | "
+                                                        f"Re-placing stop-loss immediately..."
+                                                    )
+                                                    retry_sl = await self.rest_client.place_tpsl_order(
+                                                        symbol=symbol,
+                                                        hold_side=side,
+                                                        size=actual_position_size,
+                                                        stop_loss_price=stop_loss_price,
+                                                        take_profit_price=None,
+                                                        size_precision=size_precision,
+                                                    )
+                                                    retry_sl_code = retry_sl.get('sl', {}).get('code', 'N/A') if retry_sl and retry_sl.get('sl') else 'N/A'
+                                                    if retry_sl_code == "00000":
+                                                        retry_sl_data = retry_sl.get('sl', {}).get('data', {}) if retry_sl and retry_sl.get('sl') else {}
+                                                        sl_order_id = retry_sl_data.get('orderId') if retry_sl_data else sl_order_id
+                                                        logger.info(f"✅ [STOP-LOSS RE-PLACED] {symbol} | New order ID: {sl_order_id}")
+                                            else:
+                                                # Not a timing issue - this is a real problem
+                                                logger.error(
+                                                    f"🚨 [STOP-LOSS NOT VERIFIED!] {symbol} | "
+                                                    f"Order ID {sl_order_id} is NOT active on exchange! | "
+                                                    f"This is the root cause of SAPIENUSDT (-42% loss)! | "
+                                                    f"Re-placing stop-loss immediately..."
+                                                )
+                                                # Re-place stop-loss immediately
+                                                retry_sl = await self.rest_client.place_tpsl_order(
+                                                    symbol=symbol,
+                                                    hold_side=side,
+                                                    size=actual_position_size,
+                                                    stop_loss_price=stop_loss_price,
+                                                    take_profit_price=None,
+                                                    size_precision=size_precision,
+                                                )
+                                                retry_sl_code = retry_sl.get('sl', {}).get('code', 'N/A') if retry_sl and retry_sl.get('sl') else 'N/A'
+                                                if retry_sl_code == "00000":
+                                                    retry_sl_data = retry_sl.get('sl', {}).get('data', {}) if retry_sl and retry_sl.get('sl') else {}
+                                                    sl_order_id = retry_sl_data.get('orderId') if retry_sl_data else sl_order_id
+                                                    logger.info(f"✅ [STOP-LOSS RE-PLACED] {symbol} | New order ID: {sl_order_id}")
                                     except Exception as e:
                                         logger.warning(f"⚠️ Failed to verify stop-loss for {symbol}: {e}")
                                 

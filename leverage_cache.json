@@ -3002,5 +3002,15 @@
     "leverage": 25,
     "timestamp": 1762546948.995724,
     "failed": false
+  },
+  "SKLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762550578.662647,
+    "failed": false
+  },
+  "SKLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762550579.200004,
+    "failed": false
   }
 }
