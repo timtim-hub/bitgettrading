@@ -2194,8 +2194,19 @@ class LiveTrader:
             try:  # CRITICAL: Wrap each trade in try-except so one failure doesn't stop all trades!
                 symbol = alloc["symbol"]
                 signal_side = alloc["predicted_side"]
+                signal_score = alloc["score"]  # Get signal score
                 regime = alloc["regime"]
                 position_size_multiplier = alloc["position_size_multiplier"]
+
+                # 🚀 CRITICAL: Check minimum score threshold BEFORE processing!
+                # This reduces trade frequency by only taking STRONG signals
+                min_score = self.config.min_entry_score_short if signal_side == "short" else self.config.min_entry_score
+                if signal_score < min_score:
+                    logger.debug(
+                        f"🚫 [ENTRY REJECTED] {symbol} | {signal_side.upper()} signal score ({signal_score:.2f}) below minimum ({min_score:.2f}) | "
+                        f"Skipping to reduce trade frequency"
+                    )
+                    continue
 
                 # Skip if already have position
                 if symbol in self.position_manager.positions:
@@ -2283,30 +2294,32 @@ class LiveTrader:
                                 )
                                 continue
                         else:  # short
-                            # Short position: require price to be falling across all timeframes
-                            if short_term_change > 0.03 or medium_term_change > 0.05 or long_term_change > 0.08:
-                                # Price is rising - REJECT short entry!
+                            # 🚀 FIX: Short position - RELAXED requirements (shorts are harder to find in bull markets)
+                            # Require price to be falling OR neutral (not strongly rising)
+                            # This allows shorts during pullbacks and consolidations, not just strong downtrends
+                            if short_term_change > 0.05 or medium_term_change > 0.08 or long_term_change > 0.12:
+                                # Price is STRONGLY rising - REJECT short entry!
                                 logger.warning(
-                                    f"🚫 [ENTRY REJECTED] {symbol} | SHORT signal but price is RISING! | "
+                                    f"🚫 [ENTRY REJECTED] {symbol} | SHORT signal but price is STRONGLY RISING! | "
                                     f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
-                                    f"Long: {long_term_change:.3f}% | Skipping to avoid entering during uptrend"
+                                    f"Long: {long_term_change:.3f}% | Skipping to avoid entering during strong uptrend"
                                 )
                                 continue
-                            elif short_term_change < -0.02 and medium_term_change < -0.03:
-                                # Price is falling - good to enter
+                            elif short_term_change < -0.01 or medium_term_change < -0.02:
+                                # Price is falling or slightly falling - good to enter
                                 logger.info(
-                                    f"✅ [ENTRY CONFIRMED] {symbol} | SHORT signal with FALLING price | "
+                                    f"✅ [ENTRY CONFIRMED] {symbol} | SHORT signal with FALLING/NEUTRAL price | "
                                     f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
                                     f"Long: {long_term_change:.3f}%"
                                 )
                             else:
-                                # Price is neutral/flat - wait for confirmation
-                                logger.debug(
-                                    f"⏳ [ENTRY WAIT] {symbol} | SHORT signal but price is neutral | "
+                                # Price is neutral/flat - ALLOW shorts (consolidation/pullback opportunity)
+                                logger.info(
+                                    f"✅ [ENTRY CONFIRMED] {symbol} | SHORT signal with NEUTRAL price (consolidation/pullback) | "
                                     f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
-                                    f"Waiting for price to start falling..."
+                                    f"Long: {long_term_change:.3f}%"
                                 )
-                                continue
+                                # Don't continue - allow entry on neutral price for shorts
                     else:
                         # Not enough price history - skip for now
                         logger.debug(f"⚠️ [ENTRY WAIT] {symbol} | Not enough price history ({len(recent_prices)} points), waiting...")
