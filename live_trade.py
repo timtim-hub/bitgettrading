@@ -1671,6 +1671,54 @@ class LiveTrader:
             if current_price == 0:
                 continue
 
+            # 🚨 CRITICAL: Check liquidation risk on EVERY position check!
+            # This prevents liquidations by closing positions before they get liquidated
+            position = self.position_manager.get_position(symbol)
+            if position:
+                try:
+                    # Get position data from exchange to check liquidation price
+                    endpoint = "/api/v2/mix/position/all-position"
+                    params = {"productType": "USDT-FUTURES", "marginCoin": "USDT"}
+                    response = await self.rest_client._request("GET", endpoint, params=params)
+                    
+                    if response.get("code") == "00000" and "data" in response:
+                        for pos_data in response.get("data", []):
+                            if pos_data.get("symbol") == symbol:
+                                liquidation_price = float(pos_data.get("liquidationPrice", 0))
+                                margin_ratio = float(pos_data.get("marginRatio", 0))
+                                mark_price = float(pos_data.get("markPrice", 0))
+                                
+                                if liquidation_price > 0 and mark_price > 0:
+                                    # Calculate distance to liquidation
+                                    if position.side == "long":
+                                        # For long: liquidation happens when price drops to liquidation_price
+                                        distance_to_liquidation_pct = ((mark_price - liquidation_price) / mark_price) * 100
+                                        # Emergency: close if within 2% of liquidation or margin ratio > 75%
+                                        if distance_to_liquidation_pct < 2.0 or margin_ratio > 0.75:
+                                            logger.error(
+                                                f"🚨 [LIQUIDATION RISK!] {symbol} | "
+                                                f"Price ${mark_price:.4f} is {distance_to_liquidation_pct:.2f}% from liquidation (${liquidation_price:.4f}) | "
+                                                f"Margin ratio: {margin_ratio*100:.2f}% | "
+                                                f"EMERGENCY CLOSURE to prevent liquidation!"
+                                            )
+                                            await self.close_position(symbol, exit_reason=f"EMERGENCY: Too close to liquidation (${liquidation_price:.4f}, margin: {margin_ratio*100:.1f}%)")
+                                            continue
+                                    else:  # short
+                                        # For short: liquidation happens when price rises to liquidation_price
+                                        distance_to_liquidation_pct = ((liquidation_price - mark_price) / mark_price) * 100
+                                        # Emergency: close if within 2% of liquidation or margin ratio > 75%
+                                        if distance_to_liquidation_pct < 2.0 or margin_ratio > 0.75:
+                                            logger.error(
+                                                f"🚨 [LIQUIDATION RISK!] {symbol} | "
+                                                f"Price ${mark_price:.4f} is {distance_to_liquidation_pct:.2f}% from liquidation (${liquidation_price:.4f}) | "
+                                                f"Margin ratio: {margin_ratio*100:.2f}% | "
+                                                f"EMERGENCY CLOSURE to prevent liquidation!"
+                                            )
+                                            await self.close_position(symbol, exit_reason=f"EMERGENCY: Too close to liquidation (${liquidation_price:.4f}, margin: {margin_ratio*100:.1f}%)")
+                                            continue
+                except Exception as e:
+                    logger.debug(f"⚠️ Failed to check liquidation price for {symbol} in main loop: {e}")
+
             # 🚨 CRITICAL: We use EXCHANGE-SIDE TP/SL orders - NO bot-side exit checking!
             # The exchange automatically closes positions when TP/SL triggers.
             # We only update position tracking data - we NEVER trigger exits from the bot!
@@ -1678,10 +1726,11 @@ class LiveTrader:
             # What we do:
             # 1. Update prices for tracking (for PnL display and logging)
             # 2. Detect when exchange closes positions (done in sync logic above, lines 1097-1139)
+            # 3. Monitor liquidation risk and close positions before liquidation
             # 
             # What we DON'T do:
             # - Check exit conditions (disabled - exchange handles it)
-            # - Manually close positions (only when exchange already closed them)
+            # - Manually close positions (only when exchange already closed them OR liquidation risk)
             # - Trigger any exits (exchange TP/SL handles all exits automatically)
             # 
             # This ensures positions close at EXACTLY the TP/SL prices we set on the exchange!
