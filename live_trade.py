@@ -528,81 +528,89 @@ class LiveTrader:
         trades_successful = 0
         
         for alloc in allocations:
-            symbol = alloc["symbol"]
-            signal_side = alloc["predicted_side"]
-            regime = alloc["regime"]
-            position_size_multiplier = alloc["position_size_multiplier"]
+            try:  # CRITICAL: Wrap each trade in try-except so one failure doesn't stop all trades!
+                symbol = alloc["symbol"]
+                signal_side = alloc["predicted_side"]
+                regime = alloc["regime"]
+                position_size_multiplier = alloc["position_size_multiplier"]
 
-            # Skip if already have position
-            if symbol in self.position_manager.positions:
-                continue
+                # Skip if already have position
+                if symbol in self.position_manager.positions:
+                    continue
 
-            # Skip if max positions reached
-            if len(self.position_manager.positions) >= self.max_positions:
-                break
+                # Skip if max positions reached
+                if len(self.position_manager.positions) >= self.max_positions:
+                    break
 
-            # Calculate position size (SMART SIZING based on signal strength + regime)
-            state = self.state_manager.get_state(symbol)
-            if not state:
-                continue
+                # Calculate position size (SMART SIZING based on signal strength + regime)
+                state = self.state_manager.get_state(symbol)
+                if not state:
+                    continue
 
-            price = state.last_price
-            if price == 0:
-                continue
+                price = state.last_price
+                if price == 0:
+                    continue
 
-            # Base position size with smart multiplier
-            base_position_value = self.equity * self.position_size_pct
-            adjusted_position_value = base_position_value * position_size_multiplier
-            size = (adjusted_position_value * self.leverage) / price
+                # Base position size with smart multiplier
+                base_position_value = self.equity * self.position_size_pct
+                adjusted_position_value = base_position_value * position_size_multiplier
+                size = (adjusted_position_value * self.leverage) / price
 
-            # Get regime-specific parameters
-            regime_params = self.regime_detector.get_regime_parameters(regime)
+                # Get regime-specific parameters
+                regime_params = self.regime_detector.get_regime_parameters(regime)
 
-            logger.info(
-                f"📈 {signal_side.upper()} {symbol} | "
-                f"Price: ${price:.4f} | Size: {size:.4f} (×{position_size_multiplier:.2f}) | "
-                f"Regime: {regime} | TP: {regime_params['take_profit_pct']*100:.1f}%"
-            )
-
-            # Place order
-            trades_attempted += 1
-            success = await self.place_order(symbol, signal_side, size, price)
-
-            if success:
-                trades_successful += 1
-                
-                # Extract entry metadata for loss tracking
-                entry_metadata = {
-                    "grade": alloc.get("grade", "Unknown"),
-                    "score": alloc.get("score", 0.0),
-                    "confluence": alloc.get("confluence", 0.0),
-                    "volume_ratio": alloc.get("volume_ratio", 1.0),
-                    "entry_structure": alloc.get("market_structure", "unknown"),
-                    "near_sr": alloc.get("near_sr", False),
-                    "rr_ratio": alloc.get("rr_ratio", 0.0),
-                }
-                
-                # Add to position manager with REGIME-BASED PARAMETERS + METADATA
-                self.position_manager.add_position(
-                    symbol=symbol,
-                    side=signal_side,
-                    entry_price=price,
-                    size=size,
-                    capital=adjusted_position_value / self.leverage,
-                    leverage=self.leverage,
-                    regime=regime,
-                    stop_loss_pct=regime_params["stop_loss_pct"],
-                    take_profit_pct=regime_params["take_profit_pct"],
-                    trailing_stop_pct=regime_params["trailing_stop_pct"],
-                    metadata=entry_metadata,
-                )
-                
                 logger.info(
-                    f"✅ Trade #{len(self.trades) + 1}: {signal_side.upper()} {symbol} @ ${price:.4f} | "
-                    f"Grade: {entry_metadata['grade']} | Structure: {entry_metadata['entry_structure']}"
+                    f"📈 {signal_side.upper()} {symbol} | "
+                    f"Price: ${price:.4f} | Size: {size:.4f} (×{position_size_multiplier:.2f}) | "
+                    f"Regime: {regime} | TP: {regime_params['take_profit_pct']*100:.1f}%"
                 )
-            else:
-                logger.error(f"❌ Failed to place order for {symbol}")
+
+                # Place order
+                trades_attempted += 1
+                success = await self.place_order(symbol, signal_side, size, price)
+
+                if success:
+                    trades_successful += 1
+                    
+                    # Extract entry metadata for loss tracking
+                    entry_metadata = {
+                        "grade": alloc.get("grade", "Unknown"),
+                        "score": alloc.get("score", 0.0),
+                        "confluence": alloc.get("confluence", 0.0),
+                        "volume_ratio": alloc.get("volume_ratio", 1.0),
+                        "entry_structure": alloc.get("market_structure", "unknown"),
+                        "near_sr": alloc.get("near_sr", False),
+                        "rr_ratio": alloc.get("rr_ratio", 0.0),
+                    }
+                    
+                    # Add to position manager with REGIME-BASED PARAMETERS + METADATA
+                    self.position_manager.add_position(
+                        symbol=symbol,
+                        side=signal_side,
+                        entry_price=price,
+                        size=size,
+                        capital=adjusted_position_value / self.leverage,
+                        leverage=self.leverage,
+                        regime=regime,
+                        stop_loss_pct=regime_params["stop_loss_pct"],
+                        take_profit_pct=regime_params["take_profit_pct"],
+                        trailing_stop_pct=regime_params["trailing_stop_pct"],
+                        metadata=entry_metadata,
+                    )
+                    
+                    logger.info(
+                        f"✅ Trade #{len(self.trades) + 1}: {signal_side.upper()} {symbol} @ ${price:.4f} | "
+                        f"Grade: {entry_metadata['grade']} | Structure: {entry_metadata['entry_structure']}"
+                    )
+                else:
+                    logger.error(f"❌ Failed to place order for {symbol}")
+                    
+            except Exception as e:
+                # Log error but CONTINUE to next trade (don't let one failure stop all 10!)
+                logger.error(f"❌ Error placing trade for {symbol}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                continue  # Move to next trade
         
         logger.info(f"📊 Trade execution complete: {trades_successful}/{trades_attempted} successful")
 
