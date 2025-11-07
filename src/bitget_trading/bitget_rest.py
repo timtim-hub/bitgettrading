@@ -307,6 +307,60 @@ class BitgetRestClient:
         )
         
         return response
+    
+    async def place_tpsl_order(
+        self,
+        symbol: str,
+        hold_side: str,  # "long" or "short" - which position to protect
+        stop_loss_price: float | None = None,
+        take_profit_price: float | None = None,
+        product_type: str = "USDT-FUTURES",
+    ) -> dict[str, Any]:
+        """
+        Place EXCHANGE-SIDE stop-loss/take-profit order.
+        
+        CRITICAL: This executes on Bitget's servers, NOT bot-side!
+        With 50x leverage, this is essential to prevent liquidations.
+        
+        Args:
+            symbol: Trading pair (e.g., "BTCUSDT")
+            hold_side: "long" or "short" - which position to protect
+            stop_loss_price: Stop loss trigger price (optional)
+            take_profit_price: Take profit trigger price (optional)
+            product_type: Product type
+        
+        Returns:
+            Order response
+        """
+        endpoint = "/api/v2/mix/order/place-tpsl-order"
+        
+        data = {
+            "symbol": symbol,
+            "productType": product_type,
+            "marginCoin": "USDT",
+            "holdSide": hold_side,
+        }
+        
+        # Add stop-loss (executes at market when price hits trigger)
+        if stop_loss_price:
+            data["stopLossPrice"] = str(stop_loss_price)
+        
+        # Add take-profit (executes at market when price hits trigger)
+        if take_profit_price:
+            data["takeProfitPrice"] = str(take_profit_price)
+        
+        response = await self._request("POST", endpoint, data=data)
+        
+        logger.info(
+            "tpsl_order_placed",
+            symbol=symbol,
+            hold_side=hold_side,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            response=response,
+        )
+        
+        return response
 
     async def get_ticker(
         self, symbol: str, product_type: str = "USDT-FUTURES"

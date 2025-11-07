@@ -133,7 +133,7 @@ class RegimeDetector:
         """
         if regime == MarketRegime.TRENDING:
             return {
-                "stop_loss_pct": 0.08,      # OPTIMIZED: 8% capital (0.16% price @ 50x)
+                "stop_loss_pct": 0.20,      # OPTIMIZED: 20% capital (0.4% price @ 50x) - symmetric SL/TP
                 "take_profit_pct": 0.20,    # OPTIMIZED: 20% capital (0.4% price @ 50x)
                 "trailing_stop_pct": 0.04,  # OPTIMIZED: 4% capital (0.08% price @ 50x)
                 "position_size_multiplier": 1.5,  # 50% larger for trending (was 1.2)
@@ -141,15 +141,15 @@ class RegimeDetector:
         
         elif regime == MarketRegime.RANGING:
             return {
-                "stop_loss_pct": 0.08,      # OPTIMIZED: Same 8% (ranging needs same protection)
-                "take_profit_pct": 0.10,    # OPTIMIZED: 10% in ranging (was 5%)
+                "stop_loss_pct": 0.20,      # OPTIMIZED: 20% capital (wider for volatility)
+                "take_profit_pct": 0.10,    # OPTIMIZED: 10% in ranging (tighter TP)
                 "trailing_stop_pct": 0.04,  # OPTIMIZED: Same 4% trailing
                 "position_size_multiplier": 1.0,  # Normal size for ranging (was 0.8)
             }
         
         elif regime == MarketRegime.BREAKOUT:
             return {
-                "stop_loss_pct": 0.08,      # OPTIMIZED: Same 8% (breakouts are volatile)
+                "stop_loss_pct": 0.20,      # OPTIMIZED: 20% capital (same as default)
                 "take_profit_pct": 0.25,    # OPTIMIZED: 25% for breakouts (high potential)
                 "trailing_stop_pct": 0.04,  # OPTIMIZED: Same 4% trailing
                 "position_size_multiplier": 1.3,  # 30% larger for breakouts (high conviction)
@@ -157,7 +157,7 @@ class RegimeDetector:
         
         elif regime == MarketRegime.VOLATILE:
             return {
-                "stop_loss_pct": 0.08,      # OPTIMIZED: Same 8% (volatile needs protection)
+                "stop_loss_pct": 0.20,      # OPTIMIZED: 20% capital (wider for volatility)
                 "take_profit_pct": 0.15,    # OPTIMIZED: 15% in volatile (was 8%)
                 "trailing_stop_pct": 0.04,  # OPTIMIZED: Same 4% trailing
                 "position_size_multiplier": 0.8,  # 20% smaller in volatile (not 40%) (risk reduction)
@@ -165,7 +165,7 @@ class RegimeDetector:
         
         else:  # Default
             return {
-                "stop_loss_pct": 0.08,      # OPTIMIZED: Same 8% for all regimes
+                "stop_loss_pct": 0.20,      # OPTIMIZED: 20% capital for all regimes
                 "take_profit_pct": 0.20,    # OPTIMIZED: 20% default
                 "trailing_stop_pct": 0.04,  # OPTIMIZED: Same 4% trailing
                 "position_size_multiplier": 1.0,

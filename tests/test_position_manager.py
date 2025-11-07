@@ -287,3 +287,5 @@ def test_check_exit_minimum_profit_lock(position_manager):
     should_close, _ = position_manager.check_exit_conditions(symbol, current_price_small_loss)
     assert should_close is False
 
+
+

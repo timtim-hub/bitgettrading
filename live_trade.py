@@ -255,11 +255,70 @@ class LiveTrader:
                     price=limit_price,
                 )
 
-                if order:
+                if order and order.get("code") == "00000":
                     logger.info(
                         f"✅ [LIVE] {side.upper()} {symbol} | Size: {size:.4f} | "
                         f"Order: {order.get('data', {}).get('orderId', 'N/A')}"
                     )
+                    
+                    # 🚨 CRITICAL: Place EXCHANGE-SIDE stop-loss/take-profit orders!
+                    # These execute on Bitget's servers instantly when price hits trigger
+                    # With 50x leverage, this prevents liquidation from bot-side delays
+                    
+                    # Wait a moment for order to fill
+                    await asyncio.sleep(0.5)
+                    
+                    # Calculate TP/SL prices (20% capital = 0.4% price @ 50x)
+                    # Use tighter SL/TP for exchange-side orders
+                    sl_price_pct = 0.004  # 0.4% price move = 20% capital @ 50x
+                    tp_price_pct = 0.004  # 0.4% price move = 20% capital @ 50x
+                    
+                    if side == "long":
+                        stop_loss_price = price * (1 - sl_price_pct)
+                        take_profit_price = price * (1 + tp_price_pct)
+                    else:  # short
+                        stop_loss_price = price * (1 + sl_price_pct)
+                        take_profit_price = price * (1 - tp_price_pct)
+                    
+                    # Round TP/SL prices to required precision
+                    if contract_info:
+                        price_place = contract_info.get("price_place", 2)
+                        stop_loss_price = round(stop_loss_price, price_place)
+                        take_profit_price = round(take_profit_price, price_place)
+                    else:
+                        if price > 1000:
+                            stop_loss_price = round(stop_loss_price, 1)
+                            take_profit_price = round(take_profit_price, 1)
+                        elif price > 10:
+                            stop_loss_price = round(stop_loss_price, 2)
+                            take_profit_price = round(take_profit_price, 2)
+                        else:
+                            stop_loss_price = round(stop_loss_price, 4)
+                            take_profit_price = round(take_profit_price, 4)
+                    
+                    try:
+                        # Place exchange-side TP/SL orders
+                        tpsl_order = await self.rest_client.place_tpsl_order(
+                            symbol=symbol,
+                            hold_side=side,  # "long" or "short"
+                            stop_loss_price=stop_loss_price,
+                            take_profit_price=take_profit_price,
+                        )
+                        
+                        if tpsl_order and tpsl_order.get("code") == "00000":
+                            logger.info(
+                                f"🛡️  [EXCHANGE-SIDE TP/SL] {symbol} | "
+                                f"SL: ${stop_loss_price:.4f} (-20% capital) | "
+                                f"TP: ${take_profit_price:.4f} (+20% capital)"
+                            )
+                        else:
+                            logger.warning(
+                                f"⚠️  Failed to place TP/SL for {symbol}: {tpsl_order}"
+                            )
+                    except Exception as e:
+                        logger.error(f"❌ Failed to place TP/SL orders: {e}")
+                        # Don't fail the trade if TP/SL placement fails - bot-side will handle it
+                    
                     return True
                 else:
                     logger.error(f"❌ Failed to place order for {symbol}")
@@ -611,7 +670,7 @@ class LiveTrader:
         iteration = 0
         last_entry_check_time = datetime.now()
         entry_check_interval_sec = 60  # Check for new entries every 60 seconds
-        position_check_interval_sec = 1  # Check exits every 1 second (ULTRA FAST!)
+        position_check_interval_sec = 0.5  # Check exits every 0.5 seconds (500ms - LIGHTNING FAST!)
 
         while self.running:
             try:
