@@ -581,10 +581,15 @@ class EnhancedRanker:
         scored_symbols.sort(key=lambda x: x["score"], reverse=True)
         
         # Correlation filter: Limit BTC-correlated positions
+        # But rank ALL symbols first, then filter (not just top_k)
         if btc_return != 0:
-            filtered = self._apply_correlation_filter(scored_symbols, all_features, top_k)
+            # Apply correlation filter but keep all symbols ranked
+            filtered = self._apply_correlation_filter(scored_symbols, all_features, len(scored_symbols))
         else:
-            filtered = scored_symbols[:top_k]
+            filtered = scored_symbols  # Return ALL ranked symbols, not just top_k
+        
+        # Return top_k only at the end (after ranking all)
+        return filtered[:top_k] if top_k < len(filtered) else filtered
         
         logger.info(
             "enhanced_ranking_complete",
@@ -594,13 +599,18 @@ class EnhancedRanker:
             skip_reasons=skip_reasons,
         )
         
-        if filtered:
+        # Return top_k (but we ranked ALL symbols first)
+        result = filtered[:top_k] if top_k < len(filtered) else filtered
+        
+        if result:
             logger.info(
                 "top_ranked",
-                top_3=[(s["symbol"], f"{s['score']:.3f}", s["regime"]) for s in filtered[:3]],
+                total_ranked=len(scored_symbols),
+                returned=len(result),
+                top_3=[(s["symbol"], f"{s['score']:.3f}", s["regime"]) for s in result[:3]],
             )
         
-        return filtered
+        return result
 
     def _apply_correlation_filter(
         self,

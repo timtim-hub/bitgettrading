@@ -1447,11 +1447,14 @@ class LiveTrader:
                     logger.info(f"[ENTRY CHECK #{iteration}] Looking for {available_slots} new positions")
                     logger.info(f"{'='*70}")
 
-                    # Rank symbols - ONLY for available slots (not full portfolio)
-                    allocations = self.enhanced_ranker.rank_symbols_enhanced(
+                    # Rank ALL symbols - then pick top ones for available slots
+                    # This ensures we're trading the BEST opportunities across ALL 300+ tokens!
+                    all_ranked = self.enhanced_ranker.rank_symbols_enhanced(
                         self.state_manager,
-                        top_k=available_slots,  # CRITICAL: Only rank for empty slots!
+                        top_k=len(self.symbols),  # Rank ALL symbols (300+)
                     )
+                    # Then take only the top ones for available slots
+                    allocations = all_ranked[:available_slots] if len(all_ranked) > available_slots else all_ranked
 
                     logger.info(f"📊 Found {len(allocations)} high-quality signals for empty slots")
                     if allocations:
@@ -1568,11 +1571,13 @@ class LiveTrader:
         total_available = len(self.symbols)
         logger.info(f"✅ Using ALL {len(self.symbols)} symbols (maximum opportunities!)")
         
-        # 🚨 CRITICAL: Set leverage to 25x for all symbols at startup
-        logger.info(f"🔧 [STARTUP] Setting leverage to {self.leverage}x for all symbols...")
+        # 🚨 CRITICAL: Set leverage to 25x for ALL symbols at startup (300+ tokens!)
+        logger.info(f"🔧 [STARTUP] Setting leverage to {self.leverage}x for ALL {len(self.symbols)} symbols...")
+        leverage_set_count = 0
+        leverage_failed_count = 0
         try:
-            # Set leverage for top 50 symbols (most likely to trade)
-            for symbol in self.symbols[:50]:
+            # Set leverage for ALL symbols (not just top 50!)
+            for i, symbol in enumerate(self.symbols, 1):
                 for hold_side in ["long", "short"]:
                     try:
                         response = await self.rest_client.set_leverage(
@@ -1581,16 +1586,25 @@ class LiveTrader:
                             hold_side=hold_side,
                         )
                         if response.get("code") == "00000":
-                            logger.debug(f"✅ [STARTUP] {symbol} {hold_side}: {self.leverage}x")
+                            leverage_set_count += 1
+                            if i <= 10 or i % 50 == 0:  # Log first 10 and every 50th
+                                logger.info(f"✅ [STARTUP] {symbol} {hold_side}: {self.leverage}x ({i}/{len(self.symbols)})")
                         else:
-                            logger.warning(
-                                f"⚠️ [STARTUP] {symbol} {hold_side}: Failed to set {self.leverage}x | "
-                                f"Code: {response.get('code')} | Msg: {response.get('msg', 'Unknown')}"
-                            )
+                            leverage_failed_count += 1
+                            if i <= 10:  # Log failures for first 10
+                                logger.warning(
+                                    f"⚠️ [STARTUP] {symbol} {hold_side}: Failed to set {self.leverage}x | "
+                                    f"Code: {response.get('code')} | Msg: {response.get('msg', 'Unknown')}"
+                                )
                     except Exception as e:
-                        logger.warning(f"⚠️ [STARTUP] {symbol} {hold_side}: Error setting leverage: {e}")
+                        leverage_failed_count += 1
+                        if i <= 10:  # Log errors for first 10
+                            logger.warning(f"⚠️ [STARTUP] {symbol} {hold_side}: Error setting leverage: {e}")
             
-            logger.info(f"✅ [STARTUP] Leverage setting complete for top 50 symbols")
+            logger.info(
+                f"✅ [STARTUP] Leverage setting complete: {leverage_set_count} successful, "
+                f"{leverage_failed_count} failed (out of {len(self.symbols) * 2} attempts)"
+            )
         except Exception as e:
             logger.error(f"❌ [STARTUP] Failed to set leverage at startup: {e}")
 
