@@ -726,7 +726,7 @@ class LiveTrader:
                                     if not tp_success and take_profit_price is not None:
                                         logger.info(f"🔄 [TP/SL RETRY] {symbol} | Retrying trailing TP order...")
                                         try:
-                                            trailing_range_rate = regime_params.get("trailing_stop_pct", 0.01) if regime_params else 0.01
+                                            trailing_range_rate = regime_params.get("trailing_stop_pct", 0.015) if regime_params else 0.015  # 1.5% callback rate (Rückrufquote)
                                             retry_tp = await self.rest_client.place_trailing_take_profit_order(
                                                 symbol=symbol,
                                                 hold_side=side,
