@@ -2174,14 +2174,26 @@ class LiveTrader:
                 # But rate-limit ticker fetching to avoid 429 errors
                 time_since_ticker_fetch = (datetime.now() - last_ticker_fetch).total_seconds()
                 if time_since_ticker_fetch >= ticker_fetch_interval_sec:
-                    ticker_dict = await self.universe_manager.fetch_tickers()
-                    last_ticker_fetch = datetime.now()
+                    try:
+                        ticker_dict = await self.universe_manager.fetch_tickers()
+                        last_ticker_fetch = datetime.now()
+                        # Cache ticker data for next iteration
+                        self._cached_tickers = ticker_dict
+                    except Exception as e:
+                        logger.warning(f"⚠️ [TICKER FETCH ERROR] {e} - Using cached data")
+                        # Use cached ticker data if fetch fails
+                        ticker_dict = getattr(self, '_cached_tickers', {})
+                        if not ticker_dict:
+                            logger.warning("⚠️ [TICKER FETCH] No cached data available, skipping this iteration")
+                            await asyncio.sleep(position_check_interval_sec)
+                            continue
                 else:
                     # Use cached ticker data if available
                     ticker_dict = getattr(self, '_cached_tickers', {})
-                
-                # Cache ticker data for next iteration
-                self._cached_tickers = ticker_dict
+                    if not ticker_dict:
+                        # No cached data yet, wait a bit
+                        await asyncio.sleep(position_check_interval_sec)
+                        continue
                 for symbol, ticker in ticker_dict.items():
                     if symbol not in self.symbols:
                         continue
