@@ -556,6 +556,18 @@ class LiveTrader:
                                     # Set it to min(take_profit_price, current_market_price * 0.999) with 0.1% buffer
                                     trailing_trigger_price = min(take_profit_price, current_market_price * 0.999)  # 0.1% below current to ensure it activates
                                 
+                                # 🚨 CRITICAL: Round trigger price to correct decimal places (error 40808: checkBDScale)
+                                # Bitget API requires trigger price to have exact precision based on contract's pricePlace
+                                # Get price precision from contract info
+                                price_precision = contract_info.get("price_place", 4) if contract_info else 4  # Default to 4 if not available
+                                trailing_trigger_price = round(trailing_trigger_price, price_precision)
+                                logger.info(
+                                    f"🔧 [TRIGGER PRICE PRECISION] {symbol} | "
+                                    f"Original: {max(take_profit_price, current_market_price * 1.001) if side == 'long' else min(take_profit_price, current_market_price * 0.999)} | "
+                                    f"Rounded: {trailing_trigger_price} | "
+                                    f"Precision: {price_precision} decimal places"
+                                )
+                                
                                 # "Rückrufpreis" (callback price) = trigger_price - this is when trailing activates
                                 logger.info(
                                     f"🧵 [TRAILING TP SETUP] {symbol} | "
