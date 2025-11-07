@@ -2238,5 +2238,13 @@
   "B2USDT_short": {
     "leverage": 25,
     "timestamp": 1762506059.470714
+  },
+  "EULUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762507823.620897
+  },
+  "EULUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762507824.233435
   }
 }

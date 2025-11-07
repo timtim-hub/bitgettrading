@@ -513,17 +513,17 @@ class BitgetRestClient:
         results: dict[str, Any] = {"sl": None, "tp": None}
 
         # 🚨 CRITICAL FIX: Round size to correct precision (Bitget API requires specific decimal places)
-        # Different contracts have different checkScale values:
-        # - checkScale=0: whole numbers (no decimals) - e.g., THETAUSDT, SUSHIUSDT
-        # - checkScale=1: 1 decimal place - e.g., LTCUSDT, BNBUSDT
-        # If not specified, try to infer from size value or default to 1
+        # Must preserve all significant digits to avoid rounding to 0!
+        # Example: 0.009 should NOT round to 0.0, it needs precision 3!
         if size_precision is None:
-            # Try to infer: if size is already a whole number or very close, use 0
-            # Otherwise default to 1
-            if abs(size - round(size)) < 0.01:  # Very close to whole number
-                size_precision = 0
+            # Convert to string and count decimal places
+            size_str = f"{size:.10f}".rstrip('0').rstrip('.')
+            if '.' in size_str:
+                size_precision = len(size_str.split('.')[1])
             else:
-                size_precision = 1  # Default to 1 decimal place
+                size_precision = 0
+            # Ensure at least the precision needed to represent the number
+            size_precision = max(size_precision, 0)
         rounded_size = round(size, size_precision)
 
         # 🚨 EXTENSIVE LOGGING: Log all input parameters
@@ -826,11 +826,16 @@ class BitgetRestClient:
         endpoint = "/api/v2/mix/order/place-tpsl-order"
 
         # Round size to correct precision
+        # 🚨 CRITICAL: Must preserve all significant digits to avoid rounding to 0!
         if size_precision is None:
-            if abs(size - round(size)) < 0.01:
-                size_precision = 0
+            # Convert to string and count decimal places
+            size_str = f"{size:.10f}".rstrip('0').rstrip('.')
+            if '.' in size_str:
+                size_precision = len(size_str.split('.')[1])
             else:
-                size_precision = 1
+                size_precision = 0
+            # Ensure at least the precision needed to represent the number
+            size_precision = max(size_precision, 0)
         rounded_size = round(size, size_precision)
 
         # Convert "long"/"short" to "buy"/"sell" for one-way mode
