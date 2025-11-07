@@ -607,6 +607,7 @@ class BitgetRestClient:
                         raise
         
         # Place STOP-LOSS order (separate order #1)
+        # Place STOP-LOSS order with retry logic
         if stop_loss_price is not None:
             sl_data = {
                 "symbol": symbol,
@@ -626,30 +627,48 @@ class BitgetRestClient:
                 f"holdSide={api_hold_side}, triggerPrice={stop_loss_price}, "
                 f"executePrice=0, size={size}"
             )
-            try:
-                results["sl"] = await _post_plan(sl_data, "STOP-LOSS", size)
-                code = results["sl"].get("code") if results["sl"] else "NO_CODE"
-                msg = results["sl"].get("msg") if results["sl"] else "NO_MSG"
-                data = results["sl"].get("data") if results["sl"] else None
-                logger.info(
-                    f"✅ [EXCHANGE SL] {symbol} @ ${stop_loss_price:.4f} | "
-                    f"Size: {size:.4f} | holdSide: {api_hold_side} | "
-                    f"Code: {code} | Msg: {msg} | Data: {data}"
-                )
-                if code != "00000":
-                    logger.error(
-                        f"❌ [EXCHANGE SL ERROR] {symbol} | "
-                        f"API returned error code: {code} | Message: {msg} | Full response: {results['sl']}"
+            # Retry logic for SL placement
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    results["sl"] = await _post_plan(sl_data, "STOP-LOSS", size)
+                    code = results["sl"].get("code") if results["sl"] else "NO_CODE"
+                    msg = results["sl"].get("msg") if results["sl"] else "NO_MSG"
+                    data = results["sl"].get("data") if results["sl"] else None
+                    if code == "00000":
+                        logger.info(
+                            f"✅ [EXCHANGE SL] {symbol} @ ${stop_loss_price:.4f} | "
+                            f"Size: {size:.4f} | holdSide: {api_hold_side} | "
+                            f"Code: {code} | Msg: {msg} | Data: {data}"
+                        )
+                        break  # Success, exit retry loop
+                    else:
+                        logger.warning(
+                            f"⚠️  [EXCHANGE SL ERROR] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                            f"API returned error code: {code} | Message: {msg} | Full response: {results['sl']}"
+                        )
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(1.0)  # Wait before retry
+                        else:
+                            logger.error(
+                                f"❌ [EXCHANGE SL FAILED] {symbol} | "
+                                f"Failed after {max_retries} attempts! Code: {code} | Msg: {msg}"
+                            )
+                except Exception as e:
+                    logger.warning(
+                        f"⚠️  [EXCHANGE SL EXCEPTION] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                        f"Exception: {e} | Type: {type(e).__name__}"
                     )
-            except Exception as e:
-                logger.error(
-                    f"❌ [EXCHANGE SL EXCEPTION] {symbol} | "
-                    f"Exception: {e} | Type: {type(e).__name__} | "
-                    f"Traceback: {str(e)}"
-                )
-                results["sl"] = {"code": "error", "msg": str(e)}
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(1.0)  # Wait before retry
+                    else:
+                        logger.error(
+                            f"❌ [EXCHANGE SL FAILED] {symbol} | "
+                            f"Failed after {max_retries} attempts! Exception: {e}"
+                        )
+                        results["sl"] = {"code": "error", "msg": str(e)}
         
-        # Place TAKE-PROFIT order (separate order #2)
+        # Place TAKE-PROFIT order with retry logic
         if take_profit_price is not None:
             tp_data = {
                 "symbol": symbol,
@@ -669,28 +688,46 @@ class BitgetRestClient:
                 f"holdSide={api_hold_side}, triggerPrice={take_profit_price}, "
                 f"executePrice=0, size={size}"
             )
-            try:
-                results["tp"] = await _post_plan(tp_data, "TAKE-PROFIT", size)
-                code = results["tp"].get("code") if results["tp"] else "NO_CODE"
-                msg = results["tp"].get("msg") if results["tp"] else "NO_MSG"
-                data = results["tp"].get("data") if results["tp"] else None
-                logger.info(
-                    f"✅ [EXCHANGE TP] {symbol} @ ${take_profit_price:.4f} | "
-                    f"Size: {size:.4f} | holdSide: {api_hold_side} | "
-                    f"Code: {code} | Msg: {msg} | Data: {data}"
-                )
-                if code != "00000":
-                    logger.error(
-                        f"❌ [EXCHANGE TP ERROR] {symbol} | "
-                        f"API returned error code: {code} | Message: {msg} | Full response: {results['tp']}"
+            # Retry logic for TP placement
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    results["tp"] = await _post_plan(tp_data, "TAKE-PROFIT", size)
+                    code = results["tp"].get("code") if results["tp"] else "NO_CODE"
+                    msg = results["tp"].get("msg") if results["tp"] else "NO_MSG"
+                    data = results["tp"].get("data") if results["tp"] else None
+                    if code == "00000":
+                        logger.info(
+                            f"✅ [EXCHANGE TP] {symbol} @ ${take_profit_price:.4f} | "
+                            f"Size: {size:.4f} | holdSide: {api_hold_side} | "
+                            f"Code: {code} | Msg: {msg} | Data: {data}"
+                        )
+                        break  # Success, exit retry loop
+                    else:
+                        logger.warning(
+                            f"⚠️  [EXCHANGE TP ERROR] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                            f"API returned error code: {code} | Message: {msg} | Full response: {results['tp']}"
+                        )
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(1.0)  # Wait before retry
+                        else:
+                            logger.error(
+                                f"❌ [EXCHANGE TP FAILED] {symbol} | "
+                                f"Failed after {max_retries} attempts! Code: {code} | Msg: {msg}"
+                            )
+                except Exception as e:
+                    logger.warning(
+                        f"⚠️  [EXCHANGE TP EXCEPTION] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                        f"Exception: {e} | Type: {type(e).__name__}"
                     )
-            except Exception as e:
-                logger.error(
-                    f"❌ [EXCHANGE TP EXCEPTION] {symbol} | "
-                    f"Exception: {e} | Type: {type(e).__name__} | "
-                    f"Traceback: {str(e)}"
-                )
-                results["tp"] = {"code": "error", "msg": str(e)}
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(1.0)  # Wait before retry
+                    else:
+                        logger.error(
+                            f"❌ [EXCHANGE TP FAILED] {symbol} | "
+                            f"Failed after {max_retries} attempts! Exception: {e}"
+                        )
+                        results["tp"] = {"code": "error", "msg": str(e)}
         
         # Final summary
         logger.info(
