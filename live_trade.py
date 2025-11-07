@@ -516,12 +516,29 @@ class LiveTrader:
                                 # 2. Place trailing take profit order (moving_plan)
                                 # Calculate trailing TP parameters
                                 trailing_range_rate = regime_params.get("trailing_stop_pct", 0.01) if regime_params else 0.01  # 1% trailing
-                                # Trigger price is the TP threshold price (when trailing TP becomes active)
-                                # "Rückrufpreis" (callback price) = trigger_price - this is when trailing activates
-                                trailing_trigger_price = take_profit_price  # Activate trailing TP at TP threshold
                                 
+                                # 🚨 CRITICAL: Get current market price for trigger price calculation
+                                # Bitget API requires: trigger price ≥ current market price (for longs)
+                                # We need to get the current market price, not use entry price
+                                state = self.state_manager.get_state(symbol)
+                                current_market_price = state.last_price if state and state.last_price > 0 else price
+                                
+                                # 🚨 CRITICAL FIX: Trigger price must be ≥ current market price (error 43035)
+                                # For LONG: trigger price must be ≥ current price (activates when price goes up)
+                                # For SHORT: trigger price must be ≤ current price (activates when price goes down)
+                                if side == "long":
+                                    # For long positions, trigger price must be ≥ current market price
+                                    # Set it to max(take_profit_price, current_market_price) or slightly above current
+                                    trailing_trigger_price = max(take_profit_price, current_market_price * 1.0001)  # Slightly above current to ensure it activates
+                                else:  # short
+                                    # For short positions, trigger price must be ≤ current market price
+                                    # Set it to min(take_profit_price, current_market_price) or slightly below current
+                                    trailing_trigger_price = min(take_profit_price, current_market_price * 0.9999)  # Slightly below current to ensure it activates
+                                
+                                # "Rückrufpreis" (callback price) = trigger_price - this is when trailing activates
                                 logger.info(
                                     f"🧵 [TRAILING TP SETUP] {symbol} | "
+                                    f"Side: {side.upper()} | Current Price: ${current_market_price:.4f} | "
                                     f"Trigger Price (Rückrufpreis): ${trailing_trigger_price:.4f} | "
                                     f"Range Rate: {trailing_range_rate*100:.2f}% | "
                                     f"TP Threshold: ${take_profit_price:.4f}"
