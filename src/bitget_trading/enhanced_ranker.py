@@ -121,7 +121,7 @@ class EnhancedRanker:
         # ULTRA-SHORT-TERM: Adjust for faster timeframes (1s-30s)
         # With 1s-30s timeframes, most moves are 0.03-0.1%
         # Target: 0.03%+ on ultra-short = scalping opportunity (1.5%+ capital @ 50x)
-        if confluence_strength < 0.0005:  # STRICT: 0.05% average return = 2.5% capital @ 50x
+        if confluence_strength < 0.0007:  # STRICTER: 0.07% average return = 1.75% capital @ 25x
             return 0.0, "neutral", {"reason": "weak_confluence"}
         
         # 1.5. FEE-ADJUSTED FILTER: Expected profit must exceed fees
@@ -177,7 +177,7 @@ class EnhancedRanker:
         # 8. Momentum threshold (STRICT: Need strong momentum!)
         # For quality trades, need meaningful price movement
         return_5s = features.get("return_5s", 0.0)
-        if abs(return_5s) < 0.0004 and abs(return_15s) < 0.0006:  # Need stronger momentum!
+        if abs(return_5s) < 0.0006 and abs(return_15s) < 0.001:  # STRICTER: Need even stronger momentum!
             return 0.0, "neutral", {"reason": "weak_momentum"}
         
         # 9. Funding rate bias (EXPLOIT FUNDING!)
@@ -288,7 +288,7 @@ class EnhancedRanker:
             )
         
         # ULTRA-STRICT: Only take PERFECT signals (A-grade + very high score)
-        if final_score < 0.8:  # VERY high quality bar for 70%+ win rate
+        if final_score < 1.0:  # STRICTER: Even higher quality bar for 75%+ win rate
             return 0.0, "neutral", {"reason": "low_score"}
         
         # Build metadata with trade quality info for loss tracking
