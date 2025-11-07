@@ -584,6 +584,68 @@ class LiveTrader:
                                             f"Actual leverage: {actual_leverage}x (requested: {self.leverage}x)"
                                         )
                                         
+                                        # 🚨 CRITICAL FIX: Recalculate stop-loss price using ACTUAL leverage!
+                                        # If actual leverage is different from requested, the stop-loss price will be wrong!
+                                        # This is why AEROUSDT closed at -4% instead of -50% and SOPHUSDT closed at 0.47% instead of higher TP!
+                                        if actual_leverage != self.leverage and regime_params:
+                                            logger.warning(
+                                                f"⚠️ [LEVERAGE MISMATCH] {symbol} | "
+                                                f"Actual leverage ({actual_leverage}x) != requested ({self.leverage}x)! | "
+                                                f"Recalculating stop-loss price using actual leverage..."
+                                            )
+                                            # Recalculate stop-loss price using actual leverage
+                                            sl_capital_pct = regime_params["stop_loss_pct"]
+                                            sl_price_pct = sl_capital_pct / actual_leverage
+                                            
+                                            # Get entry price from position
+                                            entry_price_actual = float(pos.get("openPriceAvg", price))
+                                            
+                                            # Store original stop-loss price for logging
+                                            original_sl_price = stop_loss_price
+                                            
+                                            # Recalculate stop-loss price
+                                            if side == "long":
+                                                stop_loss_price = entry_price_actual * (1 - sl_price_pct)
+                                            else:  # short
+                                                stop_loss_price = entry_price_actual * (1 + sl_price_pct)
+                                            
+                                            # Round to correct precision
+                                            contract_info = self.universe_manager.get_contract_info(symbol)
+                                            if contract_info:
+                                                price_place = contract_info.get("price_place", 4)
+                                                stop_loss_price = round(stop_loss_price, price_place)
+                                            
+                                            # Also recalculate take-profit price if needed (for trailing TP trigger)
+                                            if regime_params:
+                                                tp_capital_pct = regime_params["take_profit_pct"]
+                                                tp_price_pct = tp_capital_pct / actual_leverage
+                                                
+                                                # Recalculate take-profit price
+                                                if side == "long":
+                                                    take_profit_price = entry_price_actual * (1 + tp_price_pct)
+                                                else:  # short
+                                                    take_profit_price = entry_price_actual * (1 - tp_price_pct)
+                                                
+                                                # Round to correct precision
+                                                if contract_info:
+                                                    take_profit_price = round(take_profit_price, price_place)
+                                                
+                                                logger.warning(
+                                                    f"🔧 [TP RECALC] {symbol} | "
+                                                    f"New TP: ${take_profit_price:.4f} (recalculated with {actual_leverage}x) | "
+                                                    f"TP capital %: {tp_capital_pct*100:.0f}% | "
+                                                    f"TP price %: {tp_price_pct*100:.4f}%"
+                                                )
+                                            
+                                            logger.warning(
+                                                f"🔧 [SL RECALC] {symbol} | "
+                                                f"Original SL: ${original_sl_price:.4f} (calculated with {self.leverage}x) | "
+                                                f"New SL: ${stop_loss_price:.4f} (recalculated with {actual_leverage}x) | "
+                                                f"Entry: ${entry_price_actual:.4f} | "
+                                                f"SL capital %: {sl_capital_pct*100:.0f}% | "
+                                                f"SL price %: {sl_price_pct*100:.4f}%"
+                                            )
+                                        
                                         # Store actual leverage for use in TP/SL placement (accessible to retry logic)
                                         # This ensures callback ratio uses correct leverage even if token can't be set to 25x
                                         
