@@ -801,7 +801,10 @@ class BitgetRestClient:
         """
         Place exchange-side trailing take profit order using Bitget's moving_plan API.
 
-        🚨 CRITICAL: This uses the place-tpsl-order endpoint with planType="moving_plan"
+        🚨 CRITICAL: This uses planType="moving_plan" with size="0" for NORMAL mode!
+        - size="0" → Closes ENTIRE position (displays as "normal mode" in Bitget app) ✅
+        - size=<number> → Closes SPECIFIC amount (displays as "partial mode" in app) ❌
+        
         The trailing take profit will automatically adjust as price moves in your favor!
 
         Args:
@@ -833,16 +836,18 @@ class BitgetRestClient:
         # Convert decimal to percentage: 0.015 → "1.50", 0.02 → "2.00", 0.001 → "0.10"
         formatted_range_rate = f"{range_rate * 100:.2f}"  # Convert to percentage and format to 2 decimal places
 
+        # 🚨 CRITICAL FIX: Use "0" as size to indicate ENTIRE POSITION (normal mode)!
+        # Bitget API:
+        # - size="0" → Close ENTIRE position (displays as "normal mode" in app) ✅
+        # - size=<exact number> → Close SPECIFIC amount (displays as "partial mode" in app) ❌
         data = {
             "symbol": symbol,
             "productType": product_type,  # "usdt-futures" (lowercase)
             "marginMode": "isolated",
             "marginCoin": "USDT",
-            "planType": "moving_plan",  # Trailing take profit order type (normal trailing mode)
+            "planType": "moving_plan",  # Trailing take profit order type
             "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
-            "size": str(
-                rounded_size
-            ),  # Size in contracts (MUST match position size EXACTLY!)
+            "size": "0",  # 🚨 CRITICAL: "0" = ENTIRE POSITION (normal mode)! NOT specific size (partial mode)!
             "rangeRate": formatted_range_rate,  # Trailing callback rate as percentage (e.g., "2.00" = 2%, "1.50" = 1.5%, must be 2 decimal places!)
             "triggerPrice": str(
                 trigger_price
@@ -852,9 +857,10 @@ class BitgetRestClient:
         }
 
         logger.info(
-            f"🧵 [TRAILING TP ORDER - NORMAL MODE] {symbol} | "
+            f"🧵 [TRAILING TP ORDER - NORMAL/FULL MODE] {symbol} | "
+            f"planType=moving_plan | "
+            f"size=0 (ENTIRE POSITION - normal mode, NOT partial!) | "
             f"hold_side: {hold_side} → API holdSide: {api_hold_side} | "
-            f"size: {size} → rounded: {rounded_size} (MUST match position EXACTLY!) | "
             f"callback_rate: {range_rate*100:.2f}% (Rückrufquote) → API: {formatted_range_rate} | "
             f"trigger_price: {trigger_price} (activation price) | "
             f"product_type: {product_type}"
@@ -871,10 +877,11 @@ class BitgetRestClient:
 
                 if code == "00000":
                     logger.info(
-                        f"✅ [TRAILING TP PLACED - NORMAL MODE] {symbol} | "
+                        f"✅ [TRAILING TP PLACED - NORMAL/FULL MODE] {symbol} | "
+                        f"planType=moving_plan | "
+                        f"size=0 (ENTIRE POSITION - should show as NORMAL mode in Bitget app!) | "
                         f"Callback Rate: {range_rate*100:.2f}% (Rückrufquote) | "
                         f"Trigger Price: {trigger_price} (activation) | "
-                        f"Size: {rounded_size} contracts (must match position EXACTLY!) | "
                         f"Order ID: {data_resp.get('orderId', 'N/A')}"
                     )
                     return response
