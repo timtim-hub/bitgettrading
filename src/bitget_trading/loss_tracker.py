@@ -54,7 +54,26 @@ class TradeRecord:
     exit_reason: str  # stop_loss, take_profit, trailing_stop, time_exit, manual, etc.
     time_in_trade_seconds: float
     
-    # Technical indicators at entry (for evaluation and improvement) - with defaults at end
+    # Performance
+    pnl_usd: float
+    pnl_pct_capital: float  # PnL as % of capital (leveraged)
+    pnl_pct_price: float  # Actual price movement %
+    fees_paid: float
+    slippage_cost: float
+    net_pnl: float  # PnL after fees and slippage
+    
+    # Market conditions
+    exit_market_structure: str
+    peak_pnl: float  # Highest PnL reached
+    drawdown_from_peak: float  # How much we gave back
+    
+    # Outcomes
+    is_win: bool
+    is_loss: bool
+    stopped_out: bool  # Hit stop-loss
+    took_profit: bool  # Hit take-profit
+    
+    # Technical indicators at entry (for evaluation and improvement) - ALL with defaults at end
     entry_rsi: float = 50.0  # RSI value at entry
     entry_macd_line: float = 0.0  # MACD line at entry
     entry_macd_signal: float = 0.0  # MACD signal at entry
@@ -74,25 +93,6 @@ class TradeRecord:
     entry_spread_bps: float = 0.0  # Spread in basis points at entry
     entry_ob_imbalance: float = 0.0  # Order book imbalance at entry
     entry_funding_rate: float = 0.0  # Funding rate at entry
-    
-    # Performance
-    pnl_usd: float
-    pnl_pct_capital: float  # PnL as % of capital (leveraged)
-    pnl_pct_price: float  # Actual price movement %
-    fees_paid: float
-    slippage_cost: float
-    net_pnl: float  # PnL after fees and slippage
-    
-    # Market conditions
-    exit_market_structure: str
-    peak_pnl: float  # Highest PnL reached
-    drawdown_from_peak: float  # How much we gave back
-    
-    # Outcomes
-    is_win: bool
-    is_loss: bool
-    stopped_out: bool  # Hit stop-loss
-    took_profit: bool  # Hit take-profit
     
     def to_dict(self):
         """Convert to dictionary for logging."""
