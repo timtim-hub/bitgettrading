@@ -825,6 +825,13 @@ class EnhancedRanker:
                 # RELAXED: Only reject shorts in STRONG uptrends (8+ votes out of 10)
                 # Allow shorts in weak/moderate uptrends (pullbacks/reversals)
                 uptrend_votes = market_structure.get("uptrend_votes", 10)
+                logger.info(
+                    f"🔍 [SHORT VS UPTREND] {state.symbol} | SHORT signal in UPTREND | "
+                    f"uptrend_votes={uptrend_votes}/10, structure={market_structure.get('structure')}, "
+                    f"ema_trend={market_structure.get('ema_trend', 'unknown')}, "
+                    f"slope_trend={market_structure.get('slope_trend', 'unknown')}, "
+                    f"swing_trend={market_structure.get('swing_trend', 'unknown')}"
+                )
                 if uptrend_votes >= 8:  # Very strong uptrend (80%+)
                     logger.debug(
                         "trade_rejected_against_structure",
