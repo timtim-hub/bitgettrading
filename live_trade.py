@@ -307,7 +307,8 @@ class LiveTrader:
                     except Exception as e:
                         logger.error(f"❌ Order placement error: {e}")
                         return False
-                return False # This is the misplaced line from 310, now correctly placed
+
+                return False # Final fallback if can_open_new_position() is False or all attempts fail
 
     async def close_position(self, symbol: str, exit_reason: str = "MANUAL") -> bool:
         """Close an existing position."""
