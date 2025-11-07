@@ -575,6 +575,26 @@ class LiveTrader:
                                     f"Exception: {e} | Type: {type(e).__name__} | "
                                     f"Traceback: {traceback.format_exc()}"
                                 )
+                                # Retry entire TP/SL placement
+                                logger.info(f"🔄 [TP/SL RETRY] {symbol} | Retrying entire TP/SL placement...")
+                                try:
+                                    await asyncio.sleep(2.0)  # Wait before retry
+                                    retry_results = await self.rest_client.place_tpsl_order(
+                                        symbol=symbol,
+                                        hold_side=side,
+                                        size=actual_position_size,
+                                        stop_loss_price=stop_loss_price,
+                                        take_profit_price=take_profit_price,
+                                        size_precision=size_precision,
+                                    )
+                                    retry_sl_code = retry_results.get('sl', {}).get('code', 'N/A') if retry_results.get('sl') else 'N/A'
+                                    retry_tp_code = retry_results.get('tp', {}).get('code', 'N/A') if retry_results.get('tp') else 'N/A'
+                                    if retry_sl_code == "00000" and retry_tp_code == "00000":
+                                        logger.info(f"✅ [TP/SL RETRY SUCCESS] {symbol} | Both orders placed successfully on retry!")
+                                    else:
+                                        logger.error(f"❌ [TP/SL RETRY FAILED] {symbol} | SL: {retry_sl_code}, TP: {retry_tp_code}")
+                                except Exception as e2:
+                                    logger.error(f"❌ [TP/SL RETRY EXCEPTION] {symbol} | Retry also failed: {e2}")
                                 # Continue anyway - bot-side monitoring will handle it
 
                             return True
