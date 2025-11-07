@@ -338,42 +338,121 @@ class LiveTrader:
                             # 🚨 CRITICAL: Wait for order to fill, then get ACTUAL position size from exchange
                             # The calculated size might not match the actual filled size
                             # This prevents "Insufficient position" errors (code 43023)
-                            await asyncio.sleep(1.0)  # Wait 1 second for market order to fill
+                            # Market orders should fill instantly, but position query might lag
+                            await asyncio.sleep(2.0)  # Wait 2 seconds for market order to fill and position to update
                             
-                            # Query actual position from exchange
+                            # Query actual position from exchange with retry
+                            # Sometimes the position query returns 0 or wrong size immediately after fill
                             actual_position_size = size  # Fallback to calculated size
-                            try:
-                                positions = await self.rest_client.get_positions(symbol)
-                                if positions:
-                                    pos = positions[0]
-                                    actual_position_size = float(pos.get("total", size))
-                                    actual_side = pos.get("holdSide", "long")
-                                    logger.info(
-                                        f"📊 [POSITION QUERY] {symbol} | "
-                                        f"Actual size from exchange: {actual_position_size} | "
-                                        f"Calculated size: {size} | "
-                                        f"Side: {actual_side}"
-                                    )
-                                    if actual_position_size <= 0:
-                                        logger.warning(
-                                            f"⚠️  [POSITION WARNING] {symbol} | "
-                                            f"Position size is 0 or negative! "
-                                            f"Order might not have filled yet. Skipping TP/SL."
+                            max_retries = 3
+                            retry_delay = 1.0
+                            for attempt in range(max_retries):
+                                try:
+                                    positions = await self.rest_client.get_positions(symbol)
+                                    if positions:
+                                        pos = positions[0]
+                                        # 🚨 CRITICAL: Log FULL position response to debug "partial SL" issue
+                                        logger.info(
+                                            f"🔍 [POSITION FULL RESPONSE] {symbol} | "
+                                            f"Full position data: {pos}"
                                         )
-                                        return True  # Order placed, but position not filled yet
-                                else:
-                                    logger.warning(
-                                        f"⚠️  [POSITION WARNING] {symbol} | "
-                                        f"No position found on exchange! "
-                                        f"Order might not have filled yet. Skipping TP/SL."
-                                    )
-                                    return True  # Order placed, but position not filled yet
-                            except Exception as e:
-                                logger.warning(
-                                    f"⚠️  [POSITION QUERY ERROR] {symbol} | "
-                                    f"Failed to query position: {e} | "
-                                    f"Using calculated size: {size}"
-                                )
+                                        # Try multiple fields: total, available, size
+                                        # Bitget API might use different field names
+                                        total_size = pos.get("total") or pos.get("size") or pos.get("available")
+                                        if total_size is None:
+                                            # Fallback: try to find any numeric field that looks like size
+                                            for key, value in pos.items():
+                                                if "size" in key.lower() or "total" in key.lower() or "available" in key.lower():
+                                                    if isinstance(value, (int, float)) and value > 0:
+                                                        total_size = value
+                                                        logger.info(
+                                                            f"🔍 [POSITION FIELD FOUND] {symbol} | "
+                                                            f"Using field '{key}' = {value}"
+                                                        )
+                                                        break
+                                        
+                                        if total_size is not None:
+                                            actual_position_size = float(total_size)
+                                        else:
+                                            logger.warning(
+                                                f"⚠️  [POSITION FIELD MISSING] {symbol} | "
+                                                f"Could not find size field in position response! "
+                                                f"Available fields: {list(pos.keys())} | "
+                                                f"Using calculated size: {size}"
+                                            )
+                                            actual_position_size = size
+                                        
+                                        actual_side = pos.get("holdSide", "long")
+                                        logger.info(
+                                            f"📊 [POSITION QUERY] {symbol} | "
+                                            f"Actual size from exchange: {actual_position_size} | "
+                                            f"Calculated size: {size} | "
+                                            f"Difference: {abs(actual_position_size - size):.4f} | "
+                                            f"Side: {actual_side}"
+                                        )
+                                        
+                                        # 🚨 CRITICAL: Check if actual size is significantly less than calculated
+                                        # This could indicate partial fill or margin issue
+                                        if actual_position_size < size * 0.9:  # More than 10% difference
+                                            logger.warning(
+                                                f"⚠️  [POSITION SIZE MISMATCH] {symbol} | "
+                                                f"Actual size ({actual_position_size}) is significantly less than "
+                                                f"calculated size ({size})! This could cause 'partial SL' issue. "
+                                                f"Possible reasons: partial fill, margin issue, or frozen position."
+                                            )
+                                        
+                                        if actual_position_size <= 0:
+                                            if attempt < max_retries - 1:
+                                                logger.warning(
+                                                    f"⚠️  [POSITION RETRY] {symbol} | "
+                                                    f"Position size is 0 or negative (attempt {attempt + 1}/{max_retries})! "
+                                                    f"Retrying in {retry_delay}s..."
+                                                )
+                                                await asyncio.sleep(retry_delay)
+                                                continue
+                                            else:
+                                                logger.warning(
+                                                    f"⚠️  [POSITION WARNING] {symbol} | "
+                                                    f"Position size is still 0 or negative after {max_retries} attempts! "
+                                                    f"Order might not have filled yet. Skipping TP/SL."
+                                                )
+                                                return True  # Order placed, but position not filled yet
+                                        else:
+                                            # Got valid position size, break out of retry loop
+                                            break
+                                    else:
+                                        if attempt < max_retries - 1:
+                                            logger.warning(
+                                                f"⚠️  [POSITION RETRY] {symbol} | "
+                                                f"No position found on exchange (attempt {attempt + 1}/{max_retries})! "
+                                                f"Retrying in {retry_delay}s..."
+                                            )
+                                            await asyncio.sleep(retry_delay)
+                                            continue
+                                        else:
+                                            logger.warning(
+                                                f"⚠️  [POSITION WARNING] {symbol} | "
+                                                f"No position found on exchange after {max_retries} attempts! "
+                                                f"Order might not have filled yet. Skipping TP/SL."
+                                            )
+                                            return True  # Order placed, but position not filled yet
+                                except Exception as e:
+                                    if attempt < max_retries - 1:
+                                        logger.warning(
+                                            f"⚠️  [POSITION RETRY] {symbol} | "
+                                            f"Failed to query position (attempt {attempt + 1}/{max_retries}): {e} | "
+                                            f"Retrying in {retry_delay}s..."
+                                        )
+                                        await asyncio.sleep(retry_delay)
+                                        continue
+                                    else:
+                                        logger.warning(
+                                            f"⚠️  [POSITION QUERY ERROR] {symbol} | "
+                                            f"Failed to query position after {max_retries} attempts: {e} | "
+                                            f"Using calculated size: {size}"
+                                        )
+                                        actual_position_size = size  # Use calculated size as fallback
+                                        break
                             
                             # 🚨 CRITICAL: Place TP/SL as separate plan orders (visible in app)
                             # Cancel any old TP/SL orders first
