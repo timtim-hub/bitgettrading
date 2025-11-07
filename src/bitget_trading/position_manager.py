@@ -232,12 +232,25 @@ class PositionManager:
                 trailing_stop_price = position.highest_price * (1 - target_price_move_for_trail)
                 drop_from_peak_price_pct = (position.highest_price - current_price) / position.highest_price
                 drop_from_peak_capital_pct = drop_from_peak_price_pct * position.leverage
+                distance_to_trail = current_price - trailing_stop_price
+                distance_to_trail_pct = (distance_to_trail / current_price) * 100 if current_price > 0 else 0
                 logger.info(
-                    f"🧵 [TRAIL CHECK] {symbol} (LONG) | Peak: ${position.highest_price:.4f} | "
+                    f"🧵 [TRAIL CHECK] {symbol} (LONG) | "
+                    f"Entry: ${position.entry_price:.4f} | Current: ${current_price:.4f} | Peak: ${position.highest_price:.4f} | "
+                    f"Trail price: ${trailing_stop_price:.4f} | Distance to trail: ${distance_to_trail:.4f} ({distance_to_trail_pct:.3f}%) | "
                     f"Drop from peak: {drop_from_peak_capital_pct*100:.2f}% capital | "
-                    f"Trail width: {position.trailing_stop_pct*100:.0f}% capital"
+                    f"Trail width: {position.trailing_stop_pct*100:.0f}% capital ({target_price_move_for_trail*100:.3f}% price) | "
+                    f"Current PnL: {return_on_capital_pct*100:.2f}% capital | "
+                    f"TP threshold: {position.take_profit_pct*100:.0f}% capital (ACTIVE: {return_on_capital_pct >= position.take_profit_pct})"
                 )
                 if current_price < trailing_stop_price:
+                    logger.warning(
+                        f"🚨 [TRAILING STOP TRIGGERED] {symbol} (LONG) | "
+                        f"Peak: ${position.highest_price:.4f} | Current: ${current_price:.4f} | "
+                        f"Trail price: ${trailing_stop_price:.4f} | "
+                        f"Drop from peak: {drop_from_peak_capital_pct*100:.2f}% capital | "
+                        f"Final PnL: {return_on_capital_pct*100:.2f}% capital"
+                    )
                     return True, (
                         f"TRAILING-STOP from peak ${position.highest_price:.4f} "
                         f"(Drop: {drop_from_peak_capital_pct*100:.2f}% capital)"
@@ -247,16 +260,37 @@ class PositionManager:
                 trailing_stop_price = position.lowest_price * (1 + target_price_move_for_trail)
                 drop_from_low_price_pct = (current_price - position.lowest_price) / position.lowest_price
                 drop_from_low_capital_pct = drop_from_low_price_pct * position.leverage
+                distance_to_trail = trailing_stop_price - current_price
+                distance_to_trail_pct = (distance_to_trail / current_price) * 100 if current_price > 0 else 0
                 logger.info(
-                    f"🧵 [TRAIL CHECK] {symbol} (SHORT) | Low: ${position.lowest_price:.4f} | "
+                    f"🧵 [TRAIL CHECK] {symbol} (SHORT) | "
+                    f"Entry: ${position.entry_price:.4f} | Current: ${current_price:.4f} | Low: ${position.lowest_price:.4f} | "
+                    f"Trail price: ${trailing_stop_price:.4f} | Distance to trail: ${distance_to_trail:.4f} ({distance_to_trail_pct:.3f}%) | "
                     f"Bounce from low: {drop_from_low_capital_pct*100:.2f}% capital | "
-                    f"Trail width: {position.trailing_stop_pct*100:.0f}% capital"
+                    f"Trail width: {position.trailing_stop_pct*100:.0f}% capital ({target_price_move_for_trail*100:.3f}% price) | "
+                    f"Current PnL: {return_on_capital_pct*100:.2f}% capital | "
+                    f"TP threshold: {position.take_profit_pct*100:.0f}% capital (ACTIVE: {return_on_capital_pct >= position.take_profit_pct})"
                 )
                 if current_price > trailing_stop_price:
+                    logger.warning(
+                        f"🚨 [TRAILING STOP TRIGGERED] {symbol} (SHORT) | "
+                        f"Low: ${position.lowest_price:.4f} | Current: ${current_price:.4f} | "
+                        f"Trail price: ${trailing_stop_price:.4f} | "
+                        f"Bounce from low: {drop_from_low_capital_pct*100:.2f}% capital | "
+                        f"Final PnL: {return_on_capital_pct*100:.2f}% capital"
+                    )
                     return True, (
                         f"TRAILING-STOP from low ${position.lowest_price:.4f} "
                         f"(Bounce: {drop_from_low_capital_pct*100:.2f}% capital)"
                     )
+        else:
+            # Log when trailing stop is NOT active (below TP threshold)
+            logger.debug(
+                f"🔒 [TRAIL INACTIVE] {symbol} | "
+                f"Current PnL: {return_on_capital_pct*100:.2f}% capital | "
+                f"TP threshold: {position.take_profit_pct*100:.0f}% capital | "
+                f"Need: {(position.take_profit_pct - return_on_capital_pct)*100:.2f}% more to activate trailing"
+            )
  
         return False, ""
 

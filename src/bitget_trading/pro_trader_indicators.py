@@ -370,12 +370,12 @@ class ProTraderIndicators:
         factors_met = 0
         reasons = []
         
-        # Factor 1: R:R >= 4:1 (STRICTER - need even better risk/reward!)
-        if risk_reward >= 4.0:
+        # Factor 1: R:R >= 5:1 (STRICTER - need even better risk/reward!)
+        if risk_reward >= 5.0:
             factors_met += 1
             reasons.append(f"✓ Excellent R:R ({risk_reward:.1f}:1)")
         else:
-            reasons.append(f"✗ Poor R:R ({risk_reward:.1f}:1 - need 4:1+)")
+            reasons.append(f"✗ Poor R:R ({risk_reward:.1f}:1 - need 5:1+)")
         
         # Factor 2: With market structure
         structure = market_structure.get("structure", "ranging")
@@ -393,21 +393,21 @@ class ProTraderIndicators:
         else:
             reasons.append("✗ No S/R confluence")
         
-        # Factor 4: Strong volume (STRICTER - need 2.0x above average!)
+        # Factor 4: Strong volume (STRICTER - need 2.5x above average!)
         volume_ratio = features.get("volume_ratio", 1.0)
-        if volume_ratio >= 2.0:
+        if volume_ratio >= 2.5:
             factors_met += 1
             reasons.append(f"✓ Strong volume ({volume_ratio:.2f}x)")
         else:
-            reasons.append(f"✗ Weak volume ({volume_ratio:.2f}x - need 2.0x+)")
+            reasons.append(f"✗ Weak volume ({volume_ratio:.2f}x - need 2.5x+)")
         
-        # Factor 5: Strong momentum (STRICTER - need 0.12%+ in 15s!)
+        # Factor 5: Strong momentum (STRICTER - need 0.15%+ in 15s!)
         return_15s = abs(features.get("return_15s", 0.0))
-        if return_15s >= 0.0012:  # 0.12%+ move in 15s
+        if return_15s >= 0.0015:  # 0.15%+ move in 15s
             factors_met += 1
             reasons.append(f"✓ Strong momentum ({return_15s*100:.3f}%)")
         else:
-            reasons.append(f"✗ Weak momentum ({return_15s*100:.3f}% - need 0.12%+)")
+            reasons.append(f"✗ Weak momentum ({return_15s*100:.3f}% - need 0.15%+)")
         
         # Calculate grade
         score = factors_met * 20  # Each factor = 20 points
