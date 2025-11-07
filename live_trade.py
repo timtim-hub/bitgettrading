@@ -455,8 +455,21 @@ class LiveTrader:
         positions_checked = 0
         positions_to_check = list(self.position_manager.positions.keys())
         
+        # Log position status every 10 checks (10 seconds @ 1s interval)
+        check_count = getattr(self, '_position_check_count', 0)
+        self._position_check_count = check_count + 1
+        
         if positions_to_check:
-            logger.debug(f"🔍 Checking {len(positions_to_check)} positions for exits...")
+            if check_count % 10 == 0:
+                # Detailed status every 10 seconds
+                logger.info(f"🔍 Monitoring {len(positions_to_check)} positions for exits...")
+                for sym in positions_to_check:
+                    pos = self.position_manager.get_position(sym)
+                    if pos:
+                        pnl_pct = pos.unrealized_pnl / pos.capital * 100 if pos.capital > 0 else 0
+                        logger.info(f"  📊 {sym}: {pos.side.upper()} @ ${pos.entry_price:.4f} | PnL: {pnl_pct:+.2f}% | Peak: {pos.peak_pnl_pct:.2f}%")
+            else:
+                logger.debug(f"🔍 Checking {len(positions_to_check)} positions for exits...")
         
         for symbol in positions_to_check:
             # Get current price
@@ -604,7 +617,7 @@ class LiveTrader:
         iteration = 0
         last_entry_check_time = datetime.now()
         entry_check_interval_sec = 60  # Check for new entries every 60 seconds
-        position_check_interval_sec = 2  # Check exits every 2 seconds
+        position_check_interval_sec = 1  # Check exits every 1 second (ULTRA FAST!)
 
         while self.running:
             try:

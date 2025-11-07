@@ -36,9 +36,17 @@ class Position:
     # Regime info
     regime: str = "ranging"  # Market regime at entry
     
+    # Entry quality metadata (for loss tracking)
+    metadata: dict[str, Any] = None  # Trade grade, structure, R:R, etc.
+    
     # Performance tracking
     unrealized_pnl: float = 0.0
     peak_pnl_pct: float = 0.0  # Track peak profit
+    
+    def __post_init__(self):
+        """Initialize mutable defaults."""
+        if self.metadata is None:
+            self.metadata = {}
 
 
 class PositionManager:
@@ -70,8 +78,9 @@ class PositionManager:
         stop_loss_pct: float = 0.08,  # 8% capital (0.16% price @ 50x) - wider for volatility
         take_profit_pct: float = 0.20,  # 20% capital (0.4% price @ 50x) - let winners run!
         trailing_stop_pct: float = 0.04,  # 4% capital (0.08% price @ 50x) - tighter trailing
+        metadata: dict = None,  # Entry quality metadata for loss tracking
     ) -> None:
-        """Add a new position with regime-based parameters."""
+        """Add a new position with regime-based parameters and metadata."""
         position = Position(
             symbol=symbol,
             side=side,
@@ -86,6 +95,7 @@ class PositionManager:
             stop_loss_pct=stop_loss_pct,
             take_profit_pct=take_profit_pct,
             trailing_stop_pct=trailing_stop_pct,
+            metadata=metadata or {},  # Store entry metadata for loss tracking
         )
         
         self.positions[symbol] = position
