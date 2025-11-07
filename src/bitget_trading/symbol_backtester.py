@@ -85,17 +85,17 @@ class SymbolBacktester:
             BacktestResult or None if insufficient data
         """
         try:
-            # 🚀 OPTIMIZATION: Use 5m candles instead of 1m for faster backtesting
-            # 5m candles = 12 per hour, 288 per day, ~2000 for 7 days
-            # But we only need 200 candles (200 * 5m = 16.7 hours) for fast backtest
-            # This reduces API calls from 5 batches to 1 batch per symbol!
+            # 🚀 ULTRA-FAST OPTIMIZATION: Use 1H candles for maximum speed
+            # 1H candles = 1 per hour, 24 per day
+            # 50 * 1H = 50 hours = ~2 days (more than enough for 1-day lookback)
+            # This is MUCH faster than 15m (50 candles vs 200 candles = 4x fewer to process!)
             all_candles = []
             
-            # Fetch 5m candles (faster, fewer API calls)
+            # Fetch 1H candles (ultra-fast: 50 candles = ~2 days)
             response = await self.rest_client.get_historical_candles(
                 symbol=symbol,
-                granularity="5m",  # Changed from 1m to 5m for speed
-                limit=200,  # 200 * 5m = 16.7 hours of data (enough for backtest)
+                granularity="1H",  # Changed to 1H for maximum speed (4x fewer candles!)
+                limit=50,  # 50 * 1H = 50 hours = ~2 days of data (plenty for 1-day lookback)
             )
             
             if response.get("code") != "00000":

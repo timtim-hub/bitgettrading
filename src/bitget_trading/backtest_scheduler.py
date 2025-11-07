@@ -98,11 +98,31 @@ class BacktestScheduler:
             "duration_sec": 0.0,
         }
         
+        # 🚀 OPTIMIZATION: Skip symbols with recent backtest data (within last 2 hours)
+        # This avoids re-backtesting symbols that were just tested
+        symbols_to_backtest = []
+        skip_count = 0
+        for symbol in self.symbols:
+            perf = self.performance_tracker.get_performance(symbol)
+            if perf and perf.last_backtest:
+                # Check if backtest is recent (within 2 hours)
+                time_since_backtest = (datetime.now() - perf.last_backtest).total_seconds() / 3600
+                if time_since_backtest < 2.0:  # Skip if backtested within last 2 hours
+                    skip_count += 1
+                    continue
+            symbols_to_backtest.append(symbol)
+        
+        if skip_count > 0:
+            logger.info(
+                f"⏭️ [BACKTEST] Skipping {skip_count} symbols with recent backtest data "
+                f"(backtested within last 2 hours)"
+            )
+        
         # Process symbols in batches
         batch_size = self.parallel_tokens
         batches = [
-            self.symbols[i : i + batch_size]
-            for i in range(0, len(self.symbols), batch_size)
+            symbols_to_backtest[i : i + batch_size]
+            for i in range(0, len(symbols_to_backtest), batch_size)
         ]
         
         for batch_idx, batch in enumerate(batches):
