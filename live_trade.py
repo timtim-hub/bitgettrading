@@ -44,7 +44,7 @@ class LiveTrader:
         passphrase: str,
         initial_capital: float = 50.0,
         leverage: int = 25,  # 25x leverage for safety
-        position_size_pct: float = 0.05,  # 5% of capital per position (conservative)
+        position_size_pct: float = 0.20,  # 20% of capital per position
         max_positions: int = 10,
         daily_loss_limit: float = 0.15,
         paper_mode: bool = True,
@@ -320,22 +320,45 @@ class LiveTrader:
                         # Convert logical side to API side
                         order_side = "buy" if side == "long" else "sell"
 
-                        # Place the actual MARKET order with atomic TP/SL
+                        # Place the actual MARKET order (NO atomic TP/SL - we place separately)
                         order_response = await self.rest_client.place_order(
                             symbol=symbol,
                             side=order_side,
                             size=size,
                             order_type="market",
-                            take_profit_price=take_profit_price,
-                            stop_loss_price=stop_loss_price,
                         )
                         
                         if order_response and order_response.get("code") == "00000":
                             order_id = order_response.get("data", {}).get("orderId")
                             logger.info(
                                 f"✅ [LIVE] MARKET {side.upper()} {symbol} | Size: {size:.4f} | "
-                                f"Order ID: {order_id} | TP/SL Placed Atomically"
+                                f"Order ID: {order_id}"
                             )
+                            
+                            # 🚨 CRITICAL: Place TP/SL as separate plan orders (visible in app)
+                            # Cancel any old TP/SL orders first
+                            try:
+                                await self.rest_client.cancel_all_tpsl_orders(symbol)
+                            except Exception:
+                                pass  # Ignore if no orders exist
+                            
+                            # Place TP/SL plan orders with market execution
+                            try:
+                                tpsl_results = await self.rest_client.place_tpsl_order(
+                                    symbol=symbol,
+                                    hold_side=side,  # "long" or "short"
+                                    size=size,
+                                    stop_loss_price=stop_loss_price,
+                                    take_profit_price=take_profit_price,
+                                )
+                                logger.info(
+                                    f"✅ [TP/SL PLACED] {symbol} | "
+                                    f"SL: {tpsl_results.get('sl', {}).get('code')} | "
+                                    f"TP: {tpsl_results.get('tp', {}).get('code')}"
+                                )
+                            except Exception as e:
+                                logger.error(f"❌ [TP/SL FAILED] {symbol}: {e}")
+                                # Continue anyway - bot-side monitoring will handle it
 
                             return True
                         else:
@@ -1142,7 +1165,7 @@ async def main() -> None:
         passphrase=passphrase,
         initial_capital=initial_capital,  # USE ACTUAL BALANCE!
         leverage=int(os.getenv("LEVERAGE", "25")),  # 25x for safety
-        position_size_pct=float(os.getenv("POSITION_SIZE_PCT", "0.05")),  # 5% per position (conservative)
+        position_size_pct=float(os.getenv("POSITION_SIZE_PCT", "0.20")),  # 20% per position
         max_positions=int(os.getenv("MAX_POSITIONS", "10")),
         daily_loss_limit=float(os.getenv("DAILY_LOSS_LIMIT", "0.15")),
         paper_mode=paper_mode,

@@ -173,19 +173,42 @@ def test_check_exit_trailing_stop_long(position_manager):
     entry_price = 30000.0
     capital = 100.0
     leverage = 50
+    take_profit_pct = 0.10  # 10% capital TP
     trailing_stop_pct = 0.04 # 4% capital drop from peak
-    position_manager.add_position(symbol, "long", entry_price, 0.01, capital, leverage, trailing_stop_pct=trailing_stop_pct)
+    position_manager.add_position(symbol, "long", entry_price, 0.01, capital, leverage, 
+                                  take_profit_pct=take_profit_pct, trailing_stop_pct=trailing_stop_pct)
     pos = position_manager.get_position(symbol)
 
-    # Price rises significantly
-    peak_price = entry_price * (1 + 0.10 / leverage) # 10% capital profit
-    position_manager.update_position_price(symbol, peak_price)
-    assert pos.highest_price == peak_price
+    # Price rises to TP threshold (10% capital profit) - use slightly above to trigger TP check
+    tp_price = entry_price * (1 + (take_profit_pct + 0.001) / leverage)  # Slightly above 10% capital profit
+    position_manager.update_position_price(symbol, tp_price)
+    assert pos.highest_price == tp_price
     
-    # Price drops enough to trigger trailing stop
+    # Check that we're above TP threshold (should trigger TP exit)
+    should_close, reason = position_manager.check_exit_conditions(symbol, tp_price)
+    assert should_close is True
+    assert "TAKE-PROFIT" in reason
+    
+    # Now test trailing stop: price continues higher (new peak), then drops to trigger trailing stop
+    # Update position to new peak (slightly higher than TP)
+    higher_peak = entry_price * (1 + (take_profit_pct + 0.01) / leverage)  # 11% capital profit
+    position_manager.update_position_price(symbol, higher_peak)
+    assert pos.highest_price == higher_peak
+    
+    # Price drops from peak enough to trigger trailing stop
+    # BUT: Keep capital PnL above TP threshold (10%) so trailing stop can activate
     # Trailing stop price = peak_price * (1 - trailing_stop_pct / leverage)
-    trailing_stop_trigger_price = peak_price * (1 - trailing_stop_pct / leverage * 1.01) # Go slightly beyond for trigger
+    # We need: (trailing_stop_trigger_price - entry_price) / entry_price * leverage >= take_profit_pct
+    # So: trailing_stop_trigger_price >= entry_price * (1 + take_profit_pct / leverage)
+    # And: trailing_stop_trigger_price <= higher_peak * (1 - trailing_stop_pct / leverage)
+    # Find a price that satisfies both conditions
+    min_price_for_tp = entry_price * (1 + take_profit_pct / leverage)  # Minimum to stay above TP
+    max_price_for_trail = higher_peak * (1 - trailing_stop_pct / leverage)  # Maximum for trailing stop
     
+    # Use a price between these two (closer to trailing stop trigger)
+    trailing_stop_trigger_price = max(min_price_for_tp * 1.001, max_price_for_trail * 0.999)  # Slightly trigger trailing stop
+    
+    # Now drop to trailing stop trigger price
     position_manager.update_position_price(symbol, trailing_stop_trigger_price)
     should_close, reason = position_manager.check_exit_conditions(symbol, trailing_stop_trigger_price)
     assert should_close is True
@@ -196,18 +219,41 @@ def test_check_exit_trailing_stop_short(position_manager):
     entry_price = 2000.0
     capital = 100.0
     leverage = 50
+    take_profit_pct = 0.10  # 10% capital TP
     trailing_stop_pct = 0.04
-    position_manager.add_position(symbol, "short", entry_price, 0.1, capital, leverage, trailing_stop_pct=trailing_stop_pct)
+    position_manager.add_position(symbol, "short", entry_price, 0.1, capital, leverage,
+                                  take_profit_pct=take_profit_pct, trailing_stop_pct=trailing_stop_pct)
     pos = position_manager.get_position(symbol)
 
-    # Price drops significantly
-    low_price = entry_price * (1 - 0.10 / leverage) # 10% capital profit
-    position_manager.update_position_price(symbol, low_price)
-    assert pos.lowest_price == low_price
+    # Price drops to TP threshold (10% capital profit) - use slightly below to trigger TP check
+    tp_price = entry_price * (1 - (take_profit_pct + 0.001) / leverage)  # Slightly below entry (above 10% capital profit)
+    position_manager.update_position_price(symbol, tp_price)
+    assert pos.lowest_price == tp_price
+    
+    # Check that we're above TP threshold (should trigger TP exit)
+    should_close, reason = position_manager.check_exit_conditions(symbol, tp_price)
+    assert should_close is True
+    assert "TAKE-PROFIT" in reason
+    
+    # Now test trailing stop: price drops further (new low), then rises to trigger trailing stop
+    # Lower low = entry_price * (1 - (take_profit_pct + 0.01) / leverage)  # 11% capital profit
+    lower_low = entry_price * (1 - (take_profit_pct + 0.01) / leverage)
+    position_manager.update_position_price(symbol, lower_low)
+    assert pos.lowest_price == lower_low
     
     # Price rises enough to trigger trailing stop
+    # BUT: Keep capital PnL above TP threshold (10%) so trailing stop can activate
+    # For shorts: price needs to stay below entry enough to maintain >10% capital profit
     # Trailing stop price = low_price * (1 + trailing_stop_pct / leverage)
-    trailing_stop_trigger_price = low_price * (1 + trailing_stop_pct / leverage * 1.01) # Go slightly beyond for trigger
+    # We need: (entry_price - trailing_stop_trigger_price) / entry_price * leverage >= take_profit_pct
+    # So: trailing_stop_trigger_price <= entry_price * (1 - take_profit_pct / leverage)
+    # And: trailing_stop_trigger_price >= lower_low * (1 + trailing_stop_pct / leverage)
+    # Find a price that satisfies both conditions
+    max_price_for_tp = entry_price * (1 - take_profit_pct / leverage)  # Maximum to stay above TP
+    min_price_for_trail = lower_low * (1 + trailing_stop_pct / leverage)  # Minimum for trailing stop
+    
+    # Use a price between these two (closer to trailing stop trigger)
+    trailing_stop_trigger_price = min(max_price_for_tp * 0.999, min_price_for_trail * 1.001)  # Slightly trigger trailing stop
     
     position_manager.update_position_price(symbol, trailing_stop_trigger_price)
     should_close, reason = position_manager.check_exit_conditions(symbol, trailing_stop_trigger_price)
