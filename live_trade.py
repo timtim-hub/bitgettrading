@@ -2521,17 +2521,18 @@ class LiveTrader:
                                 logger.debug(f"🚫 [ENTRY REJECTED] {symbol} | LONG signal but in DOWNTREND | Trend: {trend}")
                                 continue
                         
-                        # For SHORT: Only enter in downtrend with pullback OR ranging market
+                        # For SHORT: RELAXED - Allow in any trend with pullback, OR ranging market
+                        # Shorts can work in uptrends during pullbacks (short-term reversals)
                         elif signal_side == "short":
-                            if trend == "downtrend" and not is_pullback:
-                                logger.info(
-                                    f"🚫 [ENTRY REJECTED] {symbol} | SHORT signal but NO PULLBACK detected (selling bottom risk) | "
-                                    f"Trend: {trend} | Wait for 0.3-1.5% bounce from low"
+                            # Only reject if in strong uptrend without pullback
+                            if trend == "uptrend" and not is_pullback:
+                                logger.debug(
+                                    f"🚫 [ENTRY REJECTED] {symbol} | SHORT signal in strong UPTREND without pullback | "
+                                    f"Trend: {trend} | Need pullback for short entry in uptrend"
                                 )
                                 continue
-                            elif trend == "uptrend":
-                                logger.debug(f"🚫 [ENTRY REJECTED] {symbol} | SHORT signal but in UPTREND | Trend: {trend}")
-                                continue
+                            # Allow shorts in downtrend (even without pullback) and ranging markets
+                            # Also allow shorts in uptrend IF there's a pullback (counter-trend)
                         
                         if is_pullback:
                             logger.info(
