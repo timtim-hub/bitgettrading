@@ -938,6 +938,9 @@ class LiveTrader:
                 all_data_points = []
                 
                 for granularity, limit in timeframes:
+                    # Rate limit protection: small delay between timeframe requests
+                    await asyncio.sleep(0.1)  # 100ms between requests per symbol
+                    
                     candles_response = await self.rest_client.get_historical_candles(
                         symbol=symbol,
                         granularity=granularity,
@@ -985,13 +988,18 @@ class LiveTrader:
                 logger.warning(f"load_history_failed", symbol=symbol, error=str(e))
                 return (symbol, False)
         
-        # Load all symbols in parallel (batches of 20 to avoid rate limits)
-        batch_size = 20
+        # Load all symbols in parallel (batches of 10 with delays to respect API rate limits)
+        # Bitget API limits: ~100 requests/second, we do 3 requests per symbol
+        # Batch size 10 = 30 requests per batch + 1s delay = safe rate limiting
+        batch_size = 10  # Reduced from 20 to be more conservative
         successful = 0
         failed = 0
         
+        total_batches = (len(self.symbols) + batch_size - 1) // batch_size
         for i in range(0, len(self.symbols), batch_size):
             batch = self.symbols[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            
             results = await asyncio.gather(*[load_symbol_history(s) for s in batch])
             
             for symbol, success in results:
@@ -1000,7 +1008,11 @@ class LiveTrader:
                 else:
                     failed += 1
             
-            logger.info(f"   📊 Loaded {successful}/{successful+failed} symbols ({successful/(successful+failed)*100:.0f}%)")
+            logger.info(f"   📊 Batch {batch_num}/{total_batches}: Loaded {successful}/{successful+failed} symbols ({successful/(successful+failed)*100:.0f}%)")
+            
+            # Rate limit protection: 1 second delay between batches
+            if i + batch_size < len(self.symbols):  # Don't delay after last batch
+                await asyncio.sleep(1.0)
         
         logger.info(f"✅ INSTANT STARTUP COMPLETE! {successful} symbols loaded with MULTI-TIMEFRAME data!")
         logger.info(f"   📊 1m (3h) + 5m (17h) + 15m (50h) = RICH historical context!")
