@@ -370,12 +370,12 @@ class ProTraderIndicators:
         factors_met = 0
         reasons = []
         
-        # Factor 1: R:R >= 2:1
-        if risk_reward >= 2.0:
+        # Factor 1: R:R >= 3:1 (STRICTER - need better risk/reward!)
+        if risk_reward >= 3.0:
             factors_met += 1
-            reasons.append(f"✓ Good R:R ({risk_reward:.1f}:1)")
+            reasons.append(f"✓ Excellent R:R ({risk_reward:.1f}:1)")
         else:
-            reasons.append(f"✗ Poor R:R ({risk_reward:.1f}:1)")
+            reasons.append(f"✗ Poor R:R ({risk_reward:.1f}:1 - need 3:1+)")
         
         # Factor 2: With market structure
         structure = market_structure.get("structure", "ranging")
@@ -393,21 +393,21 @@ class ProTraderIndicators:
         else:
             reasons.append("✗ No S/R confluence")
         
-        # Factor 4: Strong volume
+        # Factor 4: Strong volume (STRICTER - need 1.5x above average!)
         volume_ratio = features.get("volume_ratio", 1.0)
-        if volume_ratio >= 1.2:
+        if volume_ratio >= 1.5:
             factors_met += 1
             reasons.append(f"✓ Strong volume ({volume_ratio:.2f}x)")
         else:
-            reasons.append(f"✗ Weak volume ({volume_ratio:.2f}x)")
+            reasons.append(f"✗ Weak volume ({volume_ratio:.2f}x - need 1.5x+)")
         
-        # Factor 5: Strong momentum
+        # Factor 5: Strong momentum (STRICTER - need 0.08%+ in 15s!)
         return_15s = abs(features.get("return_15s", 0.0))
-        if return_15s >= 0.0005:  # 0.05%+ move in 15s
+        if return_15s >= 0.0008:  # 0.08%+ move in 15s
             factors_met += 1
             reasons.append(f"✓ Strong momentum ({return_15s*100:.3f}%)")
         else:
-            reasons.append(f"✗ Weak momentum ({return_15s*100:.3f}%)")
+            reasons.append(f"✗ Weak momentum ({return_15s*100:.3f}% - need 0.08%+)")
         
         # Calculate grade
         score = factors_met * 20  # Each factor = 20 points

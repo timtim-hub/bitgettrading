@@ -121,7 +121,7 @@ class EnhancedRanker:
         # ULTRA-SHORT-TERM: Adjust for faster timeframes (1s-30s)
         # With 1s-30s timeframes, most moves are 0.03-0.1%
         # Target: 0.03%+ on ultra-short = scalping opportunity (1.5%+ capital @ 50x)
-        if confluence_strength < 0.0003:  # 0.03% average return = 1.5% capital @ 50x
+        if confluence_strength < 0.0005:  # STRICT: 0.05% average return = 2.5% capital @ 50x
             return 0.0, "neutral", {"reason": "weak_confluence"}
         
         # 1.5. FEE-ADJUSTED FILTER: Expected profit must exceed fees
@@ -138,7 +138,7 @@ class EnhancedRanker:
         
         # 2. Volume filter CHECK (MINIMAL: Just avoid dead symbols)
         volume_ratio = features.get("volume_ratio", 1.0)
-        if volume_ratio < 0.5:  # Only skip if volume is dead (50% below average)
+        if volume_ratio < 0.8:  # STRICT: need at least 80% of average volume
             return 0.0, "neutral", {"reason": "insufficient_volume"}
         
         # 3. Detect market regime
@@ -168,16 +168,16 @@ class EnhancedRanker:
         else:
             volatility_score = 0.0
         
-        # 7. Liquidity score (BALANCED: Reasonable spreads)
+        # 7. Liquidity score (STRICT: Need tight spreads for quality)
         spread_bps = features.get("spread_bps", 100.0)
-        if spread_bps > 60.0:  # Skip if spread > 60 bps (too expensive)
+        if spread_bps > 40.0:  # Skip if spread > 40 bps (want tight spreads!)
             return 0.0, "neutral", {"reason": "wide_spread"}
-        spread_score = max(0, 1 - spread_bps / 50.0)
+        spread_score = max(0, 1 - spread_bps / 30.0)
         
-        # 8. Momentum threshold (ULTRA-SHORT-TERM: Scalping-friendly)
-        # For ultra-short scalping, even 0.02-0.05% moves are tradeable
+        # 8. Momentum threshold (STRICT: Need strong momentum!)
+        # For quality trades, need meaningful price movement
         return_5s = features.get("return_5s", 0.0)
-        if abs(return_5s) < 0.0002 and abs(return_15s) < 0.0003:  # Too flat to trade
+        if abs(return_5s) < 0.0004 and abs(return_15s) < 0.0006:  # Need stronger momentum!
             return 0.0, "neutral", {"reason": "weak_momentum"}
         
         # 9. Funding rate bias (EXPLOIT FUNDING!)
@@ -249,20 +249,33 @@ class EnhancedRanker:
                 market_structure, near_sr
             )
             
-            # PRO RULE: Only take A or B grade trades!
-            if trade_grade["grade"] not in ["A", "B"]:
+            # 🚨 CRITICAL: Check if trading AGAINST market structure - INSTANT REJECTION!
+            # This is the #1 cause of losses - NEVER trade against the trend!
+            if (direction == "long" and market_structure["structure"] == "downtrend") or \
+               (direction == "short" and market_structure["structure"] == "uptrend"):
                 logger.debug(
-                    f"trade_rejected_low_grade",
+                    f"trade_rejected_against_structure",
+                    symbol=state.symbol,
+                    direction=direction,
+                    structure=market_structure["structure"],
+                    reason="NEVER trade against market structure!"
+                )
+                return 0.0, "neutral", {"reason": "against_structure", "structure": market_structure["structure"]}
+            
+            # PRO RULE: ONLY take A-grade trades! (4+ factors, not 3)
+            # B-grade trades (3 factors) have too many losses!
+            if trade_grade["grade"] != "A":
+                logger.debug(
+                    f"trade_rejected_not_A_grade",
                     symbol=state.symbol,
                     grade=trade_grade["grade"],
                     factors=trade_grade["factors_met"],
                     reasons=trade_grade["reasons"]
                 )
-                return 0.0, "neutral", {"reason": "low_trade_grade", "grade": trade_grade["grade"]}
+                return 0.0, "neutral", {"reason": "not_A_grade", "grade": trade_grade["grade"]}
             
-            # BOOST score for A-grade trades
-            if trade_grade["grade"] == "A":
-                final_score *= 1.5  # 50% bonus for perfect setups!
+            # A-grade only = maximum win rate!
+            final_score *= 2.0  # 100% bonus for A-grade setups!
             
             logger.debug(
                 f"trade_quality_check",
@@ -274,8 +287,8 @@ class EnhancedRanker:
                 rr=f"{rr_calc['risk_reward_ratio']:.1f}:1"
             )
         
-        # BALANCED: Accept good signals for ultra-short-term scalping
-        if final_score < 0.3:  # Realistic quality bar for fast scalping
+        # STRICT: Only take EXCELLENT signals (A-grade + high score)
+        if final_score < 0.6:  # High quality bar for maximum win rate
             return 0.0, "neutral", {"reason": "low_score"}
         
         # Build metadata with trade quality info for loss tracking

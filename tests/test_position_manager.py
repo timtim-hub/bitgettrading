@@ -214,9 +214,59 @@ def test_check_exit_trailing_stop_short(position_manager):
     assert should_close is True
     assert "TRAILING-STOP" in reason
 
-# REMOVED: test_check_exit_quick_profit_exit, test_check_exit_time_exit, test_check_exit_max_time_exit
-# These time-based exit rules were removed from position_manager.py
-# Positions now run to full TP (20%) or hit SL/trailing stop only
+def test_check_exit_quick_profit_exit(position_manager):
+    symbol = "BTCUSDT"
+    entry_price = 30000.0
+    capital = 100.0
+    leverage = 50
+    position_manager.add_position(symbol, "long", entry_price, 0.01, capital, leverage)
+    pos = position_manager.get_position(symbol)
+
+    # Manually set entry time to be 3 minutes ago
+    pos.entry_time = (datetime.now() - timedelta(minutes=3, seconds=5)).isoformat()
+    
+    # Price rises for a quick profit (>2% capital return)
+    current_price = entry_price * (1 + 0.025 / leverage) # 2.5% capital gain
+    position_manager.update_position_price(symbol, current_price)
+    should_close, reason = position_manager.check_exit_conditions(symbol, current_price)
+    assert should_close is True
+    assert "QUICK-PROFIT" in reason
+
+def test_check_exit_time_exit(position_manager):
+    symbol = "BTCUSDT"
+    entry_price = 30000.0
+    capital = 100.0
+    leverage = 50
+    position_manager.add_position(symbol, "long", entry_price, 0.01, capital, leverage)
+    pos = position_manager.get_position(symbol)
+
+    # Manually set entry time to be 5 minutes ago
+    pos.entry_time = (datetime.now() - timedelta(minutes=5, seconds=5)).isoformat()
+    
+    # Price rises for a marginal profit (>1.5% capital return)
+    current_price = entry_price * (1 + 0.018 / leverage) # 1.8% capital gain
+    position_manager.update_position_price(symbol, current_price)
+    should_close, reason = position_manager.check_exit_conditions(symbol, current_price)
+    assert should_close is True
+    assert "TIME-EXIT" in reason
+
+def test_check_exit_max_time_exit(position_manager):
+    symbol = "BTCUSDT"
+    entry_price = 30000.0
+    capital = 100.0
+    leverage = 50
+    position_manager.add_position(symbol, "long", entry_price, 0.01, capital, leverage)
+    pos = position_manager.get_position(symbol)
+
+    # Manually set entry time to be 10 minutes ago
+    pos.entry_time = (datetime.now() - timedelta(minutes=10, seconds=5)).isoformat()
+    
+    # Price is at breakeven (-0.5% capital)
+    current_price = entry_price * (1 - 0.003 / leverage) # -0.3% capital loss (within -0.5% boundary)
+    position_manager.update_position_price(symbol, current_price)
+    should_close, reason = position_manager.check_exit_conditions(symbol, current_price)
+    assert should_close is True
+    assert "MAX-TIME-EXIT" in reason
 
 def test_check_exit_minimum_profit_lock(position_manager):
     symbol = "BTCUSDT"
@@ -236,7 +286,6 @@ def test_check_exit_minimum_profit_lock(position_manager):
     position_manager.update_position_price(symbol, current_price_small_loss)
     should_close, _ = position_manager.check_exit_conditions(symbol, current_price_small_loss)
     assert should_close is False
-
 
 
 
