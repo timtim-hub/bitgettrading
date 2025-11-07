@@ -320,15 +320,6 @@ class LiveTrader:
                         
                         if order_response and order_response.get("code") == "00000":
                             order_id = order_response.get("data", {}).get("orderId")
-                            self.position_manager.add_position(
-                                symbol=symbol,
-                                side=side,
-                                size=size,
-                                entry_price=price,
-                                leverage=self.leverage,
-                                **regime_params,
-                                metadata=metadata
-                            )
                             logger.info(
                                 f"✅ [LIVE] MARKET {side.upper()} {symbol} | Size: {size:.4f} | "
                                 f"Order ID: {order_id} | TP/SL Placed Atomically"
