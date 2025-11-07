@@ -946,14 +946,29 @@ class LiveTrader:
 
         for i in range(0, len(self.symbols), batch_size):
             batch_symbols = self.symbols[i : i + batch_size]
+            logger.info(
+                f"   🚚 Starting batch {(i // batch_size) + 1}/{total_batches}: "
+                f"{len(batch_symbols)} symbols"
+            )
+
             tasks = []
             for symbol in batch_symbols:
                 for timeframe in timeframes:
-                    # Small delay to avoid hitting rate limits too hard
-                    await asyncio.sleep(0.05)
                     tasks.append(fetch_and_store(symbol, timeframe))
 
-            await asyncio.gather(*tasks)
+            # Stream progress as requests complete
+            total_requests = len(tasks)
+            completed_requests = 0
+            for coro in asyncio.as_completed(tasks):
+                await coro
+                completed_requests += 1
+                if completed_requests % 30 == 0 or completed_requests == total_requests:
+                    logger.info(
+                        f"   ⏳ Batch {(i // batch_size) + 1}/{total_batches}: "
+                        f"{completed_requests}/{total_requests} requests "
+                        f"({completed_requests/total_requests:.0%})"
+                    )
+ 
             completed_symbols += len(batch_symbols)
             logger.info(
                 f"   📊 Batch {(i // batch_size) + 1}/{total_batches}: "
