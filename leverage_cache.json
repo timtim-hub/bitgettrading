@@ -2518,5 +2518,29 @@
   "OLUSDT_short": {
     "leverage": 25,
     "timestamp": 1762539105.187436
+  },
+  "ENJUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762542382.843303
+  },
+  "ENJUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762542383.24771
+  },
+  "PIXELUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762542385.2226171
+  },
+  "PIXELUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762542385.632705
+  },
+  "DYMUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762542386.020133
+  },
+  "DYMUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762542386.3997178
   }
 }

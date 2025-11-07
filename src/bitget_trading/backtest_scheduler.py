@@ -175,8 +175,10 @@ class BacktestScheduler:
             f"Symbols: {len(self.symbols)}"
         )
         
-        # Run initial backtest
+        # Run initial backtest immediately (synchronously to ensure it completes)
+        logger.info("🔄 [BACKTEST] Running initial backtest for all tokens...")
         await self.run_backtest()
+        logger.info("✅ [BACKTEST] Initial backtest completed! Stats file generated at: data/symbol_performance_stats.txt")
         
         # Schedule periodic backtests
         while self.running:

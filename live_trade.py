@@ -2143,9 +2143,11 @@ class LiveTrader:
         if self.backtest_service and self.backtest_service.scheduler:
             # Update symbols in backtesting service
             self.backtest_service.scheduler.symbols = self.symbols
-            # Start backtesting service in background
+            # Start backtesting service (runs initial backtest synchronously, then periodic in background)
+            logger.info("🔄 [BACKTEST] Starting backtesting service (will run initial backtest for all tokens)...")
             asyncio.create_task(self.backtest_service.start())
-            logger.info("✅ [BACKTEST] Backtesting service started")
+            logger.info("✅ [BACKTEST] Backtesting service started (initial backtest running in background)")
+            logger.info("📊 [BACKTEST] View stats file: python view_backtest_stats.py or cat data/symbol_performance_stats.txt")
 
         # Start trading
         await self.trading_loop()
