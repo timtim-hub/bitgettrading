@@ -283,36 +283,16 @@ class LiveTrader:
             return True
         else:
             try:
-                # Use LIMIT order at bid/ask for instant fill + maker fee (0.02% vs 0.06%)
+                # Get state for current price (for PnL calculation)
                 state = self.state_manager.get_state(symbol)
-                if state and state.bid_price > 0 and state.ask_price > 0:
-                    if side == "sell":  # Closing long
-                        limit_price = state.bid_price  # Sell at bid = instant fill as maker
-                    else:  # Closing short
-                        limit_price = state.ask_price  # Buy at ask = instant fill as maker
-                else:
-                    # Fallback to current price
-                    limit_price = position.entry_price
                 
-                # Round to required precision
-                contract_info = self.universe_manager.get_contract_info(symbol)
-                if contract_info:
-                    price_place = contract_info.get("price_place", 2)
-                    limit_price = round(limit_price, price_place)
-                else:
-                    if limit_price > 1000:
-                        limit_price = round(limit_price, 1)
-                    elif limit_price > 10:
-                        limit_price = round(limit_price, 2)
-                    else:
-                        limit_price = round(limit_price, 4)
-                
+                # CRITICAL: Use MARKET orders for exits to guarantee fill!
+                # With 50x leverage, can't risk limit not filling and getting liquidated
                 order = await self.rest_client.place_order(
                     symbol=symbol,
                     side=side,
-                    order_type="limit",  # LIMIT at bid/ask = maker fee + instant fill!
+                    order_type="market",  # MARKET = guaranteed fill, prevents liquidation!
                     size=position.size,
-                    price=limit_price,
                     reduce_only=True,
                 )
 
@@ -323,16 +303,20 @@ class LiveTrader:
                     exit_dt = datetime.fromisoformat(exit_time)
                     time_in_trade = (exit_dt - entry_dt).total_seconds()
                     
+                    # Get current price for PnL calculation (market order = actual fill price)
+                    current_price = state.last_price if state else position.entry_price
+                    
                     # Calculate PnL metrics
                     pnl_pct_capital = (position.unrealized_pnl / position.capital) if position.capital > 0 else 0
-                    pnl_pct_price = ((limit_price - position.entry_price) / position.entry_price) if position.side == "long" else ((position.entry_price - limit_price) / position.entry_price)
+                    pnl_pct_price = ((current_price - position.entry_price) / position.entry_price) if position.side == "long" else ((position.entry_price - current_price) / position.entry_price)
                     
-                    # Estimate fees (0.02% maker fee for entry + exit)
-                    fees_paid = (position.capital * 0.0002) + (position.capital * 0.0002)
+                    # Estimate fees (0.06% taker fee for market orders: entry + exit)
+                    # Entry: 0.02% maker (limit) + Exit: 0.06% taker (market)
+                    fees_paid = (position.capital * 0.0002) + (position.capital * 0.0006)
                     net_pnl = position.unrealized_pnl - fees_paid
                     
                     # Get exit reason from position manager check
-                    _, exit_reason = self.position_manager.check_exit_conditions(symbol, limit_price)
+                    _, exit_reason = self.position_manager.check_exit_conditions(symbol, current_price)
                     
                     # Get entry metrics from position metadata
                     entry_grade = position.metadata.get("grade", "Unknown")
@@ -370,7 +354,7 @@ class LiveTrader:
                         entry_near_sr=entry_near_sr,
                         entry_rr_ratio=entry_rr,
                         exit_time=exit_time,
-                        exit_price=limit_price,
+                        exit_price=current_price,
                         exit_reason=exit_reason,
                         time_in_trade_seconds=time_in_trade,
                         pnl_usd=position.unrealized_pnl,
@@ -404,7 +388,7 @@ class LiveTrader:
                     
                     logger.info(
                         f"✅ [LIVE] CLOSED {symbol} | PnL: ${position.unrealized_pnl:.2f} | "
-                        f"Peak: {position.peak_pnl_pct:.2f}% | Exit Price: ${limit_price:.4f}"
+                        f"Peak: {position.peak_pnl_pct:.2f}% | Exit Price: ${current_price:.4f}"
                     )
                     
                     self.position_manager.remove_position(symbol)
