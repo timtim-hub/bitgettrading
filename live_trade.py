@@ -517,23 +517,42 @@ class LiveTrader:
                                 # Calculate trailing TP parameters
                                 trailing_range_rate = regime_params.get("trailing_stop_pct", 0.01) if regime_params else 0.01  # 1% trailing
                                 
-                                # 🚨 CRITICAL: Get current market price for trigger price calculation
+                                # 🚨 CRITICAL: Get FRESH current market price RIGHT BEFORE placing order
                                 # Bitget API requires: trigger price ≥ current market price (for longs)
-                                # We need to get the current market price, not use entry price
-                                state = self.state_manager.get_state(symbol)
-                                current_market_price = state.last_price if state and state.last_price > 0 else price
+                                # Price can change between entry and TP placement, so fetch fresh price
+                                try:
+                                    # Fetch fresh ticker data from exchange to get current market price
+                                    ticker_data = await self.rest_client.get_ticker(symbol)
+                                    if ticker_data and ticker_data.get("code") == "00000":
+                                        ticker_list = ticker_data.get("data", [])
+                                        if ticker_list and len(ticker_list) > 0:
+                                            current_market_price = float(ticker_list[0].get("lastPr", price))
+                                        else:
+                                            # Fallback to state manager
+                                            state = self.state_manager.get_state(symbol)
+                                            current_market_price = state.last_price if state and state.last_price > 0 else price
+                                    else:
+                                        # Fallback to state manager
+                                        state = self.state_manager.get_state(symbol)
+                                        current_market_price = state.last_price if state and state.last_price > 0 else price
+                                except Exception as e:
+                                    logger.warning(f"⚠️ [PRICE FETCH ERROR] {symbol} | Error: {e} | Using fallback price")
+                                    # Fallback to state manager
+                                    state = self.state_manager.get_state(symbol)
+                                    current_market_price = state.last_price if state and state.last_price > 0 else price
                                 
                                 # 🚨 CRITICAL FIX: Trigger price must be ≥ current market price (error 43035)
                                 # For LONG: trigger price must be ≥ current price (activates when price goes up)
                                 # For SHORT: trigger price must be ≤ current price (activates when price goes down)
+                                # Add buffer to ensure it's always above/below current price
                                 if side == "long":
                                     # For long positions, trigger price must be ≥ current market price
-                                    # Set it to max(take_profit_price, current_market_price) or slightly above current
-                                    trailing_trigger_price = max(take_profit_price, current_market_price * 1.0001)  # Slightly above current to ensure it activates
+                                    # Set it to max(take_profit_price, current_market_price * 1.001) with 0.1% buffer
+                                    trailing_trigger_price = max(take_profit_price, current_market_price * 1.001)  # 0.1% above current to ensure it activates
                                 else:  # short
                                     # For short positions, trigger price must be ≤ current market price
-                                    # Set it to min(take_profit_price, current_market_price) or slightly below current
-                                    trailing_trigger_price = min(take_profit_price, current_market_price * 0.9999)  # Slightly below current to ensure it activates
+                                    # Set it to min(take_profit_price, current_market_price * 0.999) with 0.1% buffer
+                                    trailing_trigger_price = min(take_profit_price, current_market_price * 0.999)  # 0.1% below current to ensure it activates
                                 
                                 # "Rückrufpreis" (callback price) = trigger_price - this is when trailing activates
                                 logger.info(
@@ -583,6 +602,54 @@ class LiveTrader:
                                             )
                                             if trailing_attempt < max_trailing_tp_retries - 1:
                                                 await asyncio.sleep(wait_time)
+                                                continue
+                                        # Check for "trigger price should be ≥ current market price" error (43035)
+                                        elif code == "43035" or "trigger price should be" in str(msg).lower():
+                                            # 🚨 CRITICAL: Fetch fresh current market price and recalculate trigger price
+                                            logger.warning(
+                                                f"⚠️ [TRAILING TP ERROR 43035] {symbol} | "
+                                                f"Attempt {trailing_attempt + 1}/{max_trailing_tp_retries} | "
+                                                f"Trigger price too low - fetching fresh market price and recalculating..."
+                                            )
+                                            try:
+                                                # Fetch fresh ticker data
+                                                ticker_data = await self.rest_client.get_ticker(symbol)
+                                                if ticker_data and ticker_data.get("code") == "00000":
+                                                    ticker_list = ticker_data.get("data", [])
+                                                    if ticker_list and len(ticker_list) > 0:
+                                                        fresh_current_price = float(ticker_list[0].get("lastPr", current_market_price))
+                                                        # Recalculate trigger price with fresh price
+                                                        if side == "long":
+                                                            trailing_trigger_price = max(take_profit_price, fresh_current_price * 1.001)  # 0.1% above
+                                                        else:  # short
+                                                            trailing_trigger_price = min(take_profit_price, fresh_current_price * 0.999)  # 0.1% below
+                                                        logger.info(
+                                                            f"🔄 [TRAILING TP RECALC] {symbol} | "
+                                                            f"Fresh Price: ${fresh_current_price:.4f} | "
+                                                            f"New Trigger: ${trailing_trigger_price:.4f}"
+                                                        )
+                                                    else:
+                                                        # If can't get fresh price, just increase/decrease trigger price
+                                                        if side == "long":
+                                                            trailing_trigger_price = trailing_trigger_price * 1.001  # Increase by 0.1%
+                                                        else:  # short
+                                                            trailing_trigger_price = trailing_trigger_price * 0.999  # Decrease by 0.1%
+                                                else:
+                                                    # If can't get fresh price, just increase/decrease trigger price
+                                                    if side == "long":
+                                                        trailing_trigger_price = trailing_trigger_price * 1.001  # Increase by 0.1%
+                                                    else:  # short
+                                                        trailing_trigger_price = trailing_trigger_price * 0.999  # Decrease by 0.1%
+                                            except Exception as e:
+                                                logger.warning(f"⚠️ [PRICE FETCH ERROR] {symbol} | Error: {e} | Adjusting trigger price")
+                                                # If can't get fresh price, just increase/decrease trigger price
+                                                if side == "long":
+                                                    trailing_trigger_price = trailing_trigger_price * 1.001  # Increase by 0.1%
+                                                else:  # short
+                                                    trailing_trigger_price = trailing_trigger_price * 0.999  # Decrease by 0.1%
+                                            
+                                            if trailing_attempt < max_trailing_tp_retries - 1:
+                                                await asyncio.sleep(1.0)  # Short wait before retry
                                                 continue
                                         else:
                                             logger.error(

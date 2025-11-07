@@ -851,6 +851,14 @@ class BitgetRestClient:
                         if attempt < max_retries - 1:
                             await asyncio.sleep(wait_time)
                             continue
+                    # Check for "trigger price should be ≥ current market price" error (43035)
+                    elif code == "43035" or "trigger price should be" in str(msg).lower():
+                        logger.warning(
+                            f"⚠️ [TRAILING TP ERROR 43035] {symbol} | Attempt {attempt + 1}/{max_retries} | "
+                            f"Trigger price too low - caller should fetch fresh price and recalculate trigger price"
+                        )
+                        # Return error so caller can handle it (fetch fresh price and retry)
+                        return response
                     else:
                         logger.error(
                             f"❌ [TRAILING TAKE PROFIT FAILED] {symbol} | Attempt {attempt + 1}/{max_retries} | "
