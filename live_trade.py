@@ -86,6 +86,39 @@ class LiveTrader:
             symbols=list(self.position_manager.positions.keys()),
         )
 
+    def can_open_new_position(self) -> bool:
+        """Return True if opening a new position is allowed.
+
+        Criteria:
+        - Total open positions < self.max_positions
+        - Daily loss limit not breached (equity drawdown)
+        """
+        # Max positions check
+        if len(self.position_manager.positions) >= self.max_positions:
+            logger.debug(
+                "max_positions_reached",
+                current=len(self.position_manager.positions),
+                max=self.max_positions,
+            )
+            return False
+
+        # Daily loss limit check (optional safety)
+        try:
+            if self.daily_loss_limit > 0:
+                drawdown = (self.initial_equity - self.equity) / max(self.initial_equity, 1e-9)
+                if drawdown >= self.daily_loss_limit:
+                    logger.warning(
+                        "daily_loss_limit_reached",
+                        drawdown=f"{drawdown*100:.2f}%",
+                        limit=f"{self.daily_loss_limit*100:.2f}%",
+                    )
+                    return False
+        except Exception:
+            # If equity not initialized yet, allow
+            pass
+
+        return True
+
     async def verify_api_credentials(self) -> bool:
         """Verify API credentials work with retry logic for network issues."""
         logger.info("🔑 Verifying API credentials...")
@@ -272,10 +305,13 @@ class LiveTrader:
                             f"| SL: ${stop_loss_price:.4f} ({sl_capital_pct*100:.0f}%)"
                         )
 
+                        # Convert logical side to API side
+                        order_side = "buy" if side == "long" else "sell"
+
                         # Place the actual MARKET order with atomic TP/SL
                         order_response = await self.rest_client.place_order(
                             symbol=symbol,
-                            side=side,
+                            side=order_side,
                             size=size,
                             order_type="market",
                             take_profit_price=take_profit_price,
@@ -309,6 +345,9 @@ class LiveTrader:
                         return False
 
                 return False # Final fallback if can_open_new_position() is False or all attempts fail
+            except Exception as e:
+                logger.error(f"❌ Trading setup error: {e}")
+                return False
 
     async def close_position(self, symbol: str, exit_reason: str = "MANUAL") -> bool:
         """Close an existing position."""
@@ -921,7 +960,7 @@ class LiveTrader:
             except Exception as e:
                 logger.warning(f"⚠️  Could not fetch history for {symbol} ({timeframe}): {e}")
 
-        batch_size = 10  # Process 10 symbols concurrently
+        batch_size = 10  # Process 10 symbols concurrently for faster loading
         total_batches = (len(self.symbols) + batch_size - 1) // batch_size
         timeframes = ["1m", "5m", "15m"]
         
