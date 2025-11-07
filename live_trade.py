@@ -470,11 +470,15 @@ class LiveTrader:
         """
         Manage existing positions with TRAILING STOPS.
         
-        CRITICAL: Sync with exchange EVERY iteration to catch liquidations/manual closes!
+        OPTIMIZED: Sync with exchange every 5 seconds (not every 200ms!)
+        Exchange-side TP/SL handles instant execution, so less frequent sync is fine.
         """
-        # SYNC WITH EXCHANGE: Check what's actually open on exchange
-        # (positions might be closed by liquidation, manual close, or exchange)
-        if not self.paper_mode:
+        # SYNC WITH EXCHANGE: Check what's actually open (but not EVERY iteration - too slow!)
+        # Sync every 5 seconds (25 iterations @ 200ms = 5s)
+        sync_count = getattr(self, '_sync_count', 0)
+        self._sync_count = sync_count + 1
+        
+        if not self.paper_mode and sync_count % 25 == 0:
             try:
                 endpoint = "/api/v2/mix/position/all-position"
                 params = {"productType": "USDT-FUTURES", "marginCoin": "USDT"}
@@ -491,7 +495,7 @@ class LiveTrader:
                 # Remove positions from tracking if not on exchange anymore
                 for symbol in list(self.position_manager.positions.keys()):
                     if symbol not in exchange_open_symbols:
-                        logger.warning(f"⚠️ {symbol} closed on exchange (liquidation or manual close) - removing from tracking")
+                        logger.warning(f"⚠️ {symbol} closed on exchange (TP/SL hit or manual close) - removing from tracking")
                         self.position_manager.remove_position(symbol)
             except Exception as e:
                 logger.error(f"Failed to sync positions with exchange: {e}")
@@ -500,13 +504,13 @@ class LiveTrader:
         positions_checked = 0
         positions_to_check = list(self.position_manager.positions.keys())
         
-        # Log position status every 10 checks (10 seconds @ 1s interval)
+        # Log position status every 25 checks (5 seconds @ 200ms interval)
         check_count = getattr(self, '_position_check_count', 0)
         self._position_check_count = check_count + 1
         
         if positions_to_check:
-            if check_count % 10 == 0:
-                # Detailed status every 10 seconds
+            if check_count % 25 == 0:
+                # Detailed status every 5 seconds
                 logger.info(f"🔍 Monitoring {len(positions_to_check)} positions for exits...")
                 for sym in positions_to_check:
                     pos = self.position_manager.get_position(sym)
@@ -670,7 +674,7 @@ class LiveTrader:
         iteration = 0
         last_entry_check_time = datetime.now()
         entry_check_interval_sec = 60  # Check for new entries every 60 seconds
-        position_check_interval_sec = 0.5  # Check exits every 0.5 seconds (500ms - LIGHTNING FAST!)
+        position_check_interval_sec = 0.2  # Check exits every 0.2 seconds (200ms - ULTRA FAST!)
 
         while self.running:
             try:

@@ -191,39 +191,14 @@ class PositionManager:
         if price_change_pct > target_price_move_for_tp:
             return True, f"TAKE-PROFIT (Capital: {return_on_capital_pct*100:.2f}%, Price: {price_change_pct*100:.4f}%)"
         
-        # 3. QUICK PROFIT EXIT: Take profit earlier if sufficient time has passed
-        # This prevents giving back profits in choppy markets
-        from datetime import datetime, timedelta
-        try:
-            entry_dt = datetime.fromisoformat(position.entry_time)
-            time_in_position = (datetime.now() - entry_dt).total_seconds()
-            
-            # After 30 seconds, take any profit > 5% capital (quick scalp!)
-            if time_in_position > 30 and return_on_capital_pct > 0.05:
-                return True, f"QUICK-SCALP after {time_in_position:.0f}s (Capital: {return_on_capital_pct*100:.2f}%)"
-            
-            # After 2 minutes, take any profit > 3% capital (covers fees + profit)
-            if time_in_position > 120 and return_on_capital_pct > 0.03:
-                return True, f"QUICK-PROFIT after {time_in_position/60:.1f}min (Capital: {return_on_capital_pct*100:.2f}%)"
-            
-            # After 5 minutes, take any profit > 1.5% capital (marginal profit)
-            if time_in_position > 300 and return_on_capital_pct > 0.015:
-                return True, f"TIME-EXIT after {time_in_position/60:.1f}min (Capital: {return_on_capital_pct*100:.2f}%)"
-            
-            # After 10 minutes, exit even at small loss (free up capital)
-            if time_in_position > 600 and return_on_capital_pct > -0.02:
-                return True, f"MAX-TIME-EXIT after {time_in_position/60:.1f}min (Capital: {return_on_capital_pct*100:.2f}%)"
-        except:
-            pass  # If datetime parsing fails, skip time-based exits
-        
-        # 4. MINIMUM PROFIT LOCK: Don't close tiny winners/losers (avoid fee erosion)
+        # 3. MINIMUM PROFIT LOCK: Don't close tiny winners/losers (avoid fee erosion)
         # Between -0.5% and +0.5% capital return, hold position (fees cost ~0.08%)
         # FIXED: Made this much tighter so it doesn't block TP!
         if -0.005 < return_on_capital_pct < 0.005:
             # Too small to justify closing - would lose to fees
             return False, ""
         
-        # 5. Trailing stop (only if in profit on capital basis)
+        # 4. Trailing stop (only if in profit on capital basis)
         min_profit_for_trailing = 0.01 / position.leverage  # 1% capital return = 0.02% price move @ 50x
         if price_change_pct > min_profit_for_trailing:
             if position.side == "long":
