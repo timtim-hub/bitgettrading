@@ -633,16 +633,17 @@ class BitgetRestClient:
                 "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
                 "triggerPrice": str(stop_loss_price),
                 "executePrice": "0",  # MARKET on trigger
-                "size": str(rounded_size),  # Size in contracts (will close this amount)
-                "reduceOnly": "YES",  # 🚨 CRITICAL: Only close position, never open new one!
+                "size": str(
+                    rounded_size
+                ),  # Size in contracts (MUST match position size EXACTLY!)
+                # NOTE: reduceOnly is NOT supported for plan orders - removed
             }
             logger.info(
                 f"📋 [STOP-LOSS ORDER] {symbol} | "
                 f"symbol={symbol}, productType={product_type}, "
                 f"marginMode=isolated, planType=loss_plan, "
                 f"holdSide={api_hold_side}, triggerPrice={stop_loss_price}, "
-                f"executePrice=0 (market), size={rounded_size}, "
-                f"reduceOnly=YES (closes position only)"
+                f"executePrice=0 (market), size={rounded_size} (MUST match position EXACTLY!)"
             )
             # Retry logic for SL placement
             max_retries = 3
@@ -839,22 +840,23 @@ class BitgetRestClient:
             "marginCoin": "USDT",
             "planType": "moving_plan",  # Trailing take profit order type (normal trailing mode)
             "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
-            "size": str(rounded_size),  # Size in contracts (will close this amount)
+            "size": str(
+                rounded_size
+            ),  # Size in contracts (MUST match position size EXACTLY!)
             "rangeRate": formatted_range_rate,  # Trailing callback rate as percentage (e.g., "2.00" = 2%, "1.50" = 1.5%, must be 2 decimal places!)
             "triggerPrice": str(
                 trigger_price
             ),  # Price at which trailing TP becomes active (Rückrufpreis)
             "triggerType": "mark_price",  # Use mark price for triggering
-            "reduceOnly": "YES",  # 🚨 CRITICAL: Only close position, never open new one!
+            # NOTE: reduceOnly is NOT supported for plan orders on Bitget - it's silently ignored
         }
 
         logger.info(
             f"🧵 [TRAILING TP ORDER - NORMAL MODE] {symbol} | "
             f"hold_side: {hold_side} → API holdSide: {api_hold_side} | "
-            f"size: {size} → rounded: {rounded_size} | "
+            f"size: {size} → rounded: {rounded_size} (MUST match position EXACTLY!) | "
             f"callback_rate: {range_rate*100:.2f}% (Rückrufquote) → API: {formatted_range_rate} | "
             f"trigger_price: {trigger_price} (activation price) | "
-            f"reduceOnly: YES (closes position only) | "
             f"product_type: {product_type}"
         )
 
@@ -872,8 +874,7 @@ class BitgetRestClient:
                         f"✅ [TRAILING TP PLACED - NORMAL MODE] {symbol} | "
                         f"Callback Rate: {range_rate*100:.2f}% (Rückrufquote) | "
                         f"Trigger Price: {trigger_price} (activation) | "
-                        f"Size: {rounded_size} contracts | "
-                        f"reduceOnly: YES | "
+                        f"Size: {rounded_size} contracts (must match position EXACTLY!) | "
                         f"Order ID: {data_resp.get('orderId', 'N/A')}"
                     )
                     return response
