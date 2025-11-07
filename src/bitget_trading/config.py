@@ -57,6 +57,30 @@ class TradingConfig(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     model_path: str = Field(default="models/lgbm_model.txt")
     data_path: str = Field(default="data/market_data.csv")
+    
+    # Backtesting
+    backtest_enabled: bool = Field(default=True, alias="BACKTEST_ENABLED")
+    backtest_interval_hours: int = Field(default=6, ge=1, alias="BACKTEST_INTERVAL_HOURS")
+    backtest_lookback_days: int = Field(default=7, ge=1, alias="BACKTEST_LOOKBACK_DAYS")
+    backtest_min_trades: int = Field(default=10, ge=1, alias="BACKTEST_MIN_TRADES")
+    backtest_parallel_tokens: int = Field(default=20, ge=1, alias="BACKTEST_PARALLEL_TOKENS")
+    
+    # Filtering
+    filter_losing_tokens: bool = Field(default=True, alias="FILTER_LOSING_TOKENS")
+    filter_min_win_rate: float = Field(default=0.50, ge=0, le=1, alias="FILTER_MIN_WIN_RATE")
+    filter_min_roi: float = Field(default=0.0, alias="FILTER_MIN_ROI")
+    filter_min_sharpe: float = Field(default=0.5, ge=0, alias="FILTER_MIN_SHARPE")
+    filter_min_profit_factor: float = Field(default=1.0, ge=0, alias="FILTER_MIN_PROFIT_FACTOR")
+    
+    # Dynamic Parameters
+    dynamic_params_enabled: bool = Field(default=True, alias="DYNAMIC_PARAMS_ENABLED")
+    trailing_tp_best_tokens: float = Field(default=0.06, ge=0, le=0.10, alias="TRAILING_TP_BEST_TOKENS")
+    trailing_tp_good_tokens: float = Field(default=0.05, ge=0, le=0.10, alias="TRAILING_TP_GOOD_TOKENS")
+    trailing_tp_average_tokens: float = Field(default=0.04, ge=0, le=0.10, alias="TRAILING_TP_AVERAGE_TOKENS")
+    trailing_tp_poor_tokens: float = Field(default=0.03, ge=0, le=0.10, alias="TRAILING_TP_POOR_TOKENS")
+    position_size_best_multiplier: float = Field(default=1.3, ge=0.5, le=2.0, alias="POSITION_SIZE_BEST_MULTIPLIER")
+    position_size_good_multiplier: float = Field(default=1.15, ge=0.5, le=2.0, alias="POSITION_SIZE_GOOD_MULTIPLIER")
+    position_size_poor_multiplier: float = Field(default=0.8, ge=0.5, le=2.0, alias="POSITION_SIZE_POOR_MULTIPLIER")
 
     def validate_credentials(self) -> bool:
         """Check if API credentials are set."""

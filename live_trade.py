@@ -21,14 +21,18 @@ from typing import Any
 
 import numpy as np
 
+from src.bitget_trading.backtest_service import BacktestService
 from src.bitget_trading.bitget_rest import BitgetRestClient
+from src.bitget_trading.config import get_config
 from src.bitget_trading.cross_sectional_ranker import CrossSectionalRanker
+from src.bitget_trading.dynamic_params import DynamicParams
 from src.bitget_trading.enhanced_ranker import EnhancedRanker
 from src.bitget_trading.logger import setup_logging
 from src.bitget_trading.multi_symbol_state import MultiSymbolStateManager
 from src.bitget_trading.position_manager import PositionManager
 from src.bitget_trading.loss_tracker import LossTracker, TradeRecord
 from src.bitget_trading.regime_detector import RegimeDetector
+from src.bitget_trading.symbol_filter import SymbolFilter
 from src.bitget_trading.universe import UniverseManager
 from src.bitget_trading.leverage_cache import LeverageCache
 
@@ -72,6 +76,46 @@ class LiveTrader:
         self.regime_detector = RegimeDetector()  # Market regime detection
         self.leverage_cache = LeverageCache()  # Cache to avoid redundant leverage API calls
         self.use_enhanced = False  # Start with simple, upgrade to enhanced after data accumulates
+        
+        # 🚀 NEW: Backtesting and performance tracking
+        self.config = get_config()
+        self.backtest_service: BacktestService | None = None
+        self.symbol_filter: SymbolFilter | None = None
+        self.dynamic_params: DynamicParams | None = None
+        
+        if self.config.backtest_enabled:
+            # Initialize backtesting service
+            self.backtest_service = BacktestService(
+                config=self.config,
+                rest_client=self.rest_client,
+                enhanced_ranker=self.enhanced_ranker,
+                state_manager=self.state_manager,
+                symbols=[],  # Will be set after symbols are loaded
+                enabled=self.config.backtest_enabled,
+                interval_hours=self.config.backtest_interval_hours,
+                lookback_days=self.config.backtest_lookback_days,
+                min_trades=self.config.backtest_min_trades,
+                parallel_tokens=self.config.backtest_parallel_tokens,
+            )
+            
+            # Initialize symbol filter
+            performance_tracker = self.backtest_service.get_performance_tracker()
+            self.symbol_filter = SymbolFilter(
+                performance_tracker=performance_tracker,
+                enabled=self.config.filter_losing_tokens,
+                min_win_rate=self.config.filter_min_win_rate,
+                min_roi=self.config.filter_min_roi,
+                min_sharpe=self.config.filter_min_sharpe,
+                min_profit_factor=self.config.filter_min_profit_factor,
+            )
+            
+            # Initialize dynamic params
+            self.dynamic_params = DynamicParams(
+                performance_tracker=performance_tracker,
+                enabled=self.config.dynamic_params_enabled,
+            )
+            
+            logger.info("✅ [BACKTEST] Backtesting service initialized")
 
         # State
         self.equity = initial_capital
@@ -566,13 +610,23 @@ class LiveTrader:
                                 )
                                 
                                 # 2. Place trailing take profit order (track_plan)
+                                # 🚀 NEW: Get dynamic trailing TP callback (if enabled)
+                                trailing_stop_pct = regime_params.get("trailing_stop_pct", 0.04)  # Default 4%
+                                if self.dynamic_params:
+                                    dynamic_callback = self.dynamic_params.get_trailing_tp_callback(symbol, trailing_stop_pct)
+                                    trailing_stop_pct = dynamic_callback
+                                    logger.info(
+                                        f"📊 [DYNAMIC PARAMS] {symbol} | Trailing TP callback: {dynamic_callback:.2%} "
+                                        f"(was {regime_params.get('trailing_stop_pct', 0.04):.2%})"
+                                    )
+                                
                                 # Calculate trailing TP parameters
                                 # 🚨 CRITICAL: Bitget's callbackRatio is PRICE-BASED, not capital-based!
                                 # We need to convert capital-based trailing_stop_pct to price-based
                                 # 🚨 CRITICAL: Use ACTUAL leverage from position (some tokens can't be set to 25x!)
                                 # Example: 4% capital @ 25x leverage = 4% / 25 = 0.16% price callback
                                 # Example: 4% capital @ 10x leverage = 4% / 10 = 0.4% price callback
-                                trailing_stop_pct_capital = regime_params.get("trailing_stop_pct", 0.04) if regime_params else 0.04  # 4% callback from capital
+                                trailing_stop_pct_capital = trailing_stop_pct  # Use dynamic value if enabled
                                 # Use actual leverage from position (fetched from exchange above)
                                 actual_leverage = int(pos.get("leverage", self.leverage)) if pos.get("leverage") else self.leverage
                                 trailing_range_rate = trailing_stop_pct_capital / actual_leverage  # Convert to price-based using ACTUAL leverage
@@ -1187,6 +1241,27 @@ class LiveTrader:
                         "peak_pnl_pct": position.peak_pnl_pct,
                     })
                     
+                    # 🚀 NEW: Update live results in performance tracker (if enabled)
+                    if self.backtest_service:
+                        performance_tracker = self.backtest_service.get_performance_tracker()
+                        # Calculate win rate and total PnL for this symbol
+                        # Get all trades for this symbol
+                        symbol_trades = [t for t in self.trades if t.get("symbol") == symbol]
+                        if symbol_trades:
+                            winning_trades = [t for t in symbol_trades if t.get("pnl", 0) > 0]
+                            win_rate = len(winning_trades) / len(symbol_trades) if symbol_trades else 0.0
+                            total_pnl = sum(t.get("pnl", 0) for t in symbol_trades)
+                            performance_tracker.update_live_result(
+                                symbol=symbol,
+                                win_rate=win_rate,
+                                total_trades=len(symbol_trades),
+                                total_pnl=total_pnl,
+                            )
+                            logger.debug(
+                                f"📊 [LIVE RESULTS] {symbol} | Win Rate: {win_rate:.1%} | "
+                                f"Trades: {len(symbol_trades)} | Total PnL: ${total_pnl:.2f}"
+                            )
+                    
                     logger.info(
                         f"✅ [LIVE] CLOSED {symbol} | PnL: ${position.unrealized_pnl:.2f} | "
                         f"Peak: {position.peak_pnl_pct:.2f}% | Exit Price: ${current_price:.4f}"
@@ -1566,6 +1641,14 @@ class LiveTrader:
                     logger.warning(f"⚠️ [BALANCE ERROR] {symbol} | Error: {e} | Using tracked equity: ${self.equity:.2f}")
                     base_position_value = self.equity * self.position_size_pct
                 
+                # 🚀 NEW: Apply dynamic position size multiplier (if enabled)
+                if self.dynamic_params:
+                    dynamic_multiplier = self.dynamic_params.get_position_size_multiplier(symbol)
+                    position_size_multiplier = dynamic_multiplier
+                    logger.info(
+                        f"📊 [DYNAMIC PARAMS] {symbol} | Position size multiplier: {dynamic_multiplier:.2f}x"
+                    )
+                
                 # Apply position size multiplier (but ensure we still use 10% base)
                 adjusted_position_value = base_position_value * position_size_multiplier
                 
@@ -1778,11 +1861,20 @@ class LiveTrader:
                     logger.info(f"[ENTRY CHECK #{iteration}] Looking for {available_slots} new positions")
                     logger.info(f"{'='*70}")
 
+                    # 🚀 NEW: Filter symbols before ranking (if enabled)
+                    symbols_to_rank = self.symbols
+                    if self.symbol_filter:
+                        symbols_to_rank = self.symbol_filter.filter_symbols(self.symbols)
+                        logger.info(
+                            f"🔍 [FILTER] Filtered {len(self.symbols)} symbols -> {len(symbols_to_rank)} passed "
+                            f"({len(self.symbols) - len(symbols_to_rank)} filtered out)"
+                        )
+                    
                     # Rank ALL symbols - then pick top ones for available slots
                     # This ensures we're trading the BEST opportunities across ALL 300+ tokens!
                     all_ranked = self.enhanced_ranker.rank_symbols_enhanced(
                         self.state_manager,
-                        top_k=len(self.symbols),  # Rank ALL symbols (300+)
+                        top_k=len(symbols_to_rank),  # Rank filtered symbols
                     )
                     # Then take only the top ones for available slots
                     allocations = all_ranked[:available_slots] if len(all_ranked) > available_slots else all_ranked
@@ -2046,6 +2138,14 @@ class LiveTrader:
             )
             
         logger.info("✅ All historical data loaded successfully!")
+        
+        # 🚀 NEW: Start backtesting service (if enabled)
+        if self.backtest_service and self.backtest_service.scheduler:
+            # Update symbols in backtesting service
+            self.backtest_service.scheduler.symbols = self.symbols
+            # Start backtesting service in background
+            asyncio.create_task(self.backtest_service.start())
+            logger.info("✅ [BACKTEST] Backtesting service started")
 
         # Start trading
         await self.trading_loop()
