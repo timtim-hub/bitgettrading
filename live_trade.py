@@ -801,13 +801,65 @@ class LiveTrader:
                                     f"TP Threshold: ${take_profit_price:.4f}"
                                 )
                                 
-                                # 🚨 CRITICAL: Place trailing TP with robust retry logic
-                                # Keep retrying until it succeeds or we exhaust all attempts
-                                trailing_tp_placed = False
-                                max_trailing_tp_retries = 10  # Increased retries for trailing TP
-                                trailing_tp_retry_delay = 1.0  # Wait between retries
+                                # 🚨 CRITICAL: Validate position size before placing trailing TP!
+                                # Ensure actual_position_size is valid (> 0) before attempting to place trailing TP
+                                if actual_position_size <= 0:
+                                    logger.error(
+                                        f"🚨 [TRAILING TP SIZE ERROR] {symbol} | "
+                                        f"Invalid position size: {actual_position_size} | "
+                                        f"Attempting to query position again..."
+                                    )
+                                    # Try to query position one more time
+                                    try:
+                                        positions = await self.rest_client.get_positions(symbol)
+                                        if positions:
+                                            pos = positions[0]
+                                            total_size = pos.get("total") or pos.get("size") or pos.get("available")
+                                            if total_size is not None:
+                                                actual_position_size = float(total_size)
+                                                logger.info(
+                                                    f"✅ [TRAILING TP SIZE FIXED] {symbol} | "
+                                                    f"Queried position size: {actual_position_size}"
+                                                )
+                                            else:
+                                                # Still can't get size - use calculated size
+                                                actual_position_size = size
+                                                logger.warning(
+                                                    f"⚠️ [TRAILING TP SIZE FALLBACK] {symbol} | "
+                                                    f"Using calculated size: {actual_position_size}"
+                                                )
+                                        else:
+                                            # No position found - use calculated size
+                                            actual_position_size = size
+                                            logger.warning(
+                                                f"⚠️ [TRAILING TP SIZE FALLBACK] {symbol} | "
+                                                f"No position found, using calculated size: {actual_position_size}"
+                                            )
+                                    except Exception as e:
+                                        # Query failed - use calculated size
+                                        actual_position_size = size
+                                        logger.warning(
+                                            f"⚠️ [TRAILING TP SIZE FALLBACK] {symbol} | "
+                                            f"Position query failed: {e} | Using calculated size: {actual_position_size}"
+                                        )
                                 
-                                for trailing_attempt in range(max_trailing_tp_retries):
+                                # Final validation - if still invalid, skip trailing TP
+                                if actual_position_size <= 0:
+                                    logger.error(
+                                        f"🚨 [TRAILING TP CRITICAL] {symbol} | "
+                                        f"Cannot place trailing TP - position size is invalid: {actual_position_size} | "
+                                        f"Skipping trailing TP placement!"
+                                    )
+                                    trailing_tp_placed = False
+                                    tp_results = {"code": "error", "msg": "Invalid position size"}
+                                else:
+                                    # 🚨 CRITICAL: Place trailing TP with robust retry logic
+                                    # Keep retrying until it succeeds or we exhaust all attempts
+                                    trailing_tp_placed = False
+                                    max_trailing_tp_retries = 10  # Increased retries for trailing TP
+                                    trailing_tp_retry_delay = 1.0  # Wait between retries
+                                    
+                                    for trailing_attempt in range(max_trailing_tp_retries):
                                     # 🚨 CRITICAL: ALWAYS fetch fresh price RIGHT BEFORE placing order!
                                     # Price can move between calculation and placement, causing error 43035
                                     try:
