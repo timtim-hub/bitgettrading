@@ -1040,6 +1040,15 @@ class BitgetRestClient:
         # Convert "long"/"short" to "buy"/"sell" for API
         api_hold_side = "buy" if hold_side == "long" else "sell"
         
+        # Round size to correct precision (needed for moving_plan)
+        if size_precision is None:
+            size_str = f"{size:.10f}".rstrip('0').rstrip('.')
+            if '.' in size_str:
+                size_precision = len(size_str.split('.')[1])
+            else:
+                size_precision = 0
+        rounded_size = round(size, size_precision)
+        
         # 🚨 FINAL ANSWER: moving_plan is the ONLY planType that supports trailing!
         # pos_profit does NOT support rangeRate (gets rejected or ignored)
         # We MUST use moving_plan + exact size for true trailing behavior

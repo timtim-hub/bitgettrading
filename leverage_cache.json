@@ -2446,5 +2446,21 @@
   "SYSUSDT_short": {
     "leverage": 25,
     "timestamp": 1762533676.315737
+  },
+  "REZUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762534905.55602
+  },
+  "REZUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762534906.1688058
+  },
+  "CHILLGUYUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762534910.99963
+  },
+  "CHILLGUYUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762534911.620867
   }
 }
