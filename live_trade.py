@@ -95,7 +95,15 @@ class LiveTrader:
                 return False
 
             logger.info("✅ API credentials verified!")
-            logger.info(f"💰 Account balance: ${balance.get('available', 0):.2f} USDT")
+            
+            # Parse balance correctly (nested structure)
+            if balance.get("code") == "00000" and "data" in balance:
+                data = balance.get("data", [{}])[0]
+                equity = float(data.get("equity", 0))
+                available = float(data.get("available", 0))
+                logger.info(f"💰 Account balance: ${equity:.2f} USDT (Available: ${available:.2f})")
+            else:
+                logger.info(f"💰 Account balance: Verified (details parsed at startup)")
 
             return True
 
