@@ -344,14 +344,27 @@ class LiveTrader:
                             
                             # Place TP/SL plan orders with market execution
                             # Get contract info to determine size precision
+                            # Different contracts have different checkScale values:
+                            # - checkScale=0: whole numbers (no decimals) - e.g., THETAUSDT, SUSHIUSDT
+                            # - checkScale=1: 1 decimal place - e.g., LTCUSDT, BNBUSDT
                             contract_info = self.universe_manager.get_contract_info(symbol)
-                            size_precision = 1  # Default to 1 decimal place
+                            size_precision = None  # Let place_tpsl_order infer from size
+                            
+                            # Try to get size precision from contract info if available
+                            # Note: Bitget API doesn't expose checkScale directly, so we infer it
+                            # Based on errors: some contracts need 0 decimals, some need 1
                             if contract_info:
-                                # Try to get size precision from contract info
-                                # Bitget API error shows checkScale=1, so use volume_place or default to 1
-                                size_precision = contract_info.get("volume_place", 1)
-                                # But based on error, most contracts use 1 decimal place
-                                size_precision = 1  # Force to 1 for now based on error message
+                                # Check if size is close to whole number
+                                if abs(size - round(size)) < 0.01:
+                                    size_precision = 0  # Whole number
+                                else:
+                                    size_precision = 1  # 1 decimal place
+                            else:
+                                # No contract info, infer from size
+                                if abs(size - round(size)) < 0.01:
+                                    size_precision = 0
+                                else:
+                                    size_precision = 1
                             
                             logger.info(
                                 f"🚀 [TP/SL CALL] {symbol} | "

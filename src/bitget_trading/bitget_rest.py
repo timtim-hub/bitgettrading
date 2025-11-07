@@ -503,9 +503,17 @@ class BitgetRestClient:
         results: dict[str, Any] = {"sl": None, "tp": None}
         
         # 🚨 CRITICAL FIX: Round size to correct precision (Bitget API requires specific decimal places)
-        # Default to 1 decimal place if not specified (most contracts use checkScale=1)
+        # Different contracts have different checkScale values:
+        # - checkScale=0: whole numbers (no decimals) - e.g., THETAUSDT, SUSHIUSDT
+        # - checkScale=1: 1 decimal place - e.g., LTCUSDT, BNBUSDT
+        # If not specified, try to infer from size value or default to 1
         if size_precision is None:
-            size_precision = 1  # Default to 1 decimal place based on error message
+            # Try to infer: if size is already a whole number or very close, use 0
+            # Otherwise default to 1
+            if abs(size - round(size)) < 0.01:  # Very close to whole number
+                size_precision = 0
+            else:
+                size_precision = 1  # Default to 1 decimal place
         rounded_size = round(size, size_precision)
         
         # 🚨 EXTENSIVE LOGGING: Log all input parameters
@@ -524,8 +532,8 @@ class BitgetRestClient:
             f"🔧 [TP/SL CONVERSION] {symbol} | hold_side: {hold_side} → API holdSide: {api_hold_side}"
         )
         
-        # Helper to post plan order with fallback triggerType
-        async def _post_plan(data: dict[str, str], order_type: str) -> dict[str, Any]:
+        # Helper to post plan order with fallback triggerType and size precision
+        async def _post_plan(data: dict[str, str], order_type: str, original_size: float) -> dict[str, Any]:
             # Log EXACT data being sent
             logger.info(
                 f"📤 [TP/SL REQUEST] {symbol} | {order_type} | "
@@ -543,26 +551,60 @@ class BitgetRestClient:
                 )
                 return response
             except Exception as e:
-                logger.warning(
-                    f"⚠️  [TP/SL FALLBACK] {symbol} | {order_type} | "
-                    f"mark_price failed: {e} | Trying market_price..."
-                )
-                # Fallback to market_price if exchange rejects mark_price
-                data["triggerType"] = "market_price"
-                try:
-                    logger.info(f"🔄 [TP/SL TRY] {symbol} | {order_type} | triggerType: market_price")
-                    response = await self._request("POST", endpoint, data=data)
+                error_msg = str(e)
+                # Check if it's a checkScale error - try different precision
+                if "checkBDScale" in error_msg or "checkScale" in error_msg:
+                    logger.warning(
+                        f"⚠️  [TP/SL PRECISION ERROR] {symbol} | {order_type} | "
+                        f"checkScale error: {error_msg} | Trying different precision..."
+                    )
+                    # Try opposite precision (0 vs 1)
+                    if size_precision == 0:
+                        new_precision = 1
+                        new_rounded_size = round(original_size, 1)
+                    else:
+                        new_precision = 0
+                        new_rounded_size = round(original_size, 0)
+                    
                     logger.info(
-                        f"✅ [TP/SL RESPONSE] {symbol} | {order_type} | "
-                        f"Full response: {response}"
+                        f"🔄 [TP/SL RETRY] {symbol} | {order_type} | "
+                        f"Trying precision {new_precision} (rounded size: {new_rounded_size})"
                     )
-                    return response
-                except Exception as e2:
-                    logger.error(
-                        f"❌ [TP/SL FAILED] {symbol} | {order_type} | "
-                        f"Both triggerType attempts failed: {e2}"
+                    data["size"] = str(new_rounded_size)
+                    try:
+                        response = await self._request("POST", endpoint, data=data)
+                        logger.info(
+                            f"✅ [TP/SL RESPONSE] {symbol} | {order_type} | "
+                            f"Retry successful! Full response: {response}"
+                        )
+                        return response
+                    except Exception as e3:
+                        logger.error(
+                            f"❌ [TP/SL RETRY FAILED] {symbol} | {order_type} | "
+                            f"Both precisions failed: {e3}"
+                        )
+                        raise
+                else:
+                    logger.warning(
+                        f"⚠️  [TP/SL FALLBACK] {symbol} | {order_type} | "
+                        f"mark_price failed: {e} | Trying market_price..."
                     )
-                    raise
+                    # Fallback to market_price if exchange rejects mark_price
+                    data["triggerType"] = "market_price"
+                    try:
+                        logger.info(f"🔄 [TP/SL TRY] {symbol} | {order_type} | triggerType: market_price")
+                        response = await self._request("POST", endpoint, data=data)
+                        logger.info(
+                            f"✅ [TP/SL RESPONSE] {symbol} | {order_type} | "
+                            f"Full response: {response}"
+                        )
+                        return response
+                    except Exception as e2:
+                        logger.error(
+                            f"❌ [TP/SL FAILED] {symbol} | {order_type} | "
+                            f"Both triggerType attempts failed: {e2}"
+                        )
+                        raise
         
         # Place STOP-LOSS order (separate order #1)
         if stop_loss_price is not None:
@@ -585,7 +627,7 @@ class BitgetRestClient:
                 f"executePrice=0, size={size}"
             )
             try:
-                results["sl"] = await _post_plan(sl_data, "STOP-LOSS")
+                results["sl"] = await _post_plan(sl_data, "STOP-LOSS", size)
                 code = results["sl"].get("code") if results["sl"] else "NO_CODE"
                 msg = results["sl"].get("msg") if results["sl"] else "NO_MSG"
                 data = results["sl"].get("data") if results["sl"] else None
@@ -628,7 +670,7 @@ class BitgetRestClient:
                 f"executePrice=0, size={size}"
             )
             try:
-                results["tp"] = await _post_plan(tp_data, "TAKE-PROFIT")
+                results["tp"] = await _post_plan(tp_data, "TAKE-PROFIT", size)
                 code = results["tp"].get("code") if results["tp"] else "NO_CODE"
                 msg = results["tp"].get("msg") if results["tp"] else "NO_MSG"
                 data = results["tp"].get("data") if results["tp"] else None
