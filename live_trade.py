@@ -927,13 +927,23 @@ class LiveTrader:
         # Fetch historical candles for all symbols in parallel
         async def fetch_and_store(symbol: str, timeframe: str):
             try:
-                # Use a limit of 200 candles, standard for TA
-                candles = await self.rest_client.get_historical_candles(symbol, timeframe, 200)
-                if candles:
-                    for candle in candles:
-                        timestamp = int(candle[0])
-                        price = float(candle[4]) # Close price
-                        self.state_manager.add_price(symbol, price, timestamp, timeframe)
+                response = await self.rest_client.get_historical_candles(symbol, timeframe, 200)
+                if not isinstance(response, dict) or response.get("code") != "00000":
+                    logger.warning(
+                        f"⚠️  History fetch failed for {symbol} ({timeframe}): "
+                        f"{response.get('msg') if isinstance(response, dict) else 'invalid response'}"
+                    )
+                    return
+                candles = response.get("data", [])
+                if not candles:
+                    logger.warning(f"⚠️  No candles returned for {symbol} ({timeframe})")
+                    return
+                # Ensure oldest -> newest
+                for candle in reversed(candles):
+                    # Each candle: [timestamp, open, high, low, close, volume, ...]
+                    timestamp = int(candle[0])
+                    price = float(candle[4])
+                    self.state_manager.add_price(symbol, price, timestamp, timeframe)
             except Exception as e:
                 logger.warning(f"⚠️  Could not fetch history for {symbol} ({timeframe}): {e}")
 
