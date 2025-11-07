@@ -237,8 +237,20 @@ class EnhancedRanker:
         elif bearish_count >= required_agreement:
             # Bearish confluence detected
             # LAYER 3: Confirm with orderbook (adaptive for simulated data)
-            if orderbook_validated or ob_imbalance > orderbook_threshold:
-                # Orderbook shows ask pressure (bearish) OR using simulated data
+            # 🚀 RELAXED: In bull markets, orderbook often shows bid pressure even during bearish moves
+            # If we have strong bearish confluence (>=75% agreement), allow shorts even with neutral/weak orderbook
+            strong_bearish_confluence = bearish_count >= int(total_timeframes * 0.75)
+            
+            # Allow short if:
+            # 1. Orderbook validated (simulated data) OR
+            # 2. Orderbook shows ask pressure (bearish) OR
+            # 3. Strong bearish confluence (>=75% agreement) AND orderbook is not strongly bullish (not > 0.1)
+            if (
+                orderbook_validated 
+                or ob_imbalance > orderbook_threshold
+                or (strong_bearish_confluence and ob_imbalance > -0.1)  # Allow if not strongly bullish
+            ):
+                # Orderbook shows ask pressure (bearish) OR using simulated data OR strong confluence overrides
                 direction = "short"
                 strength = weighted_avg_bearish
 
@@ -253,6 +265,8 @@ class EnhancedRanker:
                     else (ob_imbalance > orderbook_threshold)
                 )
                 metadata["simulated_orderbook"] = orderbook_validated
+                if strong_bearish_confluence and not metadata["orderbook_confirmed"]:
+                    metadata["confluence_override"] = True  # Mark that confluence overrode orderbook
             else:
                 # Orderbook doesn't confirm (potential trap)
                 return (

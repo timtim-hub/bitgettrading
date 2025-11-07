@@ -356,9 +356,20 @@ class LiveTrader:
                                     f"Code: {error_code} | Msg: {error_msg}"
                                 )
                     except Exception as e:
-                        logger.error(
-                            f"❌ [LEVERAGE SET ERROR] {symbol} {hold_side}: {self.leverage}x | Error: {e}"
-                        )
+                        error_str = str(e)
+                        # 🚨 CRITICAL: Check if it's a "not supported" error in the exception message
+                        if "40797" in error_str or "40798" in error_str or "maximum settable leverage" in error_str.lower() or "exceeded the maximum" in error_str.lower():
+                            # Cache as failed to prevent retrying
+                            self.leverage_cache.mark_failed(symbol, self.leverage, hold_side, "40797")
+                            logger.warning(
+                                f"🚫 [LEVERAGE SET ERROR] {symbol} {hold_side}: Leverage {self.leverage}x not supported (from exception) | "
+                                f"Cached to skip future attempts"
+                            )
+                            leverage_set_success = True  # Consider it "success" (we won't retry)
+                        else:
+                            logger.error(
+                                f"❌ [LEVERAGE SET ERROR] {symbol} {hold_side}: {self.leverage}x | Error: {e}"
+                            )
                         # Don't pass silently - log the error!
                 
                 # 🚨 CRITICAL: Wait 1 second after setting leverage to ensure it's applied
