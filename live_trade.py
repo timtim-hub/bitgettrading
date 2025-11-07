@@ -512,11 +512,61 @@ class LiveTrader:
                                     f"TP: code={tp_code}, msg={tp_msg} | "
                                     f"Full results: {tpsl_results}"
                                 )
-                                if sl_code != "00000" or tp_code != "00000":
+                                
+                                # Verify both orders were placed successfully
+                                sl_success = sl_code == "00000"
+                                tp_success = tp_code == "00000"
+                                
+                                if not sl_success or not tp_success:
                                     logger.warning(
                                         f"⚠️  [TP/SL WARNING] {symbol} | "
-                                        f"One or both orders may have failed! "
-                                        f"Check Bitget app to verify."
+                                        f"SL: {'✅' if sl_success else '❌'} (code={sl_code}) | "
+                                        f"TP: {'✅' if tp_success else '❌'} (code={tp_code}) | "
+                                        f"One or both orders may have failed! Retrying..."
+                                    )
+                                    # Retry failed orders
+                                    if not sl_success and stop_loss_price is not None:
+                                        logger.info(f"🔄 [TP/SL RETRY] {symbol} | Retrying SL order...")
+                                        try:
+                                            retry_sl = await self.rest_client.place_tpsl_order(
+                                                symbol=symbol,
+                                                hold_side=side,
+                                                size=actual_position_size,
+                                                stop_loss_price=stop_loss_price,
+                                                take_profit_price=None,  # Only retry SL
+                                                size_precision=size_precision,
+                                            )
+                                            retry_sl_code = retry_sl.get('sl', {}).get('code', 'N/A') if retry_sl.get('sl') else 'N/A'
+                                            if retry_sl_code == "00000":
+                                                logger.info(f"✅ [TP/SL RETRY SUCCESS] {symbol} | SL order placed successfully!")
+                                            else:
+                                                logger.error(f"❌ [TP/SL RETRY FAILED] {symbol} | SL retry failed: {retry_sl_code}")
+                                        except Exception as e2:
+                                            logger.error(f"❌ [TP/SL RETRY EXCEPTION] {symbol} | SL retry exception: {e2}")
+                                    
+                                    if not tp_success and take_profit_price is not None:
+                                        logger.info(f"🔄 [TP/SL RETRY] {symbol} | Retrying TP order...")
+                                        try:
+                                            retry_tp = await self.rest_client.place_tpsl_order(
+                                                symbol=symbol,
+                                                hold_side=side,
+                                                size=actual_position_size,
+                                                stop_loss_price=None,  # Only retry TP
+                                                take_profit_price=take_profit_price,
+                                                size_precision=size_precision,
+                                            )
+                                            retry_tp_code = retry_tp.get('tp', {}).get('code', 'N/A') if retry_tp.get('tp') else 'N/A'
+                                            if retry_tp_code == "00000":
+                                                logger.info(f"✅ [TP/SL RETRY SUCCESS] {symbol} | TP order placed successfully!")
+                                            else:
+                                                logger.error(f"❌ [TP/SL RETRY FAILED] {symbol} | TP retry failed: {retry_tp_code}")
+                                        except Exception as e2:
+                                            logger.error(f"❌ [TP/SL RETRY EXCEPTION] {symbol} | TP retry exception: {e2}")
+                                else:
+                                    logger.info(
+                                        f"✅ [TP/SL VERIFIED] {symbol} | "
+                                        f"Both SL and TP orders placed successfully! "
+                                        f"SL: ${stop_loss_price:.4f} | TP: ${take_profit_price:.4f}"
                                     )
                             except Exception as e:
                                 import traceback
