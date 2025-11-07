@@ -324,6 +324,26 @@ class LiveTrader:
                                 f"✅ [LIVE] MARKET {side.upper()} {symbol} | Size: {size:.4f} | "
                                 f"Order ID: {order_id} | TP/SL Placed Atomically"
                             )
+
+                            # Ensure EXCHANGE-SIDE TP/SL exist as STOP-MARKET (executePrice=0)
+                            try:
+                                await self.rest_client.cancel_all_tpsl_orders(symbol)
+                            except Exception:
+                                pass
+                            try:
+                                _hold_side = side  # "long" or "short"
+                                results = await self.rest_client.place_tpsl_order(
+                                    symbol=symbol,
+                                    hold_side=_hold_side,
+                                    size=size,
+                                    stop_loss_price=stop_loss_price,
+                                    take_profit_price=take_profit_price,
+                                    market_execute=True,
+                                )
+                                logger.info(f"🛡️  [TP/SL CONFIRMED] {symbol} | results={results}")
+                            except Exception as e:
+                                logger.error(f"❌ TP/SL ensure failed for {symbol}: {e}")
+
                             return True
                         else:
                             logger.error(
