@@ -2230,5 +2230,13 @@
   "CHZUSDT_short": {
     "leverage": 25,
     "timestamp": 1762505646.583599
+  },
+  "B2USDT_long": {
+    "leverage": 25,
+    "timestamp": 1762506058.886218
+  },
+  "B2USDT_short": {
+    "leverage": 25,
+    "timestamp": 1762506059.470714
   }
 }

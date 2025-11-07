@@ -1,5 +1,6 @@
 """Bitget REST API client with HMAC authentication."""
 
+import asyncio
 import base64
 import hmac
 import time
@@ -8,7 +9,6 @@ from typing import Any
 
 import aiohttp
 import orjson
-import asyncio
 
 from bitget_trading.logger import get_logger
 
@@ -18,7 +18,7 @@ logger = get_logger()
 class BitgetRestClient:
     """
     Bitget REST API client for USDT-M futures.
-    
+
     Handles HMAC signing and order placement.
     """
 
@@ -34,7 +34,7 @@ class BitgetRestClient:
     ) -> None:
         """
         Initialize REST client.
-        
+
         Args:
             api_key: Bitget API key
             api_secret: Bitget API secret
@@ -55,19 +55,19 @@ class BitgetRestClient:
     ) -> str:
         """
         Create HMAC signature for Bitget API.
-        
+
         Args:
             timestamp: Unix timestamp in milliseconds
             method: HTTP method (GET, POST, etc.)
             request_path: API endpoint path
             body: Request body (for POST requests)
-        
+
         Returns:
             HMAC signature (passphrase is sent as plain text)
         """
         # Create prehash string
         prehash = timestamp + method.upper() + request_path + body
-        
+
         # Sign with HMAC SHA256
         signature = base64.b64encode(
             hmac.new(
@@ -76,7 +76,7 @@ class BitgetRestClient:
                 sha256,
             ).digest()
         ).decode()
-        
+
         return signature
 
     async def _request(
@@ -88,34 +88,32 @@ class BitgetRestClient:
     ) -> dict[str, Any]:
         """
         Make authenticated HTTP request.
-        
+
         Args:
             method: HTTP method
             endpoint: API endpoint
             params: Query parameters
             data: Request body data
-        
+
         Returns:
             Response JSON
         """
         timestamp = str(int(time.time() * 1000))
-        
+
         # Build request path
         request_path = endpoint
         if params:
             query_string = "&".join(f"{k}={v}" for k, v in params.items())
             request_path += f"?{query_string}"
-        
+
         # Build body
         body = ""
         if data:
             body = orjson.dumps(data).decode()
-        
+
         # Sign request
-        signature = self._sign_request(
-            timestamp, method, request_path, body
-        )
-        
+        signature = self._sign_request(timestamp, method, request_path, body)
+
         # Headers (passphrase is sent as plain text, NOT signed!)
         headers = {
             "Content-Type": "application/json",
@@ -124,15 +122,15 @@ class BitgetRestClient:
             "ACCESS-TIMESTAMP": timestamp,
             "ACCESS-PASSPHRASE": self.passphrase,  # Plain text, not signed!
         }
-        
+
         # Make request with timeout settings
         url = self.base_url + request_path
-        
+
         # - total: 60s max for the entire request
         # - connect: 10s max to establish connection
         # - sock_read: 20s max to read response
         timeout = aiohttp.ClientTimeout(total=60, connect=20, sock_read=40)
-        
+
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.request(
@@ -142,7 +140,7 @@ class BitgetRestClient:
                     data=body if body else None,
                 ) as response:
                     response_text = await response.text()
-                    
+
                     if response.status != 200:
                         logger.error(
                             "api_request_failed",
@@ -156,22 +154,24 @@ class BitgetRestClient:
                             message=f"API error: {response.status} - {response_text}",
                             headers=response.headers,
                         )
-                    
+
                     return orjson.loads(response_text)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error(f"❌ API request timeout: {method} {url}")
             raise
         except aiohttp.ClientError as e:
             logger.error(f"❌ API client error: {method} {url} - {e}")
             raise
 
-    async def get_account_balance(self, product_type: str = "USDT-FUTURES") -> dict[str, Any]:
+    async def get_account_balance(
+        self, product_type: str = "USDT-FUTURES"
+    ) -> dict[str, Any]:
         """Get account balance."""
-        endpoint = f"/api/v2/mix/account/accounts"
+        endpoint = "/api/v2/mix/account/accounts"
         params = {"productType": product_type}
-        
+
         response = await self._request("GET", endpoint, params=params)
-        
+
         logger.debug("account_balance_fetched", response=response)
         return response
 
@@ -184,14 +184,14 @@ class BitgetRestClient:
             "productType": product_type,
             "marginCoin": "USDT",
         }
-        
+
         response = await self._request("GET", endpoint, params=params)
-        
+
         if response.get("code") == "00000" and "data" in response:
             positions = response["data"]
             # Filter for specific symbol
             return [p for p in positions if p.get("symbol") == symbol]
-        
+
         return []
 
     async def set_leverage(
@@ -203,18 +203,18 @@ class BitgetRestClient:
     ) -> dict[str, Any]:
         """
         Set leverage for a symbol.
-        
+
         Args:
             symbol: Trading pair
             leverage: Leverage value
             product_type: Product type
             hold_side: "long" or "short" for one-way mode
-        
+
         Returns:
             API response
         """
         endpoint = "/api/v2/mix/account/set-leverage"
-        
+
         data = {
             "symbol": symbol,
             "productType": product_type,
@@ -222,9 +222,9 @@ class BitgetRestClient:
             "leverage": str(leverage),
             "holdSide": hold_side,  # For one-way mode
         }
-        
+
         response = await self._request("POST", endpoint, data=data)
-        
+
         # Log detailed response
         if response.get("code") == "00000":
             logger.info(
@@ -236,7 +236,7 @@ class BitgetRestClient:
                 f"Code: {response.get('code')} | Msg: {response.get('msg', 'Unknown error')} | "
                 f"Data: {response}"
             )
-        
+
         return response
 
     async def set_margin_mode(
@@ -247,32 +247,32 @@ class BitgetRestClient:
     ) -> dict[str, Any]:
         """
         Set margin mode for a symbol.
-        
+
         Args:
             symbol: Trading pair
             margin_mode: "isolated" or "crossed"
             product_type: Product type
-        
+
         Returns:
             API response
         """
         endpoint = "/api/v2/mix/account/set-margin-mode"
-        
+
         data = {
             "symbol": symbol,
             "productType": product_type,
             "marginCoin": "USDT",
             "marginMode": margin_mode,
         }
-        
+
         response = await self._request("POST", endpoint, data=data)
-        
+
         logger.info(
             "margin_mode_set",
             symbol=symbol,
             margin_mode=margin_mode,
         )
-        
+
         return response
 
     async def place_order(
@@ -284,27 +284,29 @@ class BitgetRestClient:
         price: float | None = None,
         reduce_only: bool = False,
         product_type: str = "USDT-FUTURES",
-        stop_loss_price: float | None = None,  # DEPRECATED: Use place_tpsl_order() instead
-        take_profit_price: float | None = None,  # DEPRECATED: Use place_tpsl_order() instead
+        stop_loss_price: float
+        | None = None,  # DEPRECATED: Use place_tpsl_order() instead
+        take_profit_price: float
+        | None = None,  # DEPRECATED: Use place_tpsl_order() instead
     ) -> dict[str, Any]:
         """
         Place order - SIMPLIFIED for isolated margin.
-        
+
         🚨 NOTE: TP/SL should be placed separately using place_tpsl_order()
         for visibility and guaranteed market execution.
         """
         endpoint = "/api/v2/mix/order/place-order"
-        
+
         # 🚨 FORCE MARKET ORDERS - OVERRIDE ANY PARAMETER!
         # User reports limit orders still being placed
         # This forces "market" no matter what's passed
         order_type = "market"  # FORCE IT!
-        
+
         logger.info(
             f"🔍 [BITGET_REST] place_order called: symbol={symbol}, side={side}, "
             f"order_type={order_type} (FORCED TO MARKET!), size={size}"
         )
-        
+
         # SIMPLIFIED: Just basic parameters for isolated margin
         data = {
             "symbol": symbol,
@@ -315,29 +317,27 @@ class BitgetRestClient:
             "orderType": order_type,  # Will ALWAYS be "market" now!
             "size": str(size),
         }
-        
+
         if price:
             data["price"] = str(price)
-        
+
         if reduce_only:
             data["reduceOnly"] = "YES"
-        
+
         # 🚨 NOTE: We use separate place_tpsl_order() for TP/SL (visible in app)
         # Atomic TP/SL (presetTakeProfitPrice/presetStopLossPrice) is NOT used
         # because it doesn't guarantee market execution or visibility
-        
+
         # Log EXACT data being sent to API
-        logger.info(
-            f"🚨 [API REQUEST] Sending to Bitget: {data}"
-        )
-        
+        logger.info(f"🚨 [API REQUEST] Sending to Bitget: {data}")
+
         response = await self._request("POST", endpoint, data=data)
-        
+
         logger.info(
             f"✅ [API RESPONSE] Order placed: symbol={symbol}, side={side}, "
             f"order_type={order_type}, response={response}"
         )
-        
+
         logger.info(
             "order_placed",
             symbol=symbol,
@@ -346,9 +346,9 @@ class BitgetRestClient:
             order_type=order_type,
             response=response,
         )
-        
+
         return response
-    
+
     async def cancel_all_pending_orders(
         self,
         symbol: str,
@@ -356,18 +356,18 @@ class BitgetRestClient:
     ) -> dict[str, Any]:
         """
         Cancel ALL pending (stuck) LIMIT orders for a symbol.
-        
+
         CRITICAL: Use to clear stuck limit orders that never executed!
-        
+
         Args:
             symbol: Trading pair (e.g., "BTCUSDT")
             product_type: Product type
-        
+
         Returns:
             Cancellation response
         """
         endpoint = "/api/v2/mix/order/cancel-order"
-        
+
         # Query existing pending orders first
         try:
             query_endpoint = "/api/v2/mix/order/orders-pending"
@@ -376,12 +376,12 @@ class BitgetRestClient:
                 "productType": product_type,
             }
             pending_orders = await self._request("GET", query_endpoint, params=params)
-            
+
             orders = pending_orders.get("data", {}).get("entrustedList", [])
             if not orders:
                 logger.info(f"no_pending_orders_for_{symbol}")
                 return {"code": "00000", "msg": "No orders to cancel"}
-            
+
             # Cancel each pending order
             cancelled_count = 0
             for order in orders:
@@ -397,19 +397,21 @@ class BitgetRestClient:
                         await self._request("POST", endpoint, data=data)
                         cancelled_count += 1
                     except Exception as e:
-                        logger.warning(f"failed_to_cancel_order_{order_id}", error=str(e))
-            
+                        logger.warning(
+                            f"failed_to_cancel_order_{order_id}", error=str(e)
+                        )
+
             logger.info(
                 "cancelled_stuck_orders",
                 symbol=symbol,
                 count=cancelled_count,
             )
             return {"code": "00000", "msg": f"Cancelled {cancelled_count} stuck orders"}
-            
+
         except Exception as e:
             logger.error("cancel_orders_error", symbol=symbol, error=str(e))
             return {"code": "error", "msg": str(e)}
-    
+
     async def cancel_all_tpsl_orders(
         self,
         symbol: str,
@@ -417,19 +419,19 @@ class BitgetRestClient:
     ) -> dict[str, Any]:
         """
         Cancel ALL TP/SL orders for a symbol.
-        
+
         CRITICAL: Use this on startup to clear old TP/SL orders with wrong values!
         Old exchange-side orders override bot-side monitoring.
-        
+
         Args:
             symbol: Trading pair (e.g., "BTCUSDT")
             product_type: Product type (default: "usdt-futures" - lowercase required!)
-        
+
         Returns:
             Cancellation response
         """
         endpoint = "/api/v2/mix/order/cancel-plan-order"
-        
+
         # Query existing TP/SL orders first
         try:
             query_endpoint = "/api/v2/mix/order/orders-plan-pending"
@@ -439,12 +441,12 @@ class BitgetRestClient:
                 "planType": "profit_loss",  # TP/SL orders
             }
             pending_orders = await self._request("GET", query_endpoint, params=params)
-            
+
             orders = pending_orders.get("data", {}).get("entrustedList", [])
             if not orders:
                 logger.info(f"no_pending_tpsl_orders_for_{symbol}")
                 return {"code": "00000", "msg": "No orders to cancel"}
-            
+
             # Cancel each TP/SL order
             cancelled_count = 0
             for order in orders:
@@ -461,19 +463,21 @@ class BitgetRestClient:
                         await self._request("POST", endpoint, data=data)
                         cancelled_count += 1
                     except Exception as e:
-                        logger.warning(f"failed_to_cancel_tpsl_order_{order_id}", error=str(e))
-            
+                        logger.warning(
+                            f"failed_to_cancel_tpsl_order_{order_id}", error=str(e)
+                        )
+
             logger.info(
                 "cancelled_tpsl_orders",
                 symbol=symbol,
                 count=cancelled_count,
             )
             return {"code": "00000", "msg": f"Cancelled {cancelled_count} TP/SL orders"}
-            
+
         except Exception as e:
             logger.error("cancel_tpsl_error", symbol=symbol, error=str(e))
             return {"code": "error", "msg": str(e)}
-    
+
     async def place_tpsl_order(
         self,
         symbol: str,
@@ -482,17 +486,18 @@ class BitgetRestClient:
         stop_loss_price: float | None = None,
         take_profit_price: float | None = None,
         product_type: str = "usdt-futures",  # FIXED: lowercase format required by API
-        size_precision: int | None = None,  # Size precision (decimal places) - if None, will round to 1 decimal
+        size_precision: int
+        | None = None,  # Size precision (decimal places) - if None, will round to 1 decimal
     ) -> dict[str, Any]:
         """
         Place exchange-side TP/SL plan orders that execute at MARKET on trigger.
         Visible under Conditional/Plan Orders in the app.
-        
+
         🚨 CRITICAL: These execute on Bitget servers as MARKET orders when triggered!
         With 25x leverage, this prevents liquidations if bot crashes.
-        
+
         Bitget requires SEPARATE orders for SL and TP - we place 2 orders.
-        
+
         Args:
             symbol: Trading pair (e.g., "BTCUSDT")
             hold_side: "long" or "short" - which position to protect (converted to "buy"/"sell" for API)
@@ -500,13 +505,13 @@ class BitgetRestClient:
             stop_loss_price: Stop loss trigger price (optional)
             take_profit_price: Take profit trigger price (optional)
             product_type: Product type (default: "usdt-futures" - lowercase required!)
-        
+
         Returns:
             Dict with results of both orders
         """
         endpoint = "/api/v2/mix/order/place-tpsl-order"
         results: dict[str, Any] = {"sl": None, "tp": None}
-        
+
         # 🚨 CRITICAL FIX: Round size to correct precision (Bitget API requires specific decimal places)
         # Different contracts have different checkScale values:
         # - checkScale=0: whole numbers (no decimals) - e.g., THETAUSDT, SUSHIUSDT
@@ -520,7 +525,7 @@ class BitgetRestClient:
             else:
                 size_precision = 1  # Default to 1 decimal place
         rounded_size = round(size, size_precision)
-        
+
         # 🚨 EXTENSIVE LOGGING: Log all input parameters
         logger.info(
             f"🔍 [TP/SL START] {symbol} | "
@@ -528,27 +533,30 @@ class BitgetRestClient:
             f"SL price: {stop_loss_price} | TP price: {take_profit_price} | "
             f"product_type: {product_type}"
         )
-        
+
         # 🚨 CRITICAL FIX: Convert "long"/"short" to "buy"/"sell" for one-way mode
         # According to Bitget API docs, holdSide should be "buy" for long, "sell" for short in one-way mode
         api_hold_side = "buy" if hold_side == "long" else "sell"
-        
+
         logger.info(
             f"🔧 [TP/SL CONVERSION] {symbol} | hold_side: {hold_side} → API holdSide: {api_hold_side}"
         )
-        
+
         # Helper to post plan order with fallback triggerType and size precision
-        async def _post_plan(data: dict[str, str], order_type: str, original_size: float) -> dict[str, Any]:
+        async def _post_plan(
+            data: dict[str, str], order_type: str, original_size: float
+        ) -> dict[str, Any]:
             # Log EXACT data being sent
             logger.info(
-                f"📤 [TP/SL REQUEST] {symbol} | {order_type} | "
-                f"Data: {data}"
+                f"📤 [TP/SL REQUEST] {symbol} | {order_type} | " f"Data: {data}"
             )
-            
+
             # First try mark_price (safer)
             data["triggerType"] = "mark_price"
             try:
-                logger.info(f"🔄 [TP/SL TRY] {symbol} | {order_type} | triggerType: mark_price")
+                logger.info(
+                    f"🔄 [TP/SL TRY] {symbol} | {order_type} | triggerType: mark_price"
+                )
                 response = await self._request("POST", endpoint, data=data)
                 logger.info(
                     f"✅ [TP/SL RESPONSE] {symbol} | {order_type} | "
@@ -570,7 +578,7 @@ class BitgetRestClient:
                     else:
                         new_precision = 0
                         new_rounded_size = round(original_size, 0)
-                    
+
                     logger.info(
                         f"🔄 [TP/SL RETRY] {symbol} | {order_type} | "
                         f"Trying precision {new_precision} (rounded size: {new_rounded_size})"
@@ -597,7 +605,9 @@ class BitgetRestClient:
                     # Fallback to market_price if exchange rejects mark_price
                     data["triggerType"] = "market_price"
                     try:
-                        logger.info(f"🔄 [TP/SL TRY] {symbol} | {order_type} | triggerType: market_price")
+                        logger.info(
+                            f"🔄 [TP/SL TRY] {symbol} | {order_type} | triggerType: market_price"
+                        )
                         response = await self._request("POST", endpoint, data=data)
                         logger.info(
                             f"✅ [TP/SL RESPONSE] {symbol} | {order_type} | "
@@ -610,7 +620,7 @@ class BitgetRestClient:
                             f"Both triggerType attempts failed: {e2}"
                         )
                         raise
-        
+
         # Place STOP-LOSS order (separate order #1)
         # Place STOP-LOSS order with retry logic
         if stop_loss_price is not None:
@@ -623,14 +633,16 @@ class BitgetRestClient:
                 "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
                 "triggerPrice": str(stop_loss_price),
                 "executePrice": "0",  # MARKET on trigger
-                "size": str(rounded_size),  # REQUIRED! Must be rounded to correct precision
+                "size": str(rounded_size),  # Size in contracts (will close this amount)
+                "reduceOnly": "YES",  # 🚨 CRITICAL: Only close position, never open new one!
             }
             logger.info(
-                f"📋 [TP/SL SL DATA] {symbol} | "
-                f"Building SL order: symbol={symbol}, productType={product_type}, "
-                f"marginMode=isolated, marginCoin=USDT, planType=loss_plan, "
+                f"📋 [STOP-LOSS ORDER] {symbol} | "
+                f"symbol={symbol}, productType={product_type}, "
+                f"marginMode=isolated, planType=loss_plan, "
                 f"holdSide={api_hold_side}, triggerPrice={stop_loss_price}, "
-                f"executePrice=0, size={size}"
+                f"executePrice=0 (market), size={rounded_size}, "
+                f"reduceOnly=YES (closes position only)"
             )
             # Retry logic for SL placement
             max_retries = 3
@@ -656,7 +668,9 @@ class BitgetRestClient:
                                 f"Waiting longer before retry..."
                             )
                             if attempt < max_retries - 1:
-                                await asyncio.sleep(3.0)  # Wait longer for position to become available
+                                await asyncio.sleep(
+                                    3.0
+                                )  # Wait longer for position to become available
                             else:
                                 logger.error(
                                     f"❌ [EXCHANGE SL FAILED] {symbol} | "
@@ -688,7 +702,7 @@ class BitgetRestClient:
                             f"Failed after {max_retries} attempts! Exception: {e}"
                         )
                         results["sl"] = {"code": "error", "msg": str(e)}
-        
+
         # Place TAKE-PROFIT order with retry logic
         if take_profit_price is not None:
             tp_data = {
@@ -700,7 +714,9 @@ class BitgetRestClient:
                 "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
                 "triggerPrice": str(take_profit_price),
                 "executePrice": "0",  # MARKET on trigger
-                "size": str(rounded_size),  # REQUIRED! Must be rounded to correct precision
+                "size": str(
+                    rounded_size
+                ),  # REQUIRED! Must be rounded to correct precision
             }
             logger.info(
                 f"📋 [TP/SL TP DATA] {symbol} | "
@@ -733,7 +749,9 @@ class BitgetRestClient:
                                 f"Waiting longer before retry..."
                             )
                             if attempt < max_retries - 1:
-                                await asyncio.sleep(3.0)  # Wait longer for position to become available
+                                await asyncio.sleep(
+                                    3.0
+                                )  # Wait longer for position to become available
                             else:
                                 logger.error(
                                     f"❌ [EXCHANGE TP FAILED] {symbol} | "
@@ -765,10 +783,10 @@ class BitgetRestClient:
                             f"Failed after {max_retries} attempts! Exception: {e}"
                         )
                         results["tp"] = {"code": "error", "msg": str(e)}
-        
+
         # 🚨 CRITICAL: Return results dict with SL and TP order results
         return results
-    
+
     async def place_trailing_take_profit_order(
         self,
         symbol: str,
@@ -781,10 +799,10 @@ class BitgetRestClient:
     ) -> dict[str, Any]:
         """
         Place exchange-side trailing take profit order using Bitget's moving_plan API.
-        
+
         🚨 CRITICAL: This uses the place-tpsl-order endpoint with planType="moving_plan"
         The trailing take profit will automatically adjust as price moves in your favor!
-        
+
         Args:
             symbol: Trading pair (e.g., "BTCUSDT")
             hold_side: "long" or "short" - which position to protect (converted to "buy"/"sell" for API)
@@ -793,12 +811,12 @@ class BitgetRestClient:
             trigger_price: Price at which trailing take profit becomes active
             product_type: Product type (default: "usdt-futures" - lowercase required!)
             size_precision: Size precision (decimal places) - if None, will infer from size
-        
+
         Returns:
             Dict with order result
         """
         endpoint = "/api/v2/mix/order/place-tpsl-order"
-        
+
         # Round size to correct precision
         if size_precision is None:
             if abs(size - round(size)) < 0.01:
@@ -806,35 +824,40 @@ class BitgetRestClient:
             else:
                 size_precision = 1
         rounded_size = round(size, size_precision)
-        
+
         # Convert "long"/"short" to "buy"/"sell" for one-way mode
         api_hold_side = "buy" if hold_side == "long" else "sell"
-        
+
         # 🚨 CRITICAL: Bitget API requires rangeRate as percentage with exactly 2 decimal places
         # Convert decimal to percentage: 0.015 → "1.50", 0.02 → "2.00", 0.001 → "0.10"
         formatted_range_rate = f"{range_rate * 100:.2f}"  # Convert to percentage and format to 2 decimal places
-        
+
         data = {
             "symbol": symbol,
             "productType": product_type,  # "usdt-futures" (lowercase)
             "marginMode": "isolated",
             "marginCoin": "USDT",
-            "planType": "moving_plan",  # Trailing take profit order type
+            "planType": "moving_plan",  # Trailing take profit order type (normal trailing mode)
             "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
-            "size": str(rounded_size),
-            "rangeRate": formatted_range_rate,  # Trailing take profit range rate as percentage (e.g., "2.00" = 2%, "1.50" = 1.5%, must be 2 decimal places!)
-            "triggerPrice": str(trigger_price),  # Price at which trailing TP becomes active
+            "size": str(rounded_size),  # Size in contracts (will close this amount)
+            "rangeRate": formatted_range_rate,  # Trailing callback rate as percentage (e.g., "2.00" = 2%, "1.50" = 1.5%, must be 2 decimal places!)
+            "triggerPrice": str(
+                trigger_price
+            ),  # Price at which trailing TP becomes active (Rückrufpreis)
             "triggerType": "mark_price",  # Use mark price for triggering
+            "reduceOnly": "YES",  # 🚨 CRITICAL: Only close position, never open new one!
         }
-        
+
         logger.info(
-            f"🧵 [TRAILING TAKE PROFIT ORDER] {symbol} | "
+            f"🧵 [TRAILING TP ORDER - NORMAL MODE] {symbol} | "
             f"hold_side: {hold_side} → API holdSide: {api_hold_side} | "
             f"size: {size} → rounded: {rounded_size} | "
-            f"range_rate: {range_rate*100:.2f}% → formatted API value: {formatted_range_rate} (2 decimal places) | "
-            f"trigger_price: {trigger_price} | product_type: {product_type}"
+            f"callback_rate: {range_rate*100:.2f}% (Rückrufquote) → API: {formatted_range_rate} | "
+            f"trigger_price: {trigger_price} (activation price) | "
+            f"reduceOnly: YES (closes position only) | "
+            f"product_type: {product_type}"
         )
-        
+
         # Retry logic for trailing TP placement
         max_retries = 3
         for attempt in range(max_retries):
@@ -843,19 +866,23 @@ class BitgetRestClient:
                 code = response.get("code", "N/A")
                 msg = response.get("msg", "N/A")
                 data_resp = response.get("data", {})
-                
+
                 if code == "00000":
                     logger.info(
-                        f"✅ [TRAILING TAKE PROFIT PLACED] {symbol} | "
-                        f"Range rate: {range_rate*100:.2f}% | "
-                        f"Trigger price: {trigger_price} | "
-                        f"Size: {rounded_size} | Order ID: {data_resp.get('orderId', 'N/A')}"
+                        f"✅ [TRAILING TP PLACED - NORMAL MODE] {symbol} | "
+                        f"Callback Rate: {range_rate*100:.2f}% (Rückrufquote) | "
+                        f"Trigger Price: {trigger_price} (activation) | "
+                        f"Size: {rounded_size} contracts | "
+                        f"reduceOnly: YES | "
+                        f"Order ID: {data_resp.get('orderId', 'N/A')}"
                     )
                     return response
                 else:
                     # Check for "Insufficient position" error - needs longer wait
                     if code == "43023" or "Insufficient position" in str(msg):
-                        wait_time = 3.0 * (attempt + 1)  # Exponential backoff: 3s, 6s, 9s
+                        wait_time = 3.0 * (
+                            attempt + 1
+                        )  # Exponential backoff: 3s, 6s, 9s
                         logger.warning(
                             f"⚠️ [TRAILING TP ERROR 43023] {symbol} | Attempt {attempt + 1}/{max_retries} | "
                             f"Insufficient position - waiting {wait_time:.1f}s before retry..."
@@ -864,7 +891,9 @@ class BitgetRestClient:
                             await asyncio.sleep(wait_time)
                             continue
                     # Check for "rangeRate must 2 decimal places" error (43011)
-                    elif code == "43011" or "rangeRate must 2 decimal places" in str(msg):
+                    elif code == "43011" or "rangeRate must 2 decimal places" in str(
+                        msg
+                    ):
                         logger.warning(
                             f"⚠️ [TRAILING TP ERROR 43011] {symbol} | Attempt {attempt + 1}/{max_retries} | "
                             f"rangeRate format error - should be 2 decimal places. Current: {formatted_range_rate} | "
@@ -873,12 +902,16 @@ class BitgetRestClient:
                         # Reformat range_rate as percentage to exactly 2 decimal places
                         formatted_range_rate = f"{range_rate * 100:.2f}"
                         data["rangeRate"] = formatted_range_rate
-                        logger.info(f"🔄 [TRAILING TP REFORMAT] {symbol} | New rangeRate: {formatted_range_rate}")
+                        logger.info(
+                            f"🔄 [TRAILING TP REFORMAT] {symbol} | New rangeRate: {formatted_range_rate}"
+                        )
                         if attempt < max_retries - 1:
                             await asyncio.sleep(1.0)  # Short wait before retry
                             continue
                     # Check for "trigger price should be ≥ current market price" error (43035)
-                    elif code == "43035" or "trigger price should be" in str(msg).lower():
+                    elif (
+                        code == "43035" or "trigger price should be" in str(msg).lower()
+                    ):
                         logger.warning(
                             f"⚠️ [TRAILING TP ERROR 43035] {symbol} | Attempt {attempt + 1}/{max_retries} | "
                             f"Trigger price too low - caller should fetch fresh price and recalculate trigger price"
@@ -909,7 +942,7 @@ class BitgetRestClient:
                         f"Failed after {max_retries} attempts! Exception: {e}"
                     )
                     return {"code": "error", "msg": str(e)}
-        
+
         # Should never reach here, but return error if we do
         return {"code": "error", "msg": "Failed after all retries"}
 
@@ -922,7 +955,7 @@ class BitgetRestClient:
             "symbol": symbol,
             "productType": product_type,
         }
-        
+
         response = await self._request("GET", endpoint, params=params)
         return response
 
@@ -935,10 +968,10 @@ class BitgetRestClient:
             "symbol": symbol,
             "productType": product_type,
         }
-        
+
         response = await self._request("GET", endpoint, params=params)
         return response
-    
+
     async def get_historical_candles(
         self,
         symbol: str,
@@ -948,16 +981,16 @@ class BitgetRestClient:
     ) -> dict[str, Any]:
         """
         Get historical candlestick data (INSTANT data loading!).
-        
+
         This replaces the 60-second wait time by fetching historical data directly.
         Bitget returns up to 200 candles per request.
-        
+
         Args:
             symbol: Trading pair (e.g., "BTCUSDT")
             granularity: Candle interval (1m, 3m, 5m, 15m, 30m, 1H, 4H, 1D)
             limit: Number of candles to fetch (max 200)
             product_type: Product type
-        
+
         Returns:
             Response with candle data [timestamp, open, high, low, close, volume, ...]
         """
@@ -968,14 +1001,16 @@ class BitgetRestClient:
             "granularity": granularity,
             "limit": str(limit),
         }
-        
+
         response = await self._request("GET", endpoint, params=params)
-        
+
         logger.info(
             "fetched_historical_candles",
             symbol=symbol,
             granularity=granularity,
-            count=len(response.get("data", [])) if response.get("code") == "00000" else 0,
+            count=len(response.get("data", []))
+            if response.get("code") == "00000"
+            else 0,
         )
-        
+
         return response
