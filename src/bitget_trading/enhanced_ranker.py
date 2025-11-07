@@ -76,7 +76,7 @@ class EnhancedRanker:
             "10s": 1.3,
             "15s": 1.5,
             "30s": 2.0,  # Strong signal
-            "1min": 2.5,  # Strongest signal (institutional)
+            "1min": 3.0,  # Strongest signal (institutional) - increased from 2.5x to 3.0x
         }
 
         # Get ultra-short-term returns
@@ -104,10 +104,10 @@ class EnhancedRanker:
         # 🔥 LAYER 2: VOLUME-CONFIRMED CONFLUENCE (STRICT)
         # Require volume surge when timeframes align (institutional activity)
         volume_ratio = features.get("volume_ratio", 1.0)
-        # 🚀 TIGHTENED: Require 2.0x minimum volume for quality signals
-        # 3.0x+ for high-conviction trades (volume spike)
-        min_volume_ratio = 2.0  # 2.0x minimum (was 0.8x)
-        high_conviction_volume = 3.0  # 3.0x+ for high-conviction
+        # 🚀 ULTRA-STRICT: Require 2.5x minimum volume for quality signals (25% stricter)
+        # 3.5x+ for high-conviction trades (volume spike)
+        min_volume_ratio = 2.5  # 2.5x minimum (was 2.0x)
+        high_conviction_volume = 3.5  # 3.5x+ for high-conviction (was 3.0x)
         
         volume_confirmed = volume_ratio >= min_volume_ratio
         is_high_conviction = volume_ratio >= high_conviction_volume
@@ -166,18 +166,20 @@ class EnhancedRanker:
         bullish_count = len(bullish_timeframes)
         bearish_count = len(bearish_timeframes)
 
+        # 🚀 PHASE 2.3: Strengthen multi-timeframe confluence to require 75%+ agreement minimum
+        # This ensures strong multi-timeframe alignment before entering trades
         if regime == "trending":
             # Stricter: avoid chop
             required_agreement_pct = 0.75  # 75% agreement
         elif regime == "breakout":
-            # More lenient: capture fast moves
-            required_agreement_pct = 0.60  # 60% agreement
+            # Still require 75% for quality (was 60%)
+            required_agreement_pct = 0.75  # 75% agreement (strengthened)
         elif regime == "volatile":
             # Strictest: maximum safety
             required_agreement_pct = 0.85  # 85% agreement
         else:  # ranging
-            # Balanced
-            required_agreement_pct = 0.70  # 70% agreement
+            # Balanced but still strict
+            required_agreement_pct = 0.75  # 75% agreement (strengthened from 70%)
 
         required_agreement = max(2, int(total_timeframes * required_agreement_pct))
 
@@ -393,7 +395,7 @@ class EnhancedRanker:
         # 🔥 STEP 5: Volume already validated in confluence check (Layer 2)
         # Extract for metadata and apply high-conviction boost
         volume_ratio = confluence_metadata.get("volume_ratio", 1.0)
-        is_high_conviction = volume_ratio >= 3.0  # 3.0x+ volume spike
+        is_high_conviction = volume_ratio >= 3.5  # 3.5x+ volume spike (was 3.0x)
         
         # 🚀 HIGH-CONVICTION BOOST: Boost score for volume spikes (3.0x+)
         volume_boost = 1.0
@@ -561,6 +563,88 @@ class EnhancedRanker:
             indicator_scores["vwap"] = vwap_score
             if vwap_score > 0.5:
                 indicator_confluence.append("vwap")
+            
+            # 🚀 NEW PROFESSIONAL INDICATORS: ADX, Stochastic, ATR, Order Flow
+            if len(prices) >= 28:  # Need enough data for ADX/Stochastic/ATR
+                # Approximate high/low from price history (rolling windows)
+                # For ultra-short-term, use recent price range as high/low approximation
+                window_size = min(14, len(prices))
+                high_prices = np.array([np.max(prices[max(0, i-window_size):i+1]) for i in range(len(prices))])
+                low_prices = np.array([np.min(prices[max(0, i-window_size):i+1]) for i in range(len(prices))])
+                close_prices = prices
+                
+                # Calculate ADX (trend strength)
+                adx_data = self.technical_indicators.calculate_adx(
+                    high_prices, low_prices, close_prices, period=14
+                )
+                # ADX > 25 = strong trend (good for directional trades)
+                if adx_data["adx"] > 25:
+                    # Check if trend direction aligns with our signal
+                    if (direction == "long" and adx_data["trend_direction"] == "bullish") or \
+                       (direction == "short" and adx_data["trend_direction"] == "bearish"):
+                        indicator_scores["adx"] = 1.0
+                        indicator_confluence.append("adx")
+                        logger.debug(f"🔍 [ADX] {state.symbol} | Strong trend: {adx_data['trend_strength']} ({adx_data['adx']:.1f})")
+                    else:
+                        indicator_scores["adx"] = 0.0
+                elif adx_data["adx"] > 20:
+                    # Moderate trend - partial score
+                    if (direction == "long" and adx_data["trend_direction"] == "bullish") or \
+                       (direction == "short" and adx_data["trend_direction"] == "bearish"):
+                        indicator_scores["adx"] = 0.5
+                else:
+                    indicator_scores["adx"] = 0.0
+                
+                # Calculate Stochastic Oscillator
+                stoch_data = self.technical_indicators.calculate_stochastic(
+                    high_prices, low_prices, close_prices, k_period=14, d_period=3
+                )
+                if direction == "long":
+                    # Oversold = bullish signal
+                    stoch_score = 1.0 if stoch_data["is_oversold"] else (0.5 if stoch_data["signal"] == "bullish" else 0.0)
+                else:  # short
+                    # Overbought = bearish signal
+                    stoch_score = 1.0 if stoch_data["is_overbought"] else (0.5 if stoch_data["signal"] == "bearish" else 0.0)
+                indicator_scores["stochastic"] = stoch_score
+                if stoch_score > 0.5:
+                    indicator_confluence.append("stochastic")
+                    logger.debug(f"🔍 [STOCHASTIC] {state.symbol} | %K: {stoch_data['k_percent']:.1f}, Signal: {stoch_data['signal']}")
+                
+                # Calculate ATR (volatility)
+                atr_data = self.technical_indicators.calculate_atr(
+                    high_prices, low_prices, close_prices, period=14
+                )
+                # ATR expansion = breakout potential (good for directional trades)
+                if atr_data["is_expanding"]:
+                    indicator_scores["atr"] = 1.0
+                    indicator_confluence.append("atr")
+                    logger.debug(f"🔍 [ATR] {state.symbol} | Volatility expanding: {atr_data['atr_pct']:.2f}%")
+                elif atr_data["volatility_level"] == "moderate":
+                    indicator_scores["atr"] = 0.5
+                else:
+                    indicator_scores["atr"] = 0.0
+                
+                # Calculate Order Flow Imbalance
+                # Use price/volume data to infer imbalance
+                volumes = features.get("volume_ratio", 1.0)  # Approximate from volume ratio
+                if volumes > 0:
+                    # Create volume array from volume ratio
+                    volume_array = np.array([volumes] * len(prices))
+                    of_data = self.technical_indicators.calculate_order_flow_imbalance(
+                        prices=prices, volumes=volume_array, period=20
+                    )
+                    if direction == "long":
+                        # Positive imbalance = buying pressure = bullish
+                        of_score = 1.0 if of_data["pressure"] in ["buy", "strong_buy"] else (0.5 if of_data["pressure"] == "neutral" else 0.0)
+                    else:  # short
+                        # Negative imbalance = selling pressure = bearish
+                        of_score = 1.0 if of_data["pressure"] in ["sell", "strong_sell"] else (0.5 if of_data["pressure"] == "neutral" else 0.0)
+                    indicator_scores["order_flow"] = of_score
+                    if of_score > 0.5:
+                        indicator_confluence.append("order_flow")
+                        logger.debug(f"🔍 [ORDER FLOW] {state.symbol} | Pressure: {of_data['pressure']}, Imbalance: {of_data['imbalance_pct']:.1f}%")
+                else:
+                    indicator_scores["order_flow"] = 0.0
         else:
             # Not enough data for technical indicators
             indicator_scores = {
@@ -569,6 +653,10 @@ class EnhancedRanker:
                 "bollinger": 0.0,
                 "ema": 0.0,
                 "vwap": 0.0,
+                "adx": 0.0,
+                "stochastic": 0.0,
+                "atr": 0.0,
+                "order_flow": 0.0,
             }
 
         # 11. Multi-Indicator Confluence Check
@@ -579,9 +667,11 @@ class EnhancedRanker:
         if momentum_agrees:
             indicator_confluence.append("momentum")
 
-        total_indicators = 6  # momentum + 5 technical indicators
+        total_indicators = 9  # 9 technical indicators (RSI, MACD, Bollinger, EMA, VWAP, ADX, Stochastic, ATR, Order Flow)
         confluence_count = len(indicator_confluence)
-        required_confluence = 3  # At least 3 out of 6 must agree (more trades)
+        # 🚀 PHASE 2.2: Require minimum 6 indicators aligned (out of 9) for entry
+        # This ensures strong technical confirmation before entering trades
+        required_confluence = 6  # At least 6 out of 9 must agree (ultra-strict for high win rate)
 
         if confluence_count < required_confluence:
             logger.debug(
@@ -600,18 +690,22 @@ class EnhancedRanker:
                 },
             )
 
-        # Combine all scores with new technical indicators
+        # Combine all scores with new technical indicators (including new professional indicators)
         composite_score = (
-            self.momentum_weight * momentum_score * 0.20
-            + indicator_scores.get("rsi", 0.0) * 0.15
-            + indicator_scores.get("macd", 0.0) * 0.15
-            + indicator_scores.get("bollinger", 0.0) * 0.10
-            + indicator_scores.get("ema", 0.0) * 0.10
-            + indicator_scores.get("vwap", 0.0) * 0.10
-            + self.imbalance_weight * ob_imbalance * 0.15
-            + self.volatility_weight * volatility_score * 0.05
-            + self.liquidity_weight * spread_score * 0.05
-            + funding_bias * 0.05
+            self.momentum_weight * momentum_score * 0.15
+            + indicator_scores.get("rsi", 0.0) * 0.12
+            + indicator_scores.get("macd", 0.0) * 0.12
+            + indicator_scores.get("bollinger", 0.0) * 0.08
+            + indicator_scores.get("ema", 0.0) * 0.08
+            + indicator_scores.get("vwap", 0.0) * 0.08
+            + indicator_scores.get("adx", 0.0) * 0.10  # NEW: ADX (trend strength)
+            + indicator_scores.get("stochastic", 0.0) * 0.08  # NEW: Stochastic
+            + indicator_scores.get("atr", 0.0) * 0.05  # NEW: ATR (volatility)
+            + indicator_scores.get("order_flow", 0.0) * 0.10  # NEW: Order Flow
+            + self.imbalance_weight * ob_imbalance * 0.10
+            + self.volatility_weight * volatility_score * 0.04
+            + self.liquidity_weight * spread_score * 0.04
+            + funding_bias * 0.04
         )
 
         # Normalize composite score to 0-100 range
@@ -797,8 +891,8 @@ class EnhancedRanker:
 
         # ULTRA-STRICT: Only take PERFECT signals (A-grade + very high score)
         if (
-            final_score < 1.5
-        ):  # STRICTER: Even higher quality bar for 80%+ win rate (25% stricter)
+            final_score < 2.5
+        ):  # ULTRA-STRICT: 67% stricter threshold for 75-85% win rate target
             return 0.0, "neutral", {"reason": "low_score"}
 
         # Build metadata with trade quality info for loss tracking

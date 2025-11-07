@@ -3012,5 +3012,15 @@
     "leverage": 25,
     "timestamp": 1762550579.200004,
     "failed": false
+  },
+  "HOTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762553521.3583748,
+    "failed": false
+  },
+  "HOTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762553521.737737,
+    "failed": false
   }
 }

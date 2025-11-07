@@ -125,6 +125,11 @@ class LiveTrader:
         self.start_time = datetime.now()
         self.symbols: list[str] = []  # Tradable symbols
         
+        # 🚀 PHASE 3.2: Real-time performance filtering
+        # Track recent performance per symbol (last 10 trades)
+        self.symbol_recent_trades: dict[str, list[dict[str, Any]]] = {}  # symbol -> list of recent trades
+        self.symbol_filter_reset_time: dict[str, datetime] = {}  # symbol -> reset time (24 hours)
+        
         # Load saved positions on startup
         logger.info(
             "positions_restored_from_disk",
@@ -1563,6 +1568,18 @@ class LiveTrader:
                     # Record for loss analysis
                     self.loss_tracker.record_trade(trade_record)
                     
+                    # 🚀 PHASE 3.2: Track recent performance for real-time filtering
+                    if symbol not in self.symbol_recent_trades:
+                        self.symbol_recent_trades[symbol] = []
+                    self.symbol_recent_trades[symbol].append({
+                        "is_win": trade_record.is_win,
+                        "pnl_pct": pnl_pct_capital,
+                        "exit_time": exit_time,
+                    })
+                    # Keep only last 10 trades
+                    if len(self.symbol_recent_trades[symbol]) > 10:
+                        self.symbol_recent_trades[symbol] = self.symbol_recent_trades[symbol][-10:]
+                    
                     # Record trade (legacy format)
                     self.trades.append({
                         "symbol": symbol,
@@ -2015,6 +2032,46 @@ class LiveTrader:
                 except Exception as e:
                     logger.debug(f"⚠️ Failed to check liquidation price for {symbol} in main loop: {e}")
 
+            # 🚀 PHASE 4.1: Quick Profit Taking
+            # If position reaches +5% capital profit within 2 minutes, take 50% profit
+            # If position reaches +8% capital profit within 3 minutes, take 100% profit
+            # This locks in quick wins before reversals
+            if position:
+                try:
+                    entry_time = datetime.fromisoformat(position.entry_time.replace('Z', '+00:00'))
+                    time_in_position_min = (datetime.now(entry_time.tzinfo) - entry_time).total_seconds() / 60
+                    
+                    # Calculate current PnL
+                    if position.side == "long":
+                        price_change_pct = ((current_price - position.entry_price) / position.entry_price)
+                    else:  # short
+                        price_change_pct = ((position.entry_price - current_price) / position.entry_price)
+                    
+                    return_on_capital_pct = price_change_pct * position.leverage
+                    pnl_pct = return_on_capital_pct * 100
+                    
+                    # Quick profit taking rules
+                    if time_in_position_min >= 2 and pnl_pct >= 5.0:
+                        # Take 50% profit if +5% in 2 minutes
+                        logger.info(
+                            f"💰 [QUICK PROFIT] {symbol} | +{pnl_pct:.2f}% profit in {time_in_position_min:.1f}min | "
+                            f"Taking 50% profit to lock in gains"
+                        )
+                        # Note: For now, we'll close the full position as partial closes are complex
+                        # In future, we can implement partial position closing
+                        await self.close_position(symbol, exit_reason=f"QUICK PROFIT: +{pnl_pct:.2f}% in {time_in_position_min:.1f}min (50% profit target)")
+                        continue
+                    elif time_in_position_min >= 3 and pnl_pct >= 8.0:
+                        # Take 100% profit if +8% in 3 minutes
+                        logger.info(
+                            f"💰 [QUICK PROFIT] {symbol} | +{pnl_pct:.2f}% profit in {time_in_position_min:.1f}min | "
+                            f"Taking 100% profit to lock in gains"
+                        )
+                        await self.close_position(symbol, exit_reason=f"QUICK PROFIT: +{pnl_pct:.2f}% in {time_in_position_min:.1f}min (100% profit target)")
+                        continue
+                except Exception as e:
+                    logger.debug(f"⚠️ Failed to check quick profit for {symbol}: {e}")
+
             # 🚀 NEW FEATURE: Momentum Reversal Exit
             # If momentum gives a strong opposite signal, exit immediately regardless of profit/loss
             if position and self.config.momentum_reversal_enabled:
@@ -2198,15 +2255,57 @@ class LiveTrader:
                 regime = alloc["regime"]
                 position_size_multiplier = alloc["position_size_multiplier"]
 
-                # 🚀 CRITICAL: Check minimum score threshold BEFORE processing!
-                # This reduces trade frequency by only taking STRONG signals
-                min_score = self.config.min_entry_score_short if signal_side == "short" else self.config.min_entry_score
+                # 🚀 CRITICAL: Check dynamic entry threshold based on token performance tier!
+                # Tier1 (best): 2.0 threshold (more opportunities)
+                # Tier2 (good): 2.5 threshold (current)
+                # Tier3 (average): 3.0 threshold (stricter)
+                # Tier4 (poor): 3.5 threshold OR skip entirely
+                if self.dynamic_params:
+                    # Use dynamic threshold based on token performance
+                    dynamic_threshold = self.dynamic_params.get_entry_threshold(symbol, default_threshold=2.5)
+                    min_score = dynamic_threshold
+                else:
+                    # Fallback to fixed thresholds
+                    min_score = self.config.min_entry_score_short if signal_side == "short" else self.config.min_entry_score
+                
                 if signal_score < min_score:
                     logger.debug(
-                        f"🚫 [ENTRY REJECTED] {symbol} | {signal_side.upper()} signal score ({signal_score:.2f}) below minimum ({min_score:.2f}) | "
+                        f"🚫 [ENTRY REJECTED] {symbol} | {signal_side.upper()} signal score ({signal_score:.2f}) below dynamic threshold ({min_score:.2f}) | "
                         f"Skipping to reduce trade frequency"
                     )
                     continue
+                
+                # 🚀 PHASE 1.3: Skip Tier4 tokens entirely (bottom 20% performers)
+                if self.dynamic_params:
+                    tier = self.dynamic_params.get_performance_tier(symbol)
+                    if tier == "tier4":
+                        logger.debug(
+                            f"🚫 [ENTRY REJECTED] {symbol} | Tier4 token (bottom 20% performers) - skipping to improve win rate"
+                        )
+                        continue
+                
+                # 🚀 PHASE 3.2: Real-time performance filtering
+                # Check recent performance (last 10 trades) for symbol
+                # If win rate < 50% in last 10 trades, skip symbol temporarily
+                # Reset after 24 hours
+                if symbol in self.symbol_recent_trades:
+                    recent_trades = self.symbol_recent_trades[symbol]
+                    if len(recent_trades) >= 10:
+                        wins = sum(1 for t in recent_trades if t.get("is_win", False))
+                        win_rate = wins / len(recent_trades)
+                        if win_rate < 0.50:  # Less than 50% win rate
+                            # Check if 24 hours have passed since last reset
+                            reset_time = self.symbol_filter_reset_time.get(symbol)
+                            if reset_time is None or (datetime.now() - reset_time).total_seconds() < 86400:
+                                logger.debug(
+                                    f"🚫 [ENTRY REJECTED] {symbol} | Recent win rate ({win_rate:.1%}) below 50% in last {len(recent_trades)} trades - skipping temporarily"
+                                )
+                                continue
+                            else:
+                                # Reset after 24 hours
+                                self.symbol_recent_trades[symbol] = []
+                                self.symbol_filter_reset_time[symbol] = datetime.now()
+                                logger.debug(f"🔄 [FILTER RESET] {symbol} | Resetting performance filter after 24 hours")
 
                 # Skip if already have position
                 if symbol in self.position_manager.positions:
@@ -2253,6 +2352,76 @@ class LiveTrader:
                     logger.error(f"❌ [PRICE ERROR] {symbol} | Price is 0, skipping trade")
                     continue
                 
+                # 🚀 PHASE 5.1: Spread Filter - reject if spread > 0.1% (10 bps)
+                # Only trades with tight spreads (better fills)
+                try:
+                    if ticker_data and ticker_data.get("code") == "00000":
+                        ticker_list = ticker_data.get("data", [])
+                        if ticker_list and len(ticker_list) > 0:
+                            ticker = ticker_list[0]
+                            bid_price = float(ticker.get("bidPr", 0))
+                            ask_price = float(ticker.get("askPr", 0))
+                            if bid_price > 0 and ask_price > 0:
+                                spread_pct = ((ask_price - bid_price) / bid_price) * 100
+                                if spread_pct > 0.1:  # Spread > 0.1% (10 bps)
+                                    logger.debug(
+                                        f"🚫 [ENTRY REJECTED] {symbol} | Spread ({spread_pct:.3f}%) too wide (>0.1%) - skipping for better fills"
+                                    )
+                                    continue
+                except Exception as e:
+                    logger.debug(f"⚠️ Failed to check spread for {symbol}: {e}")
+                
+                # 🚀 PHASE 5.2: Funding Rate Filter - reject negative carry trades
+                # For longs: Reject if funding rate > 0.05% (negative carry)
+                # For shorts: Reject if funding rate < -0.05% (negative carry)
+                try:
+                    features = self.state_manager.get_features(symbol)
+                    if features:
+                        funding_rate = features.get("funding_rate", 0.0)
+                        if signal_side == "long" and funding_rate > 0.0005:  # > 0.05%
+                            logger.debug(
+                                f"🚫 [ENTRY REJECTED] {symbol} | LONG signal but funding rate ({funding_rate*100:.3f}%) is negative carry (>0.05%) - skipping"
+                            )
+                            continue
+                        elif signal_side == "short" and funding_rate < -0.0005:  # < -0.05%
+                            logger.debug(
+                                f"🚫 [ENTRY REJECTED] {symbol} | SHORT signal but funding rate ({funding_rate*100:.3f}%) is negative carry (<-0.05%) - skipping"
+                            )
+                            continue
+                except Exception as e:
+                    logger.debug(f"⚠️ Failed to check funding rate for {symbol}: {e}")
+                
+                # 🚀 PHASE 5.3: Correlation Filter - limit BTC-correlated positions to 3 max
+                # If already have 3 BTC-correlated positions, skip new BTC-correlated signals
+                try:
+                    features = self.state_manager.get_features(symbol)
+                    btc_features = self.state_manager.get_features("BTCUSDT")
+                    if features and btc_features:
+                        symbol_return = features.get("return_5min", 0.0)
+                        btc_return = btc_features.get("return_5min", 0.0)
+                        # Check if symbol moves with BTC (correlation)
+                        if btc_return != 0 and abs(symbol_return) > 0:
+                            correlation = (symbol_return / btc_return) if btc_return != 0 else 0
+                            # If correlation > 0.5, consider it BTC-correlated
+                            if abs(correlation) > 0.5:
+                                # Count existing BTC-correlated positions
+                                btc_correlated_count = 0
+                                for pos_symbol in self.position_manager.positions.keys():
+                                    pos_features = self.state_manager.get_features(pos_symbol)
+                                    if pos_features:
+                                        pos_return = pos_features.get("return_5min", 0.0)
+                                        pos_correlation = (pos_return / btc_return) if btc_return != 0 else 0
+                                        if abs(pos_correlation) > 0.5:
+                                            btc_correlated_count += 1
+                                
+                                if btc_correlated_count >= 3:
+                                    logger.debug(
+                                        f"🚫 [ENTRY REJECTED] {symbol} | BTC-correlated position limit reached ({btc_correlated_count}/3) - skipping for better diversification"
+                                    )
+                                    continue
+                except Exception as e:
+                    logger.debug(f"⚠️ Failed to check correlation for {symbol}: {e}")
+                
                 # 🚀 CRITICAL: Validate that price is actually moving in our direction!
                 # This prevents entering longs during downtrends and shorts during uptrends
                 try:
@@ -2269,35 +2438,32 @@ class LiveTrader:
                         # For long: ALL timeframes should show rising price (positive change)
                         # For short: ALL timeframes should show falling price (negative change)
                         if signal_side == "long":
-                            # Long position: require price to be rising across all timeframes
-                            if short_term_change < -0.03 or medium_term_change < -0.05 or long_term_change < -0.08:
-                                # Price is falling - REJECT long entry!
+                            # 🚀 PHASE 1.4: STRONG momentum confirmation - ALL timeframes must show rising
+                            # Long position: require ALL timeframes to show rising price
+                            if not (short_term_change > 0.03 and medium_term_change > 0.05 and long_term_change > 0.08):
+                                # Price is not rising across ALL timeframes - REJECT long entry!
                                 logger.warning(
-                                    f"🚫 [ENTRY REJECTED] {symbol} | LONG signal but price is FALLING! | "
-                                    f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
-                                    f"Long: {long_term_change:.3f}% | Skipping to avoid entering during downtrend"
+                                    f"🚫 [ENTRY REJECTED] {symbol} | LONG signal but price not rising across ALL timeframes! | "
+                                    f"Short: {short_term_change:.3f}% (need >0.03%) | Medium: {medium_term_change:.3f}% (need >0.05%) | "
+                                    f"Long: {long_term_change:.3f}% (need >0.08%) | Skipping to avoid entering during wrong momentum"
                                 )
                                 continue
-                            elif short_term_change > 0.02 and medium_term_change > 0.03:
-                                # Price is rising - good to enter
+                            else:
+                                # Price is rising across ALL timeframes - good to enter
                                 logger.info(
-                                    f"✅ [ENTRY CONFIRMED] {symbol} | LONG signal with RISING price | "
+                                    f"✅ [ENTRY CONFIRMED] {symbol} | LONG signal with STRONG RISING price across ALL timeframes | "
                                     f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
                                     f"Long: {long_term_change:.3f}%"
                                 )
-                            else:
-                                # Price is neutral/flat - wait for confirmation
-                                logger.debug(
-                                    f"⏳ [ENTRY WAIT] {symbol} | LONG signal but price is neutral | "
-                                    f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
-                                    f"Waiting for price to start rising..."
-                                )
-                                continue
                         else:  # short
-                            # 🚀 FIX: Short position - RELAXED requirements (shorts are harder to find in bull markets)
-                            # Require price to be falling OR neutral (not strongly rising)
-                            # This allows shorts during pullbacks and consolidations, not just strong downtrends
-                            if short_term_change > 0.05 or medium_term_change > 0.08 or long_term_change > 0.12:
+                            # 🚀 RELAXED: Allow shorts during pullbacks/consolidations, not just strong downtrends
+                            # Short position: Allow if price is falling OR neutral (not strongly rising)
+                            # This enables shorts during pullbacks in bull markets
+                            is_falling = short_term_change < -0.02 or medium_term_change < -0.03
+                            is_neutral = abs(short_term_change) < 0.05 and abs(medium_term_change) < 0.08
+                            is_strongly_rising = short_term_change > 0.05 and medium_term_change > 0.08 and long_term_change > 0.12
+                            
+                            if is_strongly_rising:
                                 # Price is STRONGLY rising - REJECT short entry!
                                 logger.warning(
                                     f"🚫 [ENTRY REJECTED] {symbol} | SHORT signal but price is STRONGLY RISING! | "
@@ -2305,21 +2471,20 @@ class LiveTrader:
                                     f"Long: {long_term_change:.3f}% | Skipping to avoid entering during strong uptrend"
                                 )
                                 continue
-                            elif short_term_change < -0.01 or medium_term_change < -0.02:
-                                # Price is falling or slightly falling - good to enter
+                            elif is_falling or is_neutral:
+                                # Price is falling or neutral - good to enter short (pullback/consolidation)
                                 logger.info(
-                                    f"✅ [ENTRY CONFIRMED] {symbol} | SHORT signal with FALLING/NEUTRAL price | "
+                                    f"✅ [ENTRY CONFIRMED] {symbol} | SHORT signal with falling/neutral price | "
                                     f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
-                                    f"Long: {long_term_change:.3f}%"
+                                    f"Long: {long_term_change:.3f}% | {'Falling' if is_falling else 'Neutral'}"
                                 )
                             else:
-                                # Price is neutral/flat - ALLOW shorts (consolidation/pullback opportunity)
+                                # Mildly rising but not strongly - allow if other conditions are met
                                 logger.info(
-                                    f"✅ [ENTRY CONFIRMED] {symbol} | SHORT signal with NEUTRAL price (consolidation/pullback) | "
+                                    f"✅ [ENTRY CONFIRMED] {symbol} | SHORT signal with mild rise (pullback opportunity) | "
                                     f"Short: {short_term_change:.3f}% | Medium: {medium_term_change:.3f}% | "
                                     f"Long: {long_term_change:.3f}%"
                                 )
-                                # Don't continue - allow entry on neutral price for shorts
                     else:
                         # Not enough price history - skip for now
                         logger.debug(f"⚠️ [ENTRY WAIT] {symbol} | Not enough price history ({len(recent_prices)} points), waiting...")

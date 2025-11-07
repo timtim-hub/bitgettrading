@@ -119,7 +119,7 @@ class DynamicParams:
             "tier1": 0.06,  # 6% for best tokens (top 20%)
             "tier2": 0.05,  # 5% for good tokens (top 50%)
             "tier3": default_callback,  # 4% default
-            "tier4": 0.03,  # 3% for poor tokens (bottom 20%)
+            "tier4": 0.02,  # 🚀 PHASE 4.2: 2% for poor tokens (was 3%) - lock profits faster
         }
         
         callback = callback_rates.get(tier, default_callback)
@@ -270,7 +270,7 @@ class DynamicParams:
         
         # Tier-based take-profit percentages
         tp_percentages = {
-            "tier1": 0.12,  # 12% capital (activate trailing earlier for best tokens)
+            "tier1": 0.10,  # 🚀 PHASE 4.3: 10% capital (was 12%) - activate trailing earlier for best tokens
             "tier2": 0.14,  # 14% capital (activate earlier for good tokens)
             "tier3": 0.16,  # 16% capital (current default)
             "tier4": 0.18,  # 18% capital (wait for bigger moves for poor tokens)

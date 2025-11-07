@@ -65,12 +65,12 @@ class TradingConfig(BaseSettings):
     backtest_min_trades: int = Field(default=3, ge=1, alias="BACKTEST_MIN_TRADES")  # Reduced to 3 for speed
     backtest_parallel_tokens: int = Field(default=5, ge=1, alias="BACKTEST_PARALLEL_TOKENS")  # Reduced to 5 for very slow, rate-limit-safe backtesting
     
-    # Filtering (TIGHTENED for higher quality trades)
+    # Filtering (ULTRA-TIGHTENED for maximum win rate)
     filter_losing_tokens: bool = Field(default=True, alias="FILTER_LOSING_TOKENS")
-    filter_min_win_rate: float = Field(default=0.55, ge=0, le=1, alias="FILTER_MIN_WIN_RATE")  # 55% minimum (was 50%)
-    filter_min_roi: float = Field(default=0.05, alias="FILTER_MIN_ROI")  # 5% minimum ROI (was 0%)
-    filter_min_sharpe: float = Field(default=1.0, ge=0, alias="FILTER_MIN_SHARPE")  # 1.0 minimum (was 0.5)
-    filter_min_profit_factor: float = Field(default=1.2, ge=0, alias="FILTER_MIN_PROFIT_FACTOR")  # 1.2 minimum (was 1.0)
+    filter_min_win_rate: float = Field(default=0.60, ge=0, le=1, alias="FILTER_MIN_WIN_RATE")  # 60% minimum (was 55%)
+    filter_min_roi: float = Field(default=0.08, alias="FILTER_MIN_ROI")  # 8% minimum ROI (was 5%)
+    filter_min_sharpe: float = Field(default=1.2, ge=0, alias="FILTER_MIN_SHARPE")  # 1.2 minimum (was 1.0)
+    filter_min_profit_factor: float = Field(default=1.3, ge=0, alias="FILTER_MIN_PROFIT_FACTOR")  # 1.3 minimum (was 1.2)
     
     # Dynamic Parameters
     dynamic_params_enabled: bool = Field(default=True, alias="DYNAMIC_PARAMS_ENABLED")
