@@ -1801,11 +1801,45 @@ class LiveTrader:
                         # Update self.equity for consistency
                         self.equity = total_equity
                         
+                        # 🚨 CRITICAL: Validate minimum margin requirements!
+                        # Ensure we maintain at least 5% of equity as available margin for safety
+                        min_available_margin_pct = 0.05  # 5% minimum available margin
+                        min_available_margin = total_equity * min_available_margin_pct
+                        
+                        # Check if we have enough available balance for this position
+                        required_margin = base_position_value  # Margin required = position value (not notional)
+                        available_after_trade = available_balance - required_margin
+                        
+                        if available_after_trade < min_available_margin:
+                            # Adjust position size to maintain minimum margin
+                            max_allowed_position_value = available_balance - min_available_margin
+                            
+                            if max_allowed_position_value < min_order_value / self.leverage:
+                                # Not enough margin even for minimum order - skip this trade
+                                logger.error(
+                                    f"🚨 [INSUFFICIENT MARGIN] {symbol} | "
+                                    f"Available: ${available_balance:.2f} | Required: ${required_margin:.2f} | "
+                                    f"Min Available Margin: ${min_available_margin:.2f} (5% of equity ${total_equity:.2f}) | "
+                                    f"Available after trade would be: ${available_after_trade:.2f} | "
+                                    f"SKIPPING TRADE - insufficient margin!"
+                                )
+                                continue
+                            
+                            # Reduce position size to maintain minimum margin
+                            base_position_value = max_allowed_position_value
+                            logger.warning(
+                                f"⚠️ [MARGIN ADJUSTMENT] {symbol} | "
+                                f"Reduced position size from ${total_equity * self.position_size_pct:.2f} to ${base_position_value:.2f} | "
+                                f"To maintain minimum available margin: ${min_available_margin:.2f} (5% of equity)"
+                            )
+                        
                         logger.info(
                             f"💰 [EQUITY CHECK] {symbol} | Total Equity: ${total_equity:.2f} | "
                             f"Available: ${available_balance:.2f} | Frozen: ${frozen:.2f} | "
                             f"Unrealized PnL: ${unrealized_pnl:+.2f} | "
-                            f"10% Position Size: ${base_position_value:.2f}"
+                            f"10% Position Size: ${base_position_value:.2f} | "
+                            f"Available After: ${available_balance - base_position_value:.2f} | "
+                            f"Min Required: ${min_available_margin:.2f}"
                         )
                     else:
                         # Fallback to tracked equity if balance fetch fails
