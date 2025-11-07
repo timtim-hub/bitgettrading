@@ -110,15 +110,20 @@ class ProTraderIndicators:
     def analyze_market_structure(
         self, 
         prices: np.ndarray,
-        lookback: int = 30
+        lookback: int = 50  # Increased from 30 for better trend detection
     ) -> dict:
         """
-        Analyze market structure (trend quality).
+        🚀 IMPROVED: Multi-method trend analysis for accurate forecasting.
+        
+        Combines 3 methods with weights:
+        1. EMA Crossover (50% weight) - Most reliable
+        2. Price Slope (30% weight) - Linear regression
+        3. Swing Points (20% weight) - HH/HL structure
         
         Market Structure Rules:
-        - UPTREND: Higher Highs + Higher Lows (HH + HL)
-        - DOWNTREND: Lower Highs + Lower Lows (LH + LL)
-        - RANGING: No clear structure
+        - UPTREND: EMA20 > EMA50 + positive slope + HH/HL
+        - DOWNTREND: EMA20 < EMA50 + negative slope + LH/LL
+        - RANGING: Conflicting signals or weak trend
         
         Pro traders ONLY trade WITH the structure:
         - Longs in uptrend (HH + HL)
@@ -129,24 +134,84 @@ class ProTraderIndicators:
             {
                 "structure": "uptrend" | "downtrend" | "ranging",
                 "strength": 0-100,
-                "higher_highs": count,
-                "higher_lows": count,
-                "lower_highs": count,
-                "lower_lows": count,
+                "ema_trend": "bullish" | "bearish" | "neutral",
+                "slope_trend": "bullish" | "bearish" | "neutral",
+                "swing_trend": "bullish" | "bearish" | "neutral",
+                "uptrend_votes": int (out of 10),
+                "downtrend_votes": int (out of 10),
             }
         """
         if len(prices) < lookback:
             return {
                 "structure": "ranging",
                 "strength": 0,
-                "higher_highs": 0,
-                "higher_lows": 0,
-                "lower_highs": 0,
-                "lower_lows": 0,
+                "ema_trend": "neutral",
+                "slope_trend": "neutral",
+                "swing_trend": "neutral",
+                "uptrend_votes": 0,
+                "downtrend_votes": 0,
             }
         
         recent_prices = prices[-lookback:]
         
+        # 🔥 METHOD 1: EMA Crossover (20/50) - 50% weight (5 votes)
+        if len(recent_prices) >= 50:
+            # Calculate EMAs
+            ema_20 = np.zeros(len(recent_prices))
+            ema_50 = np.zeros(len(recent_prices))
+            
+            # Simple EMA calculation
+            alpha_20 = 2.0 / (20 + 1)
+            alpha_50 = 2.0 / (50 + 1)
+            
+            ema_20[0] = recent_prices[0]
+            ema_50[0] = recent_prices[0]
+            
+            for i in range(1, len(recent_prices)):
+                ema_20[i] = alpha_20 * recent_prices[i] + (1 - alpha_20) * ema_20[i-1]
+                ema_50[i] = alpha_50 * recent_prices[i] + (1 - alpha_50) * ema_50[i-1]
+            
+            ema_20_current = ema_20[-1]
+            ema_50_current = ema_50[-1]
+            
+            # Determine EMA trend with 0.3% threshold (filters noise)
+            if ema_20_current > ema_50_current * 1.003:  # 0.3% above
+                ema_trend = "bullish"
+                ema_votes_uptrend = 5
+                ema_votes_downtrend = 0
+            elif ema_20_current < ema_50_current * 0.997:  # 0.3% below
+                ema_trend = "bearish"
+                ema_votes_uptrend = 0
+                ema_votes_downtrend = 5
+            else:
+                ema_trend = "neutral"
+                ema_votes_uptrend = 0
+                ema_votes_downtrend = 0
+        else:
+            ema_trend = "neutral"
+            ema_votes_uptrend = 0
+            ema_votes_downtrend = 0
+        
+        # 🔥 METHOD 2: Price Slope (linear regression) - 30% weight (3 votes)
+        x = np.arange(len(recent_prices))
+        slope, intercept = np.polyfit(x, recent_prices, 1)
+        slope_pct = (slope * len(recent_prices)) / recent_prices[0]  # Total % change
+        
+        # Determine slope trend with 2% threshold
+        if slope_pct > 0.02:  # >2% upward slope
+            slope_trend = "bullish"
+            slope_votes_uptrend = 3
+            slope_votes_downtrend = 0
+        elif slope_pct < -0.02:  # <-2% downward slope
+            slope_trend = "bearish"
+            slope_votes_uptrend = 0
+            slope_votes_downtrend = 3
+        else:
+            slope_trend = "neutral"
+            slope_votes_uptrend = 0
+            slope_votes_downtrend = 0
+        
+        # 🔥 METHOD 3: Swing Point Structure - 20% weight (2 votes)
         # Find swing points
         swing_highs = []
         swing_lows = []
@@ -162,47 +227,63 @@ class ProTraderIndicators:
                 swing_lows.append((i, recent_prices[i]))
         
         if len(swing_highs) < 2 or len(swing_lows) < 2:
-            return {
-                "structure": "ranging",
-                "strength": 0,
-                "higher_highs": 0,
-                "higher_lows": 0,
-                "lower_highs": 0,
-                "lower_lows": 0,
-            }
+            swing_trend = "neutral"
+            swing_votes_uptrend = 0
+            swing_votes_downtrend = 0
+        else:
+            # Count structure patterns
+            higher_highs = sum(1 for i in range(1, len(swing_highs)) 
+                              if swing_highs[i][1] > swing_highs[i-1][1])
+            lower_highs = sum(1 for i in range(1, len(swing_highs)) 
+                             if swing_highs[i][1] < swing_highs[i-1][1])
+            
+            higher_lows = sum(1 for i in range(1, len(swing_lows)) 
+                             if swing_lows[i][1] > swing_lows[i-1][1])
+            lower_lows = sum(1 for i in range(1, len(swing_lows)) 
+                            if swing_lows[i][1] < swing_lows[i-1][1])
+            
+            # Determine swing trend
+            uptrend_score = higher_highs + higher_lows
+            downtrend_score = lower_highs + lower_lows
+            
+            if uptrend_score > downtrend_score and uptrend_score >= 2:
+                swing_trend = "bullish"
+                swing_votes_uptrend = 2
+                swing_votes_downtrend = 0
+            elif downtrend_score > uptrend_score and downtrend_score >= 2:
+                swing_trend = "bearish"
+                swing_votes_uptrend = 0
+                swing_votes_downtrend = 2
+            else:
+                swing_trend = "neutral"
+                swing_votes_uptrend = 0
+                swing_votes_downtrend = 0
         
-        # Count structure patterns
-        higher_highs = sum(1 for i in range(1, len(swing_highs)) 
-                          if swing_highs[i][1] > swing_highs[i-1][1])
-        lower_highs = sum(1 for i in range(1, len(swing_highs)) 
-                         if swing_highs[i][1] < swing_highs[i-1][1])
+        # 🚀 CONSENSUS: Combine all 3 methods (10 total votes)
+        # EMA = 5 votes | Slope = 3 votes | Swing = 2 votes
+        total_uptrend_votes = ema_votes_uptrend + slope_votes_uptrend + swing_votes_uptrend
+        total_downtrend_votes = ema_votes_downtrend + slope_votes_downtrend + swing_votes_downtrend
         
-        higher_lows = sum(1 for i in range(1, len(swing_lows)) 
-                         if swing_lows[i][1] > swing_lows[i-1][1])
-        lower_lows = sum(1 for i in range(1, len(swing_lows)) 
-                        if swing_lows[i][1] < swing_lows[i-1][1])
-        
-        # Determine structure
-        uptrend_score = higher_highs + higher_lows
-        downtrend_score = lower_highs + lower_lows
-        
-        if uptrend_score > downtrend_score and uptrend_score >= 3:
+        # Determine final structure (need 6+ votes out of 10 for strong trend)
+        if total_uptrend_votes >= 6:
             structure = "uptrend"
-            strength = min(100, uptrend_score * 25)  # 4+ = 100%
-        elif downtrend_score > uptrend_score and downtrend_score >= 3:
+            strength = min(100, total_uptrend_votes * 10)  # 10 votes = 100%
+        elif total_downtrend_votes >= 6:
             structure = "downtrend"
-            strength = min(100, downtrend_score * 25)
+            strength = min(100, total_downtrend_votes * 10)
         else:
             structure = "ranging"
-            strength = 0
+            strength = 30  # Weak trend
         
         return {
             "structure": structure,
             "strength": strength,
-            "higher_highs": higher_highs,
-            "higher_lows": higher_lows,
-            "lower_highs": lower_highs,
-            "lower_lows": lower_lows,
+            "ema_trend": ema_trend,
+            "slope_trend": slope_trend,
+            "swing_trend": swing_trend,
+            "uptrend_votes": total_uptrend_votes,
+            "downtrend_votes": total_downtrend_votes,
+            "slope_pct": slope_pct,
         }
     
     def calculate_risk_reward(
