@@ -365,8 +365,6 @@ class LiveTrader:
             logger.warning(f"⚠️ [CLOSE_POSITION] No position found for {symbol}")
             return False
 
-        side = "sell" if position.side == "long" else "buy"
-        
         # Log WHY we're closing
         logger.info(
             f"🚨 [CLOSE_POSITION CALLED] {symbol} | "
@@ -385,8 +383,32 @@ class LiveTrader:
                 # Get state for current price (for PnL calculation)
                 state = self.state_manager.get_state(symbol)
                 
-                # CRITICAL: Use MARKET orders for exits to guarantee fill!
-                # With 25x leverage, can't risk limit not filling and getting liquidated
+                # Calculate final PnL for logging
+                current_price = state.last_price if state else position.entry_price # Fallback
+                
+                if position.side == "long":
+                    price_change_pct = ((current_price - position.entry_price) / position.entry_price)
+                else:
+                    price_change_pct = ((position.entry_price - current_price) / position.entry_price)
+                    
+                return_on_capital_pct = price_change_pct * position.leverage
+                
+                logger.info(
+                    f"✅ [CLOSING {symbol}] Reason: {exit_reason} | "
+                    f"Entry: ${position.entry_price:.4f} | Exit: ${current_price:.4f} | "
+                    f"Capital PnL: {return_on_capital_pct*100:.2f}% | "
+                    f"Time Held: {(datetime.now() - datetime.fromisoformat(position.entry_time)).total_seconds()/60:.1f}min"
+                )
+                
+                # Cancel any pending exchange-side TP/SL orders for this symbol
+                try:
+                    await self.rest_client.cancel_all_tpsl_orders(symbol)
+                    logger.info(f"🗑️ Cancelled existing TP/SL orders for {symbol}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to cancel existing TP/SL for {symbol}: {e}")
+
+                # Use MARKET order for guaranteed exit!
+                side = "sell" if position.side == "long" else "buy"
                 order = await self.rest_client.place_order(
                     symbol=symbol,
                     side=side,
