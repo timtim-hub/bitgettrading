@@ -6,6 +6,7 @@ from typing import Any
 
 from bitget_trading.bitget_rest import BitgetRestClient
 from bitget_trading.config import TradingConfig
+from bitget_trading.dynamic_params import DynamicParams
 from bitget_trading.enhanced_ranker import EnhancedRanker
 from bitget_trading.logger import get_logger
 from bitget_trading.multi_symbol_state import MultiSymbolStateManager
@@ -69,11 +70,22 @@ class BacktestScheduler:
         # State
         self.running = False
         self.last_backtest: datetime | None = None
+        
+        # 🚀 NEW: Initialize dynamic params (if enabled)
+        dynamic_params = None
+        if config.dynamic_params_enabled:
+            dynamic_params = DynamicParams(
+                performance_tracker=performance_tracker,
+                config=config,
+            )
+        
         self.backtester = SymbolBacktester(
             config=config,
             rest_client=rest_client,
             enhanced_ranker=enhanced_ranker,
             state_manager=state_manager,
+            performance_tracker=performance_tracker,
+            dynamic_params=dynamic_params,
         )
 
     async def run_backtest(self) -> dict[str, Any]:

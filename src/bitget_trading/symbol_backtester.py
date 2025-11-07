@@ -3,7 +3,7 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -13,6 +13,10 @@ from bitget_trading.enhanced_ranker import EnhancedRanker
 from bitget_trading.logger import get_logger
 from bitget_trading.multi_symbol_state import MultiSymbolStateManager, SymbolState
 from bitget_trading.regime_detector import RegimeDetector
+
+if TYPE_CHECKING:
+    from bitget_trading.dynamic_params import DynamicParams
+    from bitget_trading.symbol_performance_tracker import SymbolPerformanceTracker
 
 logger = get_logger()
 
@@ -51,6 +55,8 @@ class SymbolBacktester:
         rest_client: BitgetRestClient,
         enhanced_ranker: EnhancedRanker,
         state_manager: MultiSymbolStateManager,
+        performance_tracker: "SymbolPerformanceTracker | None" = None,
+        dynamic_params: "DynamicParams | None" = None,
     ) -> None:
         """
         Initialize backtester.
@@ -60,12 +66,16 @@ class SymbolBacktester:
             rest_client: Bitget REST API client
             enhanced_ranker: Enhanced ranker for signal generation
             state_manager: Multi-symbol state manager
+            performance_tracker: Performance tracker (optional, for dynamic params)
+            dynamic_params: Dynamic params (optional, for tier-based thresholds)
         """
         self.config = config
         self.rest_client = rest_client
         self.enhanced_ranker = enhanced_ranker
         self.state_manager = state_manager
         self.regime_detector = RegimeDetector()
+        self.performance_tracker = performance_tracker
+        self.dynamic_params = dynamic_params
 
     async def backtest_symbol(
         self,
@@ -122,6 +132,16 @@ class SymbolBacktester:
             balance = 1000.0  # Starting balance for simulation
             peak_balance = 1000.0
             equity_curve = [1000.0]
+            
+            # 🚀 NEW: Get dynamic parameters for this symbol (if available)
+            entry_threshold = 0.0  # Default: any score > 0 (confluence passed)
+            trailing_tp_callback = 0.04  # Default: 4% capital callback
+            
+            if self.dynamic_params and self.performance_tracker:
+                # Get tier-based entry threshold
+                entry_threshold = self.dynamic_params.get_entry_threshold(symbol, default_threshold=0.0)
+                # Get tier-based trailing TP callback
+                trailing_tp_callback = self.dynamic_params.get_trailing_tp_callback(symbol, default_callback=0.04)
             
             # Initialize state manager for this symbol
             self.state_manager.add_symbol(symbol)
@@ -189,14 +209,18 @@ class SymbolBacktester:
                 
                 # Check if we should open a position
                 if not position:
-                    # Open position if signal is strong enough
-                    if score > 0.5:  # Minimum score threshold
+                    # 🚀 FIX: Use score > entry_threshold (default 0.0 = any confluence passed)
+                    # compute_enhanced_score returns 0.0 if confluence fails, so score > 0 means confluence passed
+                    if score > entry_threshold:
                         position = {
                             "side": predicted_side,
                             "entry_price": close_price,
                             "entry_time": timestamp_ms,
                             "position_value": balance * 0.10,  # 10% of balance
                             "leverage": self.config.leverage,
+                            "peak_price": close_price,  # Track peak price for trailing TP
+                            "trailing_activated": False,  # Whether trailing TP is active
+                            "trailing_callback": trailing_tp_callback,  # Dynamic callback rate
                         }
                 else:
                     # Check if we should close position (opposite signal or stop-loss/take-profit)
@@ -208,33 +232,59 @@ class SymbolBacktester:
                         should_close = True
                         exit_reason = "opposite_signal"
                     
-                    # Stop-loss / Take-profit (simplified)
+                    # 🚀 FIX: Fully simulate trailing TP logic (matches live strategy)
                     if position["side"] == "long":
                         price_change_pct = (close_price - position["entry_price"]) / position["entry_price"]
                         return_on_capital = price_change_pct * position["leverage"]
                         
-                        # Stop-loss: -50% capital
+                        # Update peak price
+                        if close_price > position["peak_price"]:
+                            position["peak_price"] = close_price
+                        
+                        # Stop-loss: -50% capital (bot-side backup)
                         if return_on_capital <= -0.50:
                             should_close = True
                             exit_reason = "stop_loss"
-                        # Take-profit: +16% capital (trailing TP activation)
+                        # Trailing TP: Activates at +16% capital, trails with callback
                         elif return_on_capital >= 0.16:
-                            # Check trailing stop (4% callback)
-                            if return_on_capital >= 0.20:  # 16% + 4% = 20% max
+                            # Activate trailing TP
+                            if not position["trailing_activated"]:
+                                position["trailing_activated"] = True
+                            
+                            # Calculate trailing stop price (callback from peak)
+                            # callback_rate = trailing_callback / leverage (convert capital % to price %)
+                            callback_rate_price = position["trailing_callback"] / position["leverage"]
+                            trailing_stop_price = position["peak_price"] * (1 - callback_rate_price)
+                            
+                            # Close if price drops below trailing stop
+                            if close_price < trailing_stop_price:
                                 should_close = True
                                 exit_reason = "trailing_tp"
                     else:  # short
                         price_change_pct = (position["entry_price"] - close_price) / position["entry_price"]
                         return_on_capital = price_change_pct * position["leverage"]
                         
-                        # Stop-loss: -50% capital
+                        # Update lowest price (peak for shorts)
+                        if close_price < position["peak_price"]:
+                            position["peak_price"] = close_price
+                        
+                        # Stop-loss: -50% capital (bot-side backup)
                         if return_on_capital <= -0.50:
                             should_close = True
                             exit_reason = "stop_loss"
-                        # Take-profit: +16% capital (trailing TP activation)
+                        # Trailing TP: Activates at +16% capital, trails with callback
                         elif return_on_capital >= 0.16:
-                            # Check trailing stop (4% callback)
-                            if return_on_capital >= 0.20:  # 16% + 4% = 20% max
+                            # Activate trailing TP
+                            if not position["trailing_activated"]:
+                                position["trailing_activated"] = True
+                            
+                            # Calculate trailing stop price (callback from lowest)
+                            # callback_rate = trailing_callback / leverage (convert capital % to price %)
+                            callback_rate_price = position["trailing_callback"] / position["leverage"]
+                            trailing_stop_price = position["peak_price"] * (1 + callback_rate_price)
+                            
+                            # Close if price rises above trailing stop
+                            if close_price > trailing_stop_price:
                                 should_close = True
                                 exit_reason = "trailing_tp"
                     
