@@ -297,14 +297,15 @@ class BitgetRestClient:
         """
         endpoint = "/api/v2/mix/order/place-order"
 
-        # 🚨 FORCE MARKET ORDERS - OVERRIDE ANY PARAMETER!
-        # User reports limit orders still being placed
-        # This forces "market" no matter what's passed
-        order_type = "market"  # FORCE IT!
+        # 🚀 ALLOW LIMIT ORDERS for better entry prices (reduces slippage)
+        # Use the order_type passed in (limit or market)
+        # Default to market if not specified
+        if not order_type:
+            order_type = "market"
 
         logger.info(
             f"🔍 [BITGET_REST] place_order called: symbol={symbol}, side={side}, "
-            f"order_type={order_type} (FORCED TO MARKET!), size={size}"
+            f"order_type={order_type}, size={size}, price={price}"
         )
 
         # SIMPLIFIED: Just basic parameters for isolated margin

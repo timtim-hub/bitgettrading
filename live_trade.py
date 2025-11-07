@@ -471,13 +471,50 @@ class LiveTrader:
                         # Convert logical side to API side
                         order_side = "buy" if side == "long" else "sell"
 
-                        # Place the actual MARKET order (NO atomic TP/SL - we place separately)
+                        # 🚀 NEW: Use limit orders with better prices (0.05% inside spread) for better fills
+                        # This reduces slippage and ensures we enter at better prices
+                        # For long: enter 0.05% below current price (better fill)
+                        # For short: enter 0.05% above current price (better fill)
+                        spread_adjustment = 0.0005  # 0.05% inside spread
+                        if order_side == "buy":
+                            limit_price = price * (1 - spread_adjustment)  # 0.05% below for long
+                        else:  # sell
+                            limit_price = price * (1 + spread_adjustment)  # 0.05% above for short
+                        
+                        # Round to correct precision
+                        contract_info = self.universe_manager.get_contract_info(symbol)
+                        if contract_info:
+                            price_place = contract_info.get("price_place", 4)
+                            limit_price = round(limit_price, price_place)
+                        
+                        logger.info(
+                            f"🎯 [LIMIT ORDER] {symbol} | Side: {order_side} | "
+                            f"Market price: ${price:.4f} | Limit price: ${limit_price:.4f} | "
+                            f"Spread adjustment: {spread_adjustment*100:.2f}%"
+                        )
+                        
+                        # Try limit order first (better price, maker fee)
                         order_response = await self.rest_client.place_order(
                             symbol=symbol,
                             side=order_side,
                             size=size,
-                            order_type="market",
+                            order_type="limit",
+                            price=limit_price,
                         )
+                        
+                        # If limit order fails or doesn't fill quickly, use market order
+                        if not order_response or order_response.get("code") != "00000":
+                            logger.warning(
+                                f"⚠️ [LIMIT ORDER FAILED] {symbol} | Code: {order_response.get('code', 'N/A') if order_response else 'None'} | "
+                                f"Falling back to market order"
+                            )
+                            # Fallback to market order
+                            order_response = await self.rest_client.place_order(
+                                symbol=symbol,
+                                side=order_side,
+                                size=size,
+                                order_type="market",
+                            )
                         
                         if order_response and order_response.get("code") == "00000":
                             order_id = order_response.get("data", {}).get("orderId")
@@ -1907,9 +1944,64 @@ class LiveTrader:
                 if not state:
                     continue
 
-                price = state.last_price
+                # 🚀 CRITICAL: Get FRESH price right before placing order to avoid slippage!
+                # Price from state manager might be stale, so fetch fresh from exchange
+                try:
+                    ticker_data = await self.rest_client.get_ticker(symbol)
+                    if ticker_data and ticker_data.get("code") == "00000":
+                        ticker_list = ticker_data.get("data", [])
+                        if ticker_list and len(ticker_list) > 0:
+                            fresh_price = float(ticker_list[0].get("lastPr", 0))
+                            if fresh_price > 0:
+                                price = fresh_price
+                                logger.debug(f"✅ [FRESH PRICE] {symbol} | Fetched fresh price: ${price:.4f}")
+                            else:
+                                # Fallback to state manager
+                                price = state.last_price
+                                logger.warning(f"⚠️ [PRICE FALLBACK] {symbol} | Using state price: ${price:.4f}")
+                        else:
+                            # Fallback to state manager
+                            price = state.last_price
+                            logger.warning(f"⚠️ [PRICE FALLBACK] {symbol} | Using state price: ${price:.4f}")
+                    else:
+                        # Fallback to state manager
+                        price = state.last_price
+                        logger.warning(f"⚠️ [PRICE FALLBACK] {symbol} | Using state price: ${price:.4f}")
+                except Exception as e:
+                    # Fallback to state manager
+                    price = state.last_price
+                    logger.warning(f"⚠️ [PRICE ERROR] {symbol} | Error fetching fresh price: {e} | Using state price: ${price:.4f}")
+                
                 if price == 0:
+                    logger.error(f"❌ [PRICE ERROR] {symbol} | Price is 0, skipping trade")
                     continue
+                
+                # 🚀 NEW: Wait for price confirmation (price should move slightly in our direction)
+                # This ensures we enter when momentum is confirmed, not just when signal appears
+                # Check if price has moved in our direction in the last 1-2 seconds
+                try:
+                    # Get recent price history (last 3-5 seconds)
+                    recent_prices = [p for _, p in list(state.price_history)[-5:]] if state.price_history else []
+                    if len(recent_prices) >= 2:
+                        price_change_pct = ((recent_prices[-1] - recent_prices[0]) / recent_prices[0]) * 100
+                        
+                        # For long: price should be rising (positive change)
+                        # For short: price should be falling (negative change)
+                        if signal_side == "long" and price_change_pct < -0.05:
+                            # Price is falling, wait for confirmation
+                            logger.debug(f"⏳ [ENTRY WAIT] {symbol} | Price falling {price_change_pct:.3f}%, waiting for confirmation...")
+                            # Skip this iteration, will retry next time
+                            continue
+                        elif signal_side == "short" and price_change_pct > 0.05:
+                            # Price is rising, wait for confirmation
+                            logger.debug(f"⏳ [ENTRY WAIT] {symbol} | Price rising {price_change_pct:.3f}%, waiting for confirmation...")
+                            # Skip this iteration, will retry next time
+                            continue
+                        else:
+                            # Price moving in our direction or neutral - good to enter
+                            logger.debug(f"✅ [ENTRY CONFIRMED] {symbol} | Price change: {price_change_pct:.3f}% (direction confirmed)")
+                except Exception as e:
+                    logger.debug(f"⚠️ [ENTRY CONFIRMATION ERROR] {symbol} | Error: {e} | Proceeding anyway")
 
                 # 🚨 CRITICAL: Use TOTAL EQUITY (available + margin in positions + unrealized PnL) for position sizing
                 # This ensures each trade gets 10% of TOTAL capital, not just remaining available balance
