@@ -499,7 +499,7 @@ class BitgetRestClient:
             try:
                 results["sl"] = await self._request("POST", endpoint, data=sl_data)
                 logger.info(
-                    f"✅ [EXCHANGE SL] {symbol} @ {stop_loss_price} | code={results['sl'].get('code')}"
+                    f"✅ [EXCHANGE SL] {symbol} @ {stop_loss_price} | FULL_RESPONSE={results['sl']}"
                 )
             except Exception as e:
                 logger.error(f"❌ SL placement failed for {symbol}: {e}")
@@ -521,7 +521,7 @@ class BitgetRestClient:
             try:
                 results["tp"] = await self._request("POST", endpoint, data=tp_data)
                 logger.info(
-                    f"✅ [EXCHANGE TP] {symbol} @ {take_profit_price} | code={results['tp'].get('code')}"
+                    f"✅ [EXCHANGE TP] {symbol} @ {take_profit_price} | FULL_RESPONSE={results['tp']}"
                 )
             except Exception as e:
                 logger.error(f"❌ TP placement failed for {symbol}: {e}")
