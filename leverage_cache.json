@@ -2246,5 +2246,13 @@
   "EULUSDT_short": {
     "leverage": 25,
     "timestamp": 1762507824.233435
+  },
+  "SAFEUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762508965.805283
+  },
+  "SAFEUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762508966.3570318
   }
 }
