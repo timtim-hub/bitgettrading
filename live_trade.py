@@ -2194,20 +2194,21 @@ class LiveTrader:
                         # No cached data yet, wait a bit
                         await asyncio.sleep(position_check_interval_sec)
                         continue
-                for symbol, ticker in ticker_dict.items():
-                    if symbol not in self.symbols:
-                        continue
-                    
-                    self.state_manager.update_ticker(symbol, ticker)
-                    
-                    # Simulate order book
-                    mid = ticker.get("last_price", 0)
-                    if mid > 0:
-                        spread = mid * 0.0005  # 5 bps estimate
-                        self.state_manager.update_orderbook(symbol, {
-                            "bids": [[mid - spread/2, 1000], [mid - spread, 500]],
-                            "asks": [[mid + spread/2, 1000], [mid + spread, 500]],
-                        })
+                if ticker_dict:
+                    for symbol, ticker in ticker_dict.items():
+                        if symbol not in self.symbols:
+                            continue
+                        
+                        self.state_manager.update_ticker(symbol, ticker)
+                        
+                        # Simulate order book
+                        mid = ticker.get("last_price", 0)
+                        if mid > 0:
+                            spread = mid * 0.0005  # 5 bps estimate
+                            self.state_manager.update_orderbook(symbol, {
+                                "bids": [[mid - spread/2, 1000], [mid - spread, 500]],
+                                "asks": [[mid + spread/2, 1000], [mid + spread, 500]],
+                            })
 
                 # ALWAYS: Manage existing positions (stop-loss, take-profit, trailing)
                 await self.manage_positions()

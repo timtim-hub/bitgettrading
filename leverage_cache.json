@@ -2992,5 +2992,15 @@
     "timestamp": 1762544891.667456,
     "failed": true,
     "error_code": "40797"
+  },
+  "DOGSUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762546948.4639099,
+    "failed": false
+  },
+  "DOGSUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762546948.995724,
+    "failed": false
   }
 }
