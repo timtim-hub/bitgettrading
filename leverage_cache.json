@@ -2494,5 +2494,29 @@
   "CETUSUSDT_short": {
     "leverage": 25,
     "timestamp": 1762537965.064636
+  },
+  "MAGICUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762539094.620712
+  },
+  "MAGICUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762539095.205778
+  },
+  "1000CATUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762539102.056567
+  },
+  "1000CATUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762539102.681582
+  },
+  "OLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762539104.498656
+  },
+  "OLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762539105.187436
   }
 }

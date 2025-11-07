@@ -1195,6 +1195,53 @@ class LiveTrader:
                                     f"This should NOT happen with TP/SL set! | "
                                     f"Possible causes: Exchange auto-liquidation, margin call, or TP/SL order issue"
                                 )
+                            
+                            # 🚨 CRITICAL: Cancel any remaining TP/SL and trailing orders when position closes!
+                            # Exchange should auto-cancel them, but we ensure cleanup to prevent orphaned orders
+                            try:
+                                # Cancel TP/SL orders (profit_loss plan type)
+                                cancel_result = await self.rest_client.cancel_all_tpsl_orders(symbol)
+                                logger.info(
+                                    f"🗑️ [CLEANUP] {symbol} | Cancelled TP/SL orders after position closed | "
+                                    f"Result: {cancel_result.get('msg', 'N/A')}"
+                                )
+                                
+                                # Also cancel trailing orders (track_plan) if they exist
+                                # Note: cancel_all_tpsl_orders only cancels profit_loss, so we need to cancel track_plan separately
+                                try:
+                                    query_endpoint = "/api/v2/mix/order/orders-plan-pending"
+                                    params = {
+                                        "symbol": symbol,
+                                        "productType": "usdt-futures",
+                                        "planType": "track_plan",  # Trailing orders
+                                    }
+                                    trailing_orders = await self.rest_client._request("GET", query_endpoint, params=params)
+                                    trailing_list = trailing_orders.get("data", {}).get("entrustedList", [])
+                                    
+                                    if trailing_list:
+                                        cancel_endpoint = "/api/v2/mix/order/cancel-plan-order"
+                                        for order in trailing_list:
+                                            order_id = order.get("orderId")
+                                            if order_id:
+                                                try:
+                                                    data = {
+                                                        "symbol": symbol,
+                                                        "productType": "usdt-futures",
+                                                        "marginCoin": "USDT",
+                                                        "orderId": order_id,
+                                                        "planType": "track_plan",
+                                                    }
+                                                    await self.rest_client._request("POST", cancel_endpoint, data=data)
+                                                    logger.info(f"🗑️ [CLEANUP] {symbol} | Cancelled trailing order {order_id}")
+                                                except Exception as e:
+                                                    logger.warning(f"⚠️ Failed to cancel trailing order {order_id} for {symbol}: {e}")
+                                    else:
+                                        logger.debug(f"✅ [CLEANUP] {symbol} | No trailing orders to cancel")
+                                except Exception as e:
+                                    logger.warning(f"⚠️ Failed to query/cancel trailing orders for {symbol}: {e}")
+                                    
+                            except Exception as e:
+                                logger.warning(f"⚠️ Failed to cancel TP/SL orders for {symbol} after position closed: {e}")
                         
                         self.position_manager.remove_position(symbol)
             except Exception as e:
