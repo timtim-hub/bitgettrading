@@ -652,12 +652,16 @@ class BitgetRestClient:
                     msg = results["sl"].get("msg") if results["sl"] else "NO_MSG"
                     data = results["sl"].get("data") if results["sl"] else None
                     if code == "00000":
+                        order_id = data.get('orderId', 'N/A') if data else 'N/A'
                         logger.info(
                             f"✅ [GESAMTER SL PLACED!] {symbol} @ ${stop_loss_price:.4f} | "
                             f"planType=pos_loss (FULL POSITION!) | "
                             f"holdSide: {api_hold_side} | "
-                            f"✨ App will show 'Gesamter TP/SL' for SL! | "
-                            f"Code: {code} | Msg: {msg} | Order ID: {data.get('orderId', 'N/A') if data else 'N/A'}"
+                            f"Order ID: {order_id}"
+                        )
+                        logger.warning(
+                            f"🔍 [DEBUG] CHECK BITGET APP: Is SL order ID {order_id} visible in TP/SL tab for {symbol}? "
+                            f"If NOT visible = order was silently cancelled!"
                         )
                         break  # Success, exit retry loop
                     else:
@@ -1073,18 +1077,24 @@ class BitgetRestClient:
             data_resp = response.get("data", {})
             
             if code == "00000":
+                order_id = data_resp.get('orderId', 'N/A')
                 logger.info(
                     f"✅ [NORMAL TRAILING TP PLACED!] {symbol} | "
                     f"planType=moving_plan (TRAILING + full position!) | "
                     f"size={rounded_size} | "
                     f"Callback: {callback_ratio*100:.2f}% (TRAILS!) | "
                     f"Trigger: {trigger_price} | "
-                    f"Order ID: {data_resp.get('orderId', 'N/A')}"
+                    f"Order ID: {order_id}"
+                )
+                logger.warning(
+                    f"🔍 [DEBUG] CHECK BITGET APP: Is order ID {order_id} visible in TP/SL tab for {symbol}? "
+                    f"If NOT visible = order was silently cancelled by exchange!"
                 )
             else:
                 logger.error(
-                    f"❌ [GESAMTER TP/SL FAILED] {symbol} | "
-                    f"Code: {code} | Msg: {msg}"
+                    f"❌ [TRAILING TP FAILED] {symbol} | "
+                    f"Code: {code} | Msg: {msg} | "
+                    f"Full response: {response}"
                 )
             
             return response
