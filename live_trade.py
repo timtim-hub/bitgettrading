@@ -1796,45 +1796,6 @@ class LiveTrader:
             # This prevents liquidations by closing positions before they get liquidated
             position = self.position_manager.get_position(symbol)
             if position:
-                # 🚀 NEW: Time-based exits (lock in profits early)
-                from datetime import datetime
-                entry_time = datetime.fromisoformat(position.entry_time.replace('Z', '+00:00'))
-                time_in_position_min = (datetime.now(entry_time.tzinfo) - entry_time).total_seconds() / 60
-                
-                # Calculate PnL for time-based exits
-                if position.side == "long":
-                    price_change_pct = ((current_price - position.entry_price) / position.entry_price)
-                else:
-                    price_change_pct = ((position.entry_price - current_price) / position.entry_price)
-                return_on_capital_pct = price_change_pct * position.leverage
-                pnl_pct = return_on_capital_pct * 100
-                
-                # Time-based exit rules (lock in profits early)
-                if time_in_position_min >= 3 and pnl_pct >= 5.0:
-                    # 3 minutes: Exit if > 5% profit (quick wins)
-                    logger.info(
-                        f"⏰ [TIME-BASED EXIT] {symbol} | 3min rule: {pnl_pct:.2f}% profit | "
-                        f"Locking in quick win!"
-                    )
-                    await self.close_position(symbol, exit_reason=f"TIME-BASED EXIT (3min, {pnl_pct:.2f}% profit)")
-                    continue
-                elif time_in_position_min >= 5 and pnl_pct >= 3.0:
-                    # 5 minutes: Exit if > 3% profit (lock in gains)
-                    logger.info(
-                        f"⏰ [TIME-BASED EXIT] {symbol} | 5min rule: {pnl_pct:.2f}% profit | "
-                        f"Locking in gains!"
-                    )
-                    await self.close_position(symbol, exit_reason=f"TIME-BASED EXIT (5min, {pnl_pct:.2f}% profit)")
-                    continue
-                elif time_in_position_min >= 10 and pnl_pct >= 0.0:
-                    # 10 minutes: Exit at breakeven (don't give back profits)
-                    logger.info(
-                        f"⏰ [TIME-BASED EXIT] {symbol} | 10min rule: {pnl_pct:.2f}% PnL | "
-                        f"Exiting at breakeven to prevent giving back profits!"
-                    )
-                    await self.close_position(symbol, exit_reason=f"TIME-BASED EXIT (10min, breakeven)")
-                    continue
-                
                 try:
                     # Get position data from exchange to check liquidation price
                     endpoint = "/api/v2/mix/position/all-position"
