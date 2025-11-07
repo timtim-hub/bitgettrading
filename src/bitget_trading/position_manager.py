@@ -29,9 +29,9 @@ class Position:
     
     # OPTIMIZED for ultra-short-term scalping with fees in mind
     # With 25x leverage + 0.04% round-trip fees (SAFER than 50x!)
-    trailing_stop_pct: float = 0.04  # 4% trailing from peak (0.16% price @ 25x) - ACTIVE!
-    stop_loss_pct: float = 0.50   # 50% hard stop-loss (2% price @ 25x) - MAXIMUM ROOM, let winners run!
-    take_profit_pct: float = 0.10  # 10% take-profit (0.40% price @ 25x) - WITH 4% trailing protection!
+    trailing_stop_pct: float = 0.01  # 1% trailing from peak (0.04% price @ 25x) - ACTIVE!
+    stop_loss_pct: float = 0.25   # 25% hard stop-loss (1% price @ 25x) - Balanced risk/reward
+    take_profit_pct: float = 0.06  # 6% take-profit (0.24% price @ 25x) - WITH 1% trailing protection!
     
     # Regime info
     regime: str = "ranging"  # Market regime at entry
@@ -75,9 +75,9 @@ class PositionManager:
         capital: float,
         leverage: int,
         regime: str = "ranging",
-        stop_loss_pct: float = 0.50,  # 50% capital (2% price @ 25x) - MAXIMUM ROOM!
-        take_profit_pct: float = 0.10,  # 10% capital (0.40% price @ 25x) - WITH 4% trailing!
-        trailing_stop_pct: float = 0.04,  # 4% capital (0.16% price @ 25x) - ACTIVE!
+        stop_loss_pct: float = 0.25,  # 25% capital (1% price @ 25x) - Balanced risk/reward
+        take_profit_pct: float = 0.06,  # 6% capital (0.24% price @ 25x) - WITH 1% trailing!
+        trailing_stop_pct: float = 0.01,  # 1% capital (0.04% price @ 25x) - ACTIVE!
         metadata: dict = None,  # Entry quality metadata for loss tracking
     ) -> None:
         """Add a new position with regime-based parameters and metadata."""

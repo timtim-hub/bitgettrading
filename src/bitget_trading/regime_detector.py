@@ -133,9 +133,9 @@ class RegimeDetector:
         """
         if regime == MarketRegime.TRENDING:
             return {
-                "stop_loss_pct": 0.50,      # 50% capital (2% price @ 25x) - MAXIMUM ROOM!
-                "take_profit_pct": 0.10,    # 10% capital (0.40% price @ 25x) - WITH 4% trailing!
-                "trailing_stop_pct": 0.04,  # 4% capital (0.16% price @ 25x) - ACTIVE!
+                "stop_loss_pct": 0.25,      # 25% capital (1% price @ 25x) - Balanced risk/reward
+                "take_profit_pct": 0.06,    # 6% capital (0.24% price @ 25x) - WITH 1% trailing!
+                "trailing_stop_pct": 0.01,  # 1% capital (0.04% price @ 25x) - ACTIVE!
                 "position_size_multiplier": 1.5,  # 50% larger for trending (was 1.2)
             }
         
