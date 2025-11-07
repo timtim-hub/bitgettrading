@@ -267,16 +267,29 @@ class LiveTrader:
                 except Exception:
                     pass  # May already be set, ignore error
                 
-                # Set leverage for both sides
+                # 🚨 CRITICAL: Set leverage to 25x for both sides (MUST BE SET!)
                 for hold_side in ["long", "short"]:
                     try:
-                        await self.rest_client.set_leverage(
+                        response = await self.rest_client.set_leverage(
                             symbol=symbol,
                             leverage=self.leverage,
                             hold_side=hold_side,
                         )
-                    except Exception:
-                        pass  # May already be set
+                        if response.get("code") == "00000":
+                            logger.info(
+                                f"✅ [LEVERAGE SET] {symbol} {hold_side}: {self.leverage}x | "
+                                f"Response: {response.get('msg', 'OK')}"
+                            )
+                        else:
+                            logger.error(
+                                f"❌ [LEVERAGE SET FAILED] {symbol} {hold_side}: {self.leverage}x | "
+                                f"Code: {response.get('code')} | Msg: {response.get('msg', 'Unknown error')}"
+                            )
+                    except Exception as e:
+                        logger.error(
+                            f"❌ [LEVERAGE SET ERROR] {symbol} {hold_side}: {self.leverage}x | Error: {e}"
+                        )
+                        # Don't pass silently - log the error!
                 
                 if self.can_open_new_position():
                     try:

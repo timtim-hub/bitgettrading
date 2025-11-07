@@ -225,12 +225,17 @@ class BitgetRestClient:
         
         response = await self._request("POST", endpoint, data=data)
         
-        logger.info(
-            "leverage_set",
-            symbol=symbol,
-            leverage=leverage,
-            hold_side=hold_side,
-        )
+        # Log detailed response
+        if response.get("code") == "00000":
+            logger.info(
+                f"✅ [LEVERAGE API] {symbol} {hold_side}: Set to {leverage}x successfully"
+            )
+        else:
+            logger.error(
+                f"❌ [LEVERAGE API] {symbol} {hold_side}: Failed to set {leverage}x | "
+                f"Code: {response.get('code')} | Msg: {response.get('msg', 'Unknown error')} | "
+                f"Data: {response}"
+            )
         
         return response
 
