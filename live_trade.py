@@ -867,9 +867,8 @@ class LiveTrader:
                                 # Example: 4% capital @ 25x leverage = 4% / 25 = 0.16% price callback
                                 # Example: 4% capital @ 10x leverage = 4% / 10 = 0.4% price callback
                                 trailing_stop_pct_capital = trailing_stop_pct  # Use dynamic value if enabled
-                                # Use actual leverage from position (fetched from exchange above)
-                                actual_leverage = int(pos.get("leverage", self.leverage)) if pos.get("leverage") else self.leverage
-                                trailing_range_rate = trailing_stop_pct_capital / actual_leverage  # Convert to price-based using ACTUAL leverage
+                                # Use actual leverage from position (fetched from exchange above) - stored in position_actual_leverage
+                                trailing_range_rate = trailing_stop_pct_capital / position_actual_leverage  # Convert to price-based using ACTUAL leverage
                                 
                                 # 🚨 CRITICAL: Get FRESH current market price RIGHT BEFORE placing order
                                 # Bitget API requires: trigger price ≥ current market price (for longs)
