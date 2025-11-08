@@ -1,0 +1,23 @@
+{
+  "id": 171,
+  "name": "HolyGrail_HF_FeeEfficient_100x_45pos",
+  "category": "Holy Grail - High-Frequency Fee Efficient",
+  "rationale": "45 positions @ 100x with fee optimization. Small positions (3.0% each) + maker fees = compound profits. Many small wins with low fees.",
+  "leverage": 100,
+  "entry_threshold": 0.72,
+  "stop_loss_pct": 0.3,
+  "take_profit_pct": 0.19,
+  "trailing_callback": 0.015,
+  "volume_ratio": 1.5,
+  "confluence_required": 2,
+  "position_size_pct": 0.03,
+  "max_positions": 45,
+  "min_liquidity": 100000,
+  "primary_indicator": "hf_fee_optimized",
+  "entry_method": "diversified_maker",
+  "exit_method": "quick_profit_maker",
+  "risk_style": "holy_grail_hf_100x",
+  "maker_fee_probability": 0.65,
+  "min_profit_bps": 18,
+  "fee_optimization": true
+}

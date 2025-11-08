@@ -29,8 +29,8 @@ class ExtremeStrategiesTester:
         self.strategies_dir = Path("/Users/macbookpro13/bitgettrading/strategies")
         self.cache_dir = Path("/Users/macbookpro13/bitgettrading/backtest_data")
     
-    def load_strategies(self, start_id: int = 110, end_id: int = 159) -> List[Dict]:
-        """Load strategies 110-159."""
+    def load_strategies(self, start_id: int = 110, end_id: int = 179) -> List[Dict]:
+        """Load strategies 110-179 (extreme + holy grail)."""
         strategies = []
         for strategy_id in range(start_id, end_id + 1):
             filepath = self.strategies_dir / f"strategy_{strategy_id:03d}.json"
@@ -152,41 +152,59 @@ class ExtremeStrategiesTester:
         with open(phase1_file, 'w') as f:
             json.dump(phase1_results, f, indent=2)
         
-        # Phase 2: >10% ROI tokens
+        # Phase 2: ALL 5%+ ROI tokens (MANDATORY!)
         phase2_symbols = [
             r['symbol'] for r in phase1_results
-            if r['total_roi_pct'] > 10.0
+            if r['total_roi_pct'] >= 5.0
         ]
         
         if phase2_symbols:
             phase2_results = await self.test_strategy_phase(
-                strategy, phase2_symbols, data_dict, "Phase 2 (>10% ROI)"
+                strategy, phase2_symbols, data_dict, "Phase 2 (ALL 5%+ ROI)"
             )
             
-            phase2_file = self.results_dir / f"{strategy['name']}_phase2_{timestamp}.json"
+            phase2_file = self.results_dir / f"{strategy['name']}_phase2_5pct_plus_{timestamp}.json"
             with open(phase2_file, 'w') as f:
                 json.dump(phase2_results, f, indent=2)
         else:
-            print(f"⚠️ No tokens passed 10% ROI threshold for Phase 2")
+            print(f"⚠️ No tokens passed 5% ROI threshold for Phase 2")
             phase2_results = []
         
-        # Phase 3: >20% ROI tokens
+        # Phase 3: >10% ROI tokens
         phase3_symbols = [
             r['symbol'] for r in phase2_results
-            if r['total_roi_pct'] > 20.0
+            if r['total_roi_pct'] > 10.0
         ]
         
         if phase3_symbols:
             phase3_results = await self.test_strategy_phase(
-                strategy, phase3_symbols, data_dict, "Phase 3 (>20% ROI)"
+                strategy, phase3_symbols, data_dict, "Phase 3 (>10% ROI)"
             )
             
-            phase3_file = self.results_dir / f"{strategy['name']}_phase3_{timestamp}.json"
+            phase3_file = self.results_dir / f"{strategy['name']}_phase3_10pct_plus_{timestamp}.json"
             with open(phase3_file, 'w') as f:
                 json.dump(phase3_results, f, indent=2)
         else:
-            print(f"⚠️ No tokens passed 20% ROI threshold for Phase 3")
+            print(f"⚠️ No tokens passed 10% ROI threshold for Phase 3")
             phase3_results = []
+        
+        # Phase 4: >20% ROI tokens
+        phase4_symbols = [
+            r['symbol'] for r in phase3_results
+            if r['total_roi_pct'] > 20.0
+        ]
+        
+        if phase4_symbols:
+            phase4_results = await self.test_strategy_phase(
+                strategy, phase4_symbols, data_dict, "Phase 4 (>20% ROI)"
+            )
+            
+            phase4_file = self.results_dir / f"{strategy['name']}_phase4_20pct_plus_{timestamp}.json"
+            with open(phase4_file, 'w') as f:
+                json.dump(phase4_results, f, indent=2)
+        else:
+            print(f"⚠️ No tokens passed 20% ROI threshold for Phase 4")
+            phase4_results = []
         
         return {
             'strategy': strategy['name'],
@@ -195,6 +213,7 @@ class ExtremeStrategiesTester:
             'phase1': self.calculate_summary(phase1_results),
             'phase2': self.calculate_summary(phase2_results),
             'phase3': self.calculate_summary(phase3_results),
+            'phase4': self.calculate_summary(phase4_results),
         }
     
     def calculate_summary(self, results: List[Dict]) -> Dict:
@@ -225,27 +244,46 @@ class ExtremeStrategiesTester:
 
 **Date**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 **Strategies Tested**: {len(all_summaries)}
-**Protocol**: Three-Phase (ALL 338 Tokens → >10% ROI → >20% ROI)
+**Protocol**: Four-Phase (ALL 338 Tokens → ALL 5%+ ROI → >10% ROI → >20% ROI)
 
 ---
 
-## 🏆 Top Performers (Phase 3: >20% ROI)
+## 🏆 Top Performers (Phase 2: ALL 5%+ ROI)
+
+**This is the KEY phase - all profitable tokens!**
+
+| Rank | Strategy | Leverage | Avg ROI | ROI/Day | ROI/Week | ROI/Month | Win Rate | Tokens |
+|------|----------|----------|---------|---------|----------|-----------|----------|--------|
+"""
+        
+        # Sort by Phase 2 avg ROI (5%+ ROI tokens)
+        phase2_sorted = sorted(
+            [s for s in all_summaries if s.get('phase2') and s['phase2'].get('total_tokens', 0) > 0],
+            key=lambda x: x['phase2'].get('avg_roi_pct', 0),
+            reverse=True
+        )
+        
+        for idx, s in enumerate(phase2_sorted[:20], 1):
+            p2 = s['phase2']
+            report += f"| {idx} | {s['strategy'][:30]} | {s['leverage']}x | {p2['avg_roi_pct']:.2f}% | {p2['avg_roi_per_day_pct']:.2f}% | {p2['avg_roi_per_week_pct']:.2f}% | {p2['avg_roi_per_month_pct']:.2f}% | {p2['avg_win_rate_pct']:.2f}% | {p2['total_tokens']} |\n"
+        
+        report += "\n---\n\n## 🏆 Top Performers (Phase 4: >20% ROI)
 
 """
         
-        # Sort by Phase 3 avg ROI
-        phase3_sorted = sorted(
-            [s for s in all_summaries if s.get('phase3') and s['phase3'].get('total_tokens', 0) > 0],
-            key=lambda x: x['phase3'].get('avg_roi_pct', 0),
+        # Sort by Phase 4 avg ROI (>20% ROI tokens)
+        phase4_sorted = sorted(
+            [s for s in all_summaries if s.get('phase4') and s['phase4'].get('total_tokens', 0) > 0],
+            key=lambda x: x['phase4'].get('avg_roi_pct', 0),
             reverse=True
         )
         
         report += "| Rank | Strategy | Leverage | Avg ROI | ROI/Day | ROI/Week | ROI/Month | Win Rate | Tokens |\n"
         report += "|------|----------|----------|---------|---------|----------|-----------|----------|--------|\n"
         
-        for idx, s in enumerate(phase3_sorted[:20], 1):
-            p3 = s['phase3']
-            report += f"| {idx} | {s['strategy'][:30]} | {s['leverage']}x | {p3['avg_roi_pct']:.2f}% | {p3['avg_roi_per_day_pct']:.2f}% | {p3['avg_roi_per_week_pct']:.2f}% | {p3['avg_roi_per_month_pct']:.2f}% | {p3['avg_win_rate_pct']:.2f}% | {p3['total_tokens']} |\n"
+        for idx, s in enumerate(phase4_sorted[:20], 1):
+            p4 = s['phase4']
+            report += f"| {idx} | {s['strategy'][:30]} | {s['leverage']}x | {p4['avg_roi_pct']:.2f}% | {p4['avg_roi_per_day_pct']:.2f}% | {p4['avg_roi_per_week_pct']:.2f}% | {p4['avg_roi_per_month_pct']:.2f}% | {p4['avg_win_rate_pct']:.2f}% | {p4['total_tokens']} |\n"
         
         report += "\n---\n\n## 📊 All Strategies Summary\n\n"
         
@@ -253,7 +291,7 @@ class ExtremeStrategiesTester:
             report += f"### Strategy {s['strategy_id']}: {s['strategy']}\n\n"
             report += f"**Leverage**: {s['leverage']}x\n\n"
             
-            for phase_name, phase_data in [('Phase 1', s.get('phase1', {})), ('Phase 2', s.get('phase2', {})), ('Phase 3', s.get('phase3', {}))]:
+            for phase_name, phase_data in [('Phase 1', s.get('phase1', {})), ('Phase 2 (5%+ ROI)', s.get('phase2', {})), ('Phase 3 (>10% ROI)', s.get('phase3', {})), ('Phase 4 (>20% ROI)', s.get('phase4', {}))]:
                 if phase_data and phase_data.get('total_tokens', 0) > 0:
                     report += f"**{phase_name}**:\n"
                     report += f"- Tokens: {phase_data['total_tokens']}\n"
@@ -279,9 +317,9 @@ class ExtremeStrategiesTester:
         print("="*100)
         print()
         
-        # Load strategies
-        strategies = self.load_strategies(110, 159)
-        print(f"📋 Loaded {len(strategies)} strategies (IDs 110-159)\n")
+        # Load strategies (extreme + holy grail)
+        strategies = self.load_strategies(110, 179)
+        print(f"📋 Loaded {len(strategies)} strategies (IDs 110-179: Extreme + Holy Grail)\n")
         
         # Load ALL 338 tokens (MANDATORY for Phase 1!)
         all_tokens = self.load_all_tokens()
@@ -305,10 +343,14 @@ class ExtremeStrategiesTester:
             elapsed = time.time() - start_time
             print(f"\n⏱️ Completed in {elapsed:.1f}s")
             
-            if summary['phase3'] and summary['phase3'].get('total_tokens', 0) > 0:
-                p3 = summary['phase3']
-                print(f"📈 Phase 3 Result: {p3['avg_roi_pct']:.2f}% ROI ({p3['total_tokens']} tokens)")
-                print(f"⭐ Daily: {p3['avg_roi_per_day_pct']:.2f}% | Weekly: {p3['avg_roi_per_week_pct']:.2f}% | Monthly: {p3['avg_roi_per_month_pct']:.2f}%")
+            if summary['phase2'] and summary['phase2'].get('total_tokens', 0) > 0:
+                p2 = summary['phase2']
+                print(f"📈 Phase 2 (5%+ ROI): {p2['avg_roi_pct']:.2f}% ROI ({p2['total_tokens']} tokens)")
+                print(f"⭐ Daily: {p2['avg_roi_per_day_pct']:.2f}% | Weekly: {p2['avg_roi_per_week_pct']:.2f}% | Monthly: {p2['avg_roi_per_month_pct']:.2f}%")
+            
+            if summary.get('phase4') and summary['phase4'].get('total_tokens', 0) > 0:
+                p4 = summary['phase4']
+                print(f"📈 Phase 4 (>20% ROI): {p4['avg_roi_pct']:.2f}% ROI ({p4['total_tokens']} tokens)")
         
         # Generate report
         self.generate_report(all_summaries)

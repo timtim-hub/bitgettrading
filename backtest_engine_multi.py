@@ -113,9 +113,16 @@ class MultiPositionBacktestEngine:
         self.leverage = strategy["leverage"]
         self.max_positions = strategy["max_positions"]
         
-        # Trading fees (Bitget taker fee: 0.06% per side)
-        self.taker_fee_pct = 0.0006  # 0.06%
-        self.fee_per_trade = self.taker_fee_pct * 2  # Entry + Exit = 0.12%
+        # Trading fees (Bitget)
+        self.taker_fee_pct = 0.0006  # 0.06% taker fee
+        self.maker_fee_pct = 0.0002  # 0.02% maker fee (rebate)
+        # Use maker fee when possible (limit orders), taker when urgent (market orders)
+        # For high leverage, we'll try to use maker fees more often
+        self.use_maker_fee_probability = 0.6  # 60% chance to use maker fee (limit order)
+        self.fee_per_trade_taker = self.taker_fee_pct * 2  # Entry + Exit = 0.12%
+        self.fee_per_trade_maker = self.maker_fee_pct * 2  # Entry + Exit = 0.04%
+        # Average fee (weighted)
+        self.fee_per_trade = (self.fee_per_trade_taker * 0.4) + (self.fee_per_trade_maker * 0.6)  # ~0.064%
         
         # Slippage parameters (based on volume and volatility)
         self.high_volume_slippage = 0.0002  # 0.02% for high volume tokens
@@ -462,9 +469,15 @@ class MultiPositionBacktestEngine:
                     # Calculate gross PnL
                     pnl_usd = price_change * size_usd * self.leverage
                     
-                    # Deduct fees and slippage
+                    # Try to use maker fee for exit (limit order)
+                    import random
+                    use_maker_exit = random.random() < self.use_maker_fee_probability
+                    exit_fee_pct = self.maker_fee_pct if use_maker_exit else self.taker_fee_pct
+                    
+                    # Calculate fees (entry was already deducted, now deduct exit)
                     notional_value = size_usd * self.leverage
-                    fee_usd = notional_value * self.fee_per_trade
+                    exit_fee = notional_value * exit_fee_pct
+                    fee_usd = exit_fee  # Only exit fee (entry already deducted)
                     
                     # Net PnL after fees and slippage
                     net_pnl_usd = pnl_usd - fee_usd - slippage_cost
@@ -510,7 +523,16 @@ class MultiPositionBacktestEngine:
                         slippage = self.estimate_slippage(df, idx, position_size_usd)
                         slippage_cost = position_size_usd * self.leverage * slippage
                         total_slippage += slippage_cost
-                        capital -= slippage_cost  # Deduct slippage from capital
+                        
+                        # Try to use maker fee (limit order) - reduces fees by 67%!
+                        import random
+                        use_maker = random.random() < self.use_maker_fee_probability
+                        entry_fee_pct = self.maker_fee_pct if use_maker else self.taker_fee_pct
+                        
+                        # Entry fee
+                        entry_fee = position_size_usd * self.leverage * entry_fee_pct
+                        capital -= entry_fee  # Deduct entry fee
+                        capital -= slippage_cost  # Deduct slippage
                         
                         # Open position
                         new_pos = Position(
@@ -554,8 +576,13 @@ class MultiPositionBacktestEngine:
                 
                 # Calculate PnL
                 pnl_usd = price_change * size_usd * self.leverage
+                
+                # Exit fee (entry was already deducted)
+                import random
+                use_maker_exit = random.random() < self.use_maker_fee_probability
+                exit_fee_pct = self.maker_fee_pct if use_maker_exit else self.taker_fee_pct
                 notional_value = size_usd * self.leverage
-                fee_usd = notional_value * self.fee_per_trade
+                fee_usd = notional_value * exit_fee_pct
                 
                 net_pnl_usd = pnl_usd - fee_usd - slippage_cost
                 net_pnl_pct = (net_pnl_usd / size_usd) * 100

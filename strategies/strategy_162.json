@@ -1,0 +1,23 @@
+{
+  "id": 162,
+  "name": "HolyGrail_FeeEfficient_ML_125x_v3",
+  "category": "Holy Grail - Fee Efficient ML",
+  "rationale": "Fee-optimized ML @ 125x. Uses 60% maker fees (0.04% vs 0.12% taker). Minimum 30bps profit target (exceeds fees). Position size 16%.",
+  "leverage": 125,
+  "entry_threshold": 0.88,
+  "stop_loss_pct": 0.24,
+  "take_profit_pct": 0.18,
+  "trailing_callback": 0.018,
+  "volume_ratio": 1.8,
+  "confluence_required": 5,
+  "position_size_pct": 0.16,
+  "max_positions": 30,
+  "min_liquidity": 100000,
+  "primary_indicator": "ml_fee_optimized",
+  "entry_method": "maker_fee_preferred",
+  "exit_method": "fee_aware_trailing",
+  "risk_style": "holy_grail_125x",
+  "maker_fee_probability": 0.6,
+  "min_profit_bps": 30,
+  "fee_optimization": true
+}
