@@ -3052,5 +3052,15 @@
     "leverage": 25,
     "timestamp": 1762561231.390453,
     "failed": false
+  },
+  "POWRUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762561998.8744771,
+    "failed": false
+  },
+  "POWRUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762561999.407694,
+    "failed": false
   }
 }

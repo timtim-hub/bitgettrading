@@ -847,7 +847,7 @@ class EnhancedRanker:
                     f"Pullback/reversal trade - will be graded for quality"
                 )
 
-            # PRO RULE: ONLY A-grade trades! (5+ factors required out of 10)
+            # PRO RULE: ONLY A-grade trades! (4+ factors required out of 10)
             # B-grade and below are causing too many losses!
             if trade_grade["grade"] != "A":
                 logger.debug(

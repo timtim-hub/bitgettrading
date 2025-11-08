@@ -567,16 +567,18 @@ class ProTraderIndicators:
         # Calculate grade (now 10 factors total, require 5+ for A-grade)
         score = factors_met * 10  # Each factor = 10 points (out of 100)
         
-        if factors_met >= 5:
-            grade = "A"  # Take this trade! (5+ out of 10 factors)
-        elif factors_met >= 4:
-            grade = "B"  # Good trade (4 out of 10)
+        # 🚀 BALANCED: 4+ factors for A-grade (was 5+, which was too strict for shorts)
+        # This allows high-quality shorts while still filtering out bad trades
+        if factors_met >= 4:
+            grade = "A"  # Take this trade! (4+ out of 10 factors = 40%+ win rate expected)
         elif factors_met >= 3:
-            grade = "C"  # Marginal (3 out of 10)
+            grade = "B"  # Good trade (3 out of 10)
         elif factors_met >= 2:
-            grade = "D"  # Weak (2 out of 10)
+            grade = "C"  # Marginal (2 out of 10)
+        elif factors_met >= 1:
+            grade = "D"  # Weak (1 out of 10)
         else:
-            grade = "F"  # Skip (0-1 out of 10)
+            grade = "F"  # Skip (0 out of 10)
         
         return {
             "grade": grade,
