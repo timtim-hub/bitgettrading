@@ -35,6 +35,7 @@ from src.bitget_trading.regime_detector import RegimeDetector
 from src.bitget_trading.symbol_filter import SymbolFilter
 from src.bitget_trading.universe import UniverseManager
 from src.bitget_trading.leverage_cache import LeverageCache
+from holy_grail_strategy import HolyGrailStrategy
 
 logger = setup_logging()
 
@@ -76,6 +77,16 @@ class LiveTrader:
         self.regime_detector = RegimeDetector()  # Market regime detection
         self.leverage_cache = LeverageCache()  # Cache to avoid redundant leverage API calls
         self.use_enhanced = False  # Start with simple, upgrade to enhanced after data accumulates
+        
+        # 🎯 HOLY GRAIL STRATEGY INTEGRATION
+        try:
+            self.holy_grail = HolyGrailStrategy()
+            self.use_holy_grail = True
+            logger.info("✅ [HOLY GRAIL] Strategy loaded successfully!")
+        except Exception as e:
+            logger.warning(f"⚠️ [HOLY GRAIL] Failed to load strategy: {e}")
+            self.holy_grail = None
+            self.use_holy_grail = False
         
         # 🚀 NEW: Backtesting and performance tracking
         self.config = get_config()
@@ -3099,11 +3110,18 @@ class LiveTrader:
 
         # Discover universe
         logger.info("🔍 Discovering tradable symbols...")
-        self.symbols = await self.universe_manager.get_tradeable_universe()
-        # USE ALL SYMBOLS - Maximum opportunity!
-        # Bitget API fetches all in one call anyway, so no speed penalty
-        total_available = len(self.symbols)
-        logger.info(f"✅ Using ALL {len(self.symbols)} symbols (maximum opportunities!)")
+        all_symbols = await self.universe_manager.get_tradeable_universe()
+        
+        # 🎯 HOLY GRAIL: Filter to ONLY profitable tokens!
+        if self.use_holy_grail and self.holy_grail:
+            self.symbols = self.holy_grail.filter_symbols(all_symbols)
+            logger.info(
+                f"✅ [HOLY GRAIL] Using ONLY {len(self.symbols)} profitable tokens "
+                f"(filtered from {len(all_symbols)} total symbols)"
+            )
+        else:
+            self.symbols = all_symbols
+            logger.info(f"✅ Using ALL {len(self.symbols)} symbols (maximum opportunities!)")
         
         # 🚨 CRITICAL: Set leverage to 25x for ALL symbols at startup (300+ tokens!)
         # ✨ BUT use cache to avoid redundant API calls (leverage persists on Bitget!)
@@ -3411,15 +3429,34 @@ async def main() -> None:
         logger.warning("⚠️  Falling back to configured initial capital...")
         initial_capital = float(os.getenv("INITIAL_CAPITAL", "50"))
 
-    # Create trader with DYNAMIC balance
+    # 🎯 HOLY GRAIL STRATEGY PARAMETERS
+    # Load strategy to get parameters
+    try:
+        from holy_grail_strategy import HolyGrailStrategy
+        holy_grail = HolyGrailStrategy()
+        leverage = holy_grail.leverage  # 25x
+        position_size_pct = holy_grail.position_size_pct  # 13%
+        max_positions = holy_grail.max_positions  # 15
+        logger.info(
+            f"✅ [HOLY GRAIL] Using strategy parameters: "
+            f"Leverage: {leverage}x | Position size: {position_size_pct*100:.1f}% | "
+            f"Max positions: {max_positions}"
+        )
+    except Exception as e:
+        logger.warning(f"⚠️ [HOLY GRAIL] Failed to load strategy parameters: {e}")
+        leverage = 25  # Fallback
+        position_size_pct = 0.10  # Fallback
+        max_positions = int(os.getenv("MAX_POSITIONS", "10"))  # Fallback
+
+    # Create trader with DYNAMIC balance and HOLY GRAIL parameters
     trader = LiveTrader(
         api_key=api_key,
         secret_key=secret_key,
         passphrase=passphrase,
         initial_capital=initial_capital,  # USE ACTUAL BALANCE!
-        leverage=25,  # Fixed 25x leverage (hardcoded in code)
-        position_size_pct=0.10,  # Fixed 10% per position (hardcoded in code)
-        max_positions=int(os.getenv("MAX_POSITIONS", "10")),
+        leverage=leverage,  # Holy Grail: 25x
+        position_size_pct=position_size_pct,  # Holy Grail: 13%
+        max_positions=max_positions,  # Holy Grail: 15
         daily_loss_limit=float(os.getenv("DAILY_LOSS_LIMIT", "0.15")),
         paper_mode=paper_mode,
     )
