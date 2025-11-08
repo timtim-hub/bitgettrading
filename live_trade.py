@@ -629,10 +629,13 @@ class LiveTrader:
                                             original_tp_price = take_profit_price
                                             
                                             # Recalculate TP/SL prices using ACTUAL leverage and ACTUAL entry price
-                                            # 🚀 NEW: SL is now PRICE-BASED (0.6%), not capital-based
-                                            sl_price_pct = regime_params["stop_loss_pct"]  # Already in price % (0.006 = 0.6%)
-                                            tp_capital_pct = regime_params["take_profit_pct"]  # Still capital-based
-                                            tp_price_pct = tp_capital_pct / position_actual_leverage  # Convert to price %
+                                            # 🚨 CRITICAL: Both SL and TP are capital-based, must divide by ACTUAL leverage!
+                                            sl_capital_pct = regime_params["stop_loss_pct"]  # Capital % (e.g., 0.50 = 50%)
+                                            tp_capital_pct = regime_params["take_profit_pct"]  # Capital % (e.g., 0.16 = 16%)
+                                            
+                                            # Convert both to price % using ACTUAL leverage from exchange
+                                            sl_price_pct = sl_capital_pct / position_actual_leverage  # 50% ÷ actual_leverage
+                                            tp_price_pct = tp_capital_pct / position_actual_leverage  # 16% ÷ actual_leverage
                                             
                                             # Recalculate stop-loss price using actual entry price and leverage
                                             if side == "long":
