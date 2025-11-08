@@ -4,8 +4,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from bitget_trading.logger import get_logger
-from bitget_trading.symbol_performance_tracker import SymbolPerformance, SymbolPerformanceTracker
+from src.bitget_trading.logger import get_logger
+from src.bitget_trading.symbol_performance_tracker import SymbolPerformance, SymbolPerformanceTracker
 
 logger = get_logger()
 

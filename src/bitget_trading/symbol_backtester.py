@@ -7,12 +7,12 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from bitget_trading.bitget_rest import BitgetRestClient
-from bitget_trading.config import TradingConfig
-from bitget_trading.enhanced_ranker import EnhancedRanker
-from bitget_trading.logger import get_logger
-from bitget_trading.multi_symbol_state import MultiSymbolStateManager, SymbolState
-from bitget_trading.regime_detector import RegimeDetector
+from src.bitget_trading.bitget_rest import BitgetRestClient
+from src.bitget_trading.config import TradingConfig
+from src.bitget_trading.enhanced_ranker import EnhancedRanker
+from src.bitget_trading.logger import get_logger
+from src.bitget_trading.multi_symbol_state import MultiSymbolStateManager, SymbolState
+from src.bitget_trading.regime_detector import RegimeDetector
 
 if TYPE_CHECKING:
     from bitget_trading.dynamic_params import DynamicParams

@@ -7,8 +7,8 @@ from typing import Deque
 
 import numpy as np
 
-from bitget_trading.logger import get_logger
-from bitget_trading.advanced_indicators import AdvancedIndicators, compute_composite_score
+from src.bitget_trading.logger import get_logger
+from src.bitget_trading.advanced_indicators import AdvancedIndicators, compute_composite_score
 
 logger = get_logger()
 

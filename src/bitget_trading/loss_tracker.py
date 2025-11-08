@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from bitget_trading.logger import get_logger
+from src.bitget_trading.logger import get_logger
 
 logger = get_logger()
 

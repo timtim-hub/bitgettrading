@@ -4,7 +4,7 @@ import numpy as np
 from collections import deque
 from typing import Deque
 
-from bitget_trading.logger import get_logger
+from src.bitget_trading.logger import get_logger
 
 logger = get_logger()
 

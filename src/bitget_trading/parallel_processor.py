@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from bitget_trading.logger import get_logger
+from src.bitget_trading.logger import get_logger
 
 logger = get_logger()
 

@@ -5,7 +5,7 @@ from typing import Any
 
 import aiohttp
 
-from bitget_trading.logger import get_logger
+from src.bitget_trading.logger import get_logger
 
 logger = get_logger()
 

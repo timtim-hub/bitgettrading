@@ -9,7 +9,7 @@ import orjson
 import websockets
 from websockets.client import WebSocketClientProtocol
 
-from bitget_trading.logger import get_logger
+from src.bitget_trading.logger import get_logger
 
 logger = get_logger()
 

@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from bitget_trading.logger import get_logger
-from bitget_trading.multi_symbol_state import MultiSymbolStateManager, SymbolState
+from src.bitget_trading.logger import get_logger
+from src.bitget_trading.multi_symbol_state import MultiSymbolStateManager, SymbolState
 
 logger = get_logger()
 

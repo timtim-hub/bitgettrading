@@ -6,8 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from bitget_trading.logger import get_logger
-from bitget_trading.symbol_backtester import BacktestResult
+from src.bitget_trading.logger import get_logger
+from src.bitget_trading.symbol_backtester import BacktestResult
 
 logger = get_logger()
 

@@ -8,8 +8,8 @@ import pandas as pd
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 
-from bitget_trading.config import TradingConfig
-from bitget_trading.logger import get_logger
+from src.bitget_trading.config import TradingConfig
+from src.bitget_trading.logger import get_logger
 
 logger = get_logger()
 

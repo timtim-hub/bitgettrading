@@ -6,7 +6,7 @@ from typing import Deque
 import numpy as np
 import pandas as pd
 
-from bitget_trading.logger import get_logger
+from src.bitget_trading.logger import get_logger
 
 logger = get_logger()
 

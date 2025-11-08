@@ -2,11 +2,11 @@
 
 import numpy as np
 
-from bitget_trading.logger import get_logger
-from bitget_trading.multi_symbol_state import MultiSymbolStateManager, SymbolState
-from bitget_trading.pro_trader_indicators import ProTraderIndicators, is_near_level
-from bitget_trading.regime_detector import RegimeDetector
-from bitget_trading.technical_indicators import TechnicalIndicators
+from src.bitget_trading.logger import get_logger
+from src.bitget_trading.multi_symbol_state import MultiSymbolStateManager, SymbolState
+from src.bitget_trading.pro_trader_indicators import ProTraderIndicators, is_near_level
+from src.bitget_trading.regime_detector import RegimeDetector
+from src.bitget_trading.technical_indicators import TechnicalIndicators
 
 logger = get_logger()
 

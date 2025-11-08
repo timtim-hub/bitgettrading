@@ -6,9 +6,9 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-from bitget_trading.config import TradingConfig
-from bitget_trading.logger import get_logger
-from bitget_trading.model import TradingModel
+from src.bitget_trading.config import TradingConfig
+from src.bitget_trading.logger import get_logger
+from src.bitget_trading.model import TradingModel
 
 logger = get_logger()
 
