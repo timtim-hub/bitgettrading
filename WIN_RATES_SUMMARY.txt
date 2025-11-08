@@ -1,0 +1,21 @@
+================================================================================
+📊 ALL STRATEGIES WITH WIN RATES
+================================================================================
+
+Rank   Strategy                            ROI %      Win Rate %   Trades  
+--------------------------------------------------------------------------------
+1  🥇    Triple_Model_LightGBM_Voting_202511   47.36%       69.74%    730     
+2  🥈    ML_Ensemble_20251108                  45.99%       73.83%    767     
+3  🥉    LightGBM_Breakout_Confirmation_2025   44.72%       67.27%    674     
+4       LightGBM_Mean_Reversion_Hybrid_2025   39.50%       73.74%    992     
+5       MultiTimeframe_LightGBM_Ensemble_20   38.01%       72.36%    986     
+6       LightGBM_Smart_Money_Concepts_20251   37.75%       64.95%    779     
+7       LightGBM_Market_Regime_Adaptive_202   35.97%       72.70%    1023    
+8       ML_ADX_Trend_20251108                 34.65%       72.97%    1027    
+9       Pure_LightGBM_ML_Only_20251108        32.51%       60.83%    883     
+10      LightGBM_Adaptive_Thresholds_202511   29.91%       73.66%    978     
+11      LightGBM_OrderFlow_Imbalance_202511   28.82%       69.16%    957     
+12      LightGBM_strategy045_20251108         28.42%       75.35%    1092    
+13      Volatility_Adaptive_LightGBM_202511   27.88%       72.96%    1142    
+14      ML_MFI_Volume_20251108                24.74%       76.57%    1140    
+15      ML_ATR_Volatility_20251108            22.86%       70.11%    1006    
