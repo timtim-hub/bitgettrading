@@ -850,12 +850,12 @@ class EnhancedRanker:
             # PRO RULE: ONLY A-grade trades! (4+ factors required out of 10)
             # B-grade and below are causing too many losses!
             if trade_grade["grade"] != "A":
-                logger.debug(
-                    "trade_rejected_not_A_grade",
-                    symbol=state.symbol,
-                    grade=trade_grade["grade"],
-                    factors=trade_grade["factors_met"],
-                    reasons=trade_grade["reasons"],
+                # 🚨 TEMPORARY: Log at INFO level for shorts to debug why they're failing
+                log_level = logger.info if direction == "short" else logger.debug
+                log_level(
+                    f"❌ [A-GRADE REJECTION] {state.symbol} | {direction.upper()} | "
+                    f"Grade: {trade_grade['grade']} ({trade_grade['factors_met']}/10 factors) | "
+                    f"Reasons: {', '.join(trade_grade['reasons'])}"
                 )
                 return (
                     0.0,

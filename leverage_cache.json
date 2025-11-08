@@ -3062,5 +3062,15 @@
     "leverage": 25,
     "timestamp": 1762561999.407694,
     "failed": false
+  },
+  "DOGUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762562168.696568,
+    "failed": false
+  },
+  "DOGUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762562169.334898,
+    "failed": false
   }
 }
