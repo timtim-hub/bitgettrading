@@ -451,13 +451,13 @@ class ProTraderIndicators:
         factors_met = 0
         reasons = []
         
-        # Factor 1: R:R >= 3:1 (BALANCED - was 6:1 which was too strict!)
-        # 3:1 is industry standard for quality trades
-        if risk_reward >= 3.0:
+        # Factor 1: R:R >= 2.5:1 (RELAXED for short-term leverage trading!)
+        # 2.5:1 is acceptable for high-frequency crypto trading
+        if risk_reward >= 2.5:
             factors_met += 1
             reasons.append(f"✓ Good R:R ({risk_reward:.1f}:1)")
         else:
-            reasons.append(f"✗ Poor R:R ({risk_reward:.1f}:1 - need 3:1+)")
+            reasons.append(f"✗ Poor R:R ({risk_reward:.1f}:1 - need 2.5:1+)")
         
         # Factor 2: With market structure OR valid counter-trend setup
         # 🚀 IMPROVED: Allow shorts in weak uptrends (pullback trading) and longs in weak downtrends
@@ -473,9 +473,10 @@ class ProTraderIndicators:
             (structure == "ranging")  # Ranging is OK for both
         )
         
-        # Valid counter-trend: Short in weak uptrend (≤7 votes) OR long in weak downtrend (≤7 votes)
+        # Valid counter-trend: SHORT in ANY uptrend (pullback trading) OR long in weak downtrend (≤7 votes)
+        # 🚀 ULTRA-PERMISSIVE for shorts: Allow ALL shorts in ANY uptrend strength
         is_valid_counter_trend = (
-            (side == "short" and structure == "uptrend" and uptrend_votes <= 7) or
+            (side == "short" and structure == "uptrend") or  # ANY uptrend is OK for shorts!
             (side == "long" and structure == "downtrend" and downtrend_votes <= 7)
         )
         
