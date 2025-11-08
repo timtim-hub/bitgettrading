@@ -579,14 +579,15 @@ class LiveTrader:
                                         actual_side = pos.get("holdSide", "long")
                                         # 🚨 CRITICAL: Get ACTUAL leverage from position (some tokens can't be set to 25x!)
                                         # Position response has leverage as string, convert to int
-                                        actual_leverage = int(pos.get("leverage", self.leverage)) if pos.get("leverage") else self.leverage
+                                        # Store in position_actual_leverage for use throughout this scope (including TP/SL placement)
+                                        position_actual_leverage = int(pos.get("leverage", self.leverage)) if pos.get("leverage") else self.leverage
                                         logger.info(
                                             f"📊 [POSITION QUERY] {symbol} | "
                                             f"Actual size from exchange: {actual_position_size} | "
                                             f"Calculated size: {size} | "
                                             f"Difference: {abs(actual_position_size - size):.4f} | "
                                             f"Side: {actual_side} | "
-                                            f"Actual leverage: {actual_leverage}x (requested: {self.leverage}x)"
+                                            f"Actual leverage: {position_actual_leverage}x (requested: {self.leverage}x)"
                                         )
                                         
                                         # 🚨 CRITICAL FIX: ALWAYS recalculate TP/SL prices using ACTUAL entry price and leverage!
@@ -600,14 +601,14 @@ class LiveTrader:
                                             
                                             # Check for mismatches (for logging)
                                             entry_price_diff = abs(entry_price_actual - price) / price if price > 0 else 0
-                                            leverage_mismatch = actual_leverage != self.leverage
+                                            leverage_mismatch = position_actual_leverage != self.leverage
                                             entry_price_mismatch = entry_price_diff > 0.001  # More than 0.1% difference
                                             
                                             # Log mismatches if any
                                             if leverage_mismatch:
                                                 logger.warning(
                                                     f"⚠️ [LEVERAGE MISMATCH] {symbol} | "
-                                                    f"Actual leverage ({actual_leverage}x) != requested ({self.leverage}x)! | "
+                                                    f"Actual leverage ({position_actual_leverage}x) != requested ({self.leverage}x)! | "
                                                     f"Recalculating TP/SL prices using actual leverage..."
                                                 )
                                             if entry_price_mismatch:
@@ -626,8 +627,8 @@ class LiveTrader:
                                             # Recalculate TP/SL prices using ACTUAL leverage and ACTUAL entry price
                                             sl_capital_pct = regime_params["stop_loss_pct"]
                                             tp_capital_pct = regime_params["take_profit_pct"]
-                                            sl_price_pct = sl_capital_pct / actual_leverage
-                                            tp_price_pct = tp_capital_pct / actual_leverage
+                                            sl_price_pct = sl_capital_pct / position_actual_leverage
+                                            tp_price_pct = tp_capital_pct / position_actual_leverage
                                             
                                             # Recalculate stop-loss price using actual entry price and leverage
                                             if side == "long":
@@ -652,8 +653,8 @@ class LiveTrader:
                                                 actual_sl_price_move = (stop_loss_price - entry_price_actual) / entry_price_actual
                                                 actual_tp_price_move = (entry_price_actual - take_profit_price) / entry_price_actual
                                             
-                                            actual_sl_capital_pct = actual_sl_price_move * actual_leverage
-                                            actual_tp_capital_pct = actual_tp_price_move * actual_leverage
+                                            actual_sl_capital_pct = actual_sl_price_move * position_actual_leverage
+                                            actual_tp_capital_pct = actual_tp_price_move * position_actual_leverage
                                             
                                             # Log recalculation (warning if mismatch, info if no mismatch)
                                             if leverage_mismatch or entry_price_mismatch:
@@ -662,14 +663,14 @@ class LiveTrader:
                                                     f"Original SL: ${original_sl_price:.4f} → New SL: ${stop_loss_price:.4f} | "
                                                     f"Original TP: ${original_tp_price:.4f} → New TP: ${take_profit_price:.4f} | "
                                                     f"Entry: ${entry_price_actual:.4f} (was ${price:.4f}) | "
-                                                    f"Leverage: {actual_leverage}x (was {self.leverage}x) | "
+                                                    f"Leverage: {position_actual_leverage}x (was {self.leverage}x) | "
                                                     f"VERIFIED: SL = {actual_sl_capital_pct*100:.2f}% capital ({actual_sl_price_move*100:.4f}% price) | "
                                                     f"TP = {actual_tp_capital_pct*100:.2f}% capital ({actual_tp_price_move*100:.4f}% price)"
                                                 )
                                             else:
                                                 logger.info(
                                                     f"✅ [TP/SL VERIFY] {symbol} | "
-                                                    f"Recalculated using actual values: Entry: ${entry_price_actual:.4f}, Leverage: {actual_leverage}x | "
+                                                    f"Recalculated using actual values: Entry: ${entry_price_actual:.4f}, Leverage: {position_actual_leverage}x | "
                                                     f"SL: ${stop_loss_price:.4f} ({actual_sl_capital_pct*100:.2f}% capital) | "
                                                     f"TP: ${take_profit_price:.4f} ({actual_tp_capital_pct*100:.2f}% capital)"
                                                 )

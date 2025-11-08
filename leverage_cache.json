@@ -3032,5 +3032,25 @@
     "leverage": 25,
     "timestamp": 1762554081.732168,
     "failed": false
+  },
+  "XAIUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762561229.53931,
+    "failed": false
+  },
+  "XAIUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762561230.1728818,
+    "failed": false
+  },
+  "WCTUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762561230.820419,
+    "failed": false
+  },
+  "WCTUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762561231.390453,
+    "failed": false
   }
 }
