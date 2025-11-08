@@ -495,21 +495,33 @@ class ProTraderIndicators:
         else:
             reasons.append("✗ No S/R confluence")
         
-        # Factor 4: Strong volume (STRICTER - need 3.0x above average!)
+        # Factor 4: Strong volume (BALANCED - 2.5x for shorts, same as longs!)
         volume_ratio = features.get("volume_ratio", 1.0)
-        if volume_ratio >= 3.0:
+        # Equal treatment for shorts and longs
+        required_volume = 2.5  # 2.5x minimum (same for both directions)
+        if volume_ratio >= required_volume:
             factors_met += 1
             reasons.append(f"✓ Strong volume ({volume_ratio:.2f}x)")
         else:
-            reasons.append(f"✗ Weak volume ({volume_ratio:.2f}x - need 3.0x+)")
+            reasons.append(f"✗ Weak volume ({volume_ratio:.2f}x - need {required_volume}x+)")
         
-        # Factor 5: Strong momentum (STRICTER - need 0.20%+ in 15s!)
-        return_15s = abs(features.get("return_15s", 0.0))
-        if return_15s >= 0.0020:  # 0.20%+ move in 15s
+        # Factor 5: Strong momentum (EQUAL for shorts and longs)
+        # Check if return is strong enough in the CORRECT DIRECTION
+        return_15s = features.get("return_15s", 0.0)
+        # For shorts, we want NEGATIVE returns (falling prices)
+        # For longs, we want POSITIVE returns (rising prices)
+        if side == "short":
+            momentum_ok = return_15s <= -0.0010  # -0.10%+ downward move
+            momentum_str = f"{return_15s*100:.3f}% (bearish)"
+        else:  # long
+            momentum_ok = return_15s >= 0.0010  # +0.10%+ upward move
+            momentum_str = f"{return_15s*100:.3f}% (bullish)"
+        
+        if momentum_ok:
             factors_met += 1
-            reasons.append(f"✓ Strong momentum ({return_15s*100:.3f}%)")
+            reasons.append(f"✓ Strong momentum ({momentum_str})")
         else:
-            reasons.append(f"✗ Weak momentum ({return_15s*100:.3f}% - need 0.20%+)")
+            reasons.append(f"✗ Weak momentum ({momentum_str} - need 0.10%+ in direction)")
         
         # Factor 6: RSI in favorable zone (NEW)
         rsi = features.get("rsi", 50.0)
