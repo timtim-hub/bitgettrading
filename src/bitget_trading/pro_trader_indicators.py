@@ -451,21 +451,42 @@ class ProTraderIndicators:
         factors_met = 0
         reasons = []
         
-        # Factor 1: R:R >= 6:1 (STRICTER - need even better risk/reward!)
-        if risk_reward >= 6.0:
+        # Factor 1: R:R >= 3:1 (BALANCED - was 6:1 which was too strict!)
+        # 3:1 is industry standard for quality trades
+        if risk_reward >= 3.0:
             factors_met += 1
-            reasons.append(f"✓ Excellent R:R ({risk_reward:.1f}:1)")
+            reasons.append(f"✓ Good R:R ({risk_reward:.1f}:1)")
         else:
-            reasons.append(f"✗ Poor R:R ({risk_reward:.1f}:1 - need 6:1+)")
+            reasons.append(f"✗ Poor R:R ({risk_reward:.1f}:1 - need 3:1+)")
         
-        # Factor 2: With market structure
+        # Factor 2: With market structure OR valid counter-trend setup
+        # 🚀 IMPROVED: Allow shorts in weak uptrends (pullback trading) and longs in weak downtrends
         structure = market_structure.get("structure", "ranging")
-        if (side == "long" and structure == "uptrend") or \
-           (side == "short" and structure == "downtrend"):
+        uptrend_votes = market_structure.get("uptrend_votes", 0)
+        downtrend_votes = market_structure.get("downtrend_votes", 0)
+        swing_trend = market_structure.get("swing_trend", "neutral")
+        
+        # Check if trade is with structure OR valid counter-trend
+        is_with_structure = (
+            (side == "long" and structure == "uptrend") or 
+            (side == "short" and structure == "downtrend") or
+            (structure == "ranging")  # Ranging is OK for both
+        )
+        
+        # Valid counter-trend: Short in weak uptrend (≤7 votes) OR long in weak downtrend (≤7 votes)
+        is_valid_counter_trend = (
+            (side == "short" and structure == "uptrend" and uptrend_votes <= 7) or
+            (side == "long" and structure == "downtrend" and downtrend_votes <= 7)
+        )
+        
+        if is_with_structure:
             factors_met += 1
             reasons.append(f"✓ With structure ({structure})")
+        elif is_valid_counter_trend:
+            factors_met += 1
+            reasons.append(f"✓ Valid pullback ({side} in weak {structure}, {uptrend_votes or downtrend_votes}/10 votes)")
         else:
-            reasons.append(f"✗ Against structure ({structure})")
+            reasons.append(f"✗ Against strong structure ({structure}, {uptrend_votes or downtrend_votes}/10 votes)")
         
         # Factor 3: Near S/R (confluence)
         if near_support_resistance:
