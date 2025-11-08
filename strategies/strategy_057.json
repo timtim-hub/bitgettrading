@@ -1,0 +1,42 @@
+{
+  "id": 57,
+  "name": "Triple_Model_LightGBM_Voting",
+  "category": "Multi-Model ML Ensemble",
+  "rationale": "3 specialized models: (1) Direction predictor (up/down), (2) Volatility predictor (high/low), (3) Regime classifier (trend/range). Trade only when all 3 align. Direction says up + low volatility predicted + trending regime = perfect setup. Triple confirmation.",
+  "entry_threshold": 0.7,
+  "stop_loss_pct": 0.43,
+  "take_profit_pct": 0.24,
+  "trailing_callback": 0.04,
+  "volume_ratio": 1.4,
+  "confluence_required": 4,
+  "position_size_pct": 0.14,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "lightgbm_triple_vote",
+  "entry_method": "triple_model_consensus",
+  "exit_method": "model_disagreement",
+  "risk_style": "ml_triple_ensemble",
+  "ml_config": {
+    "models": [
+      {
+        "name": "direction",
+        "weight": 0.5,
+        "path": "models/lightgbm_v1_latest.txt"
+      },
+      {
+        "name": "volatility",
+        "weight": 0.3,
+        "path": "models/lightgbm_v1_latest.txt"
+      },
+      {
+        "name": "regime",
+        "weight": 0.2,
+        "path": "models/lightgbm_v1_latest.txt"
+      }
+    ],
+    "unanimous_required": false,
+    "weighted_consensus": true,
+    "min_consensus_score": 0.75
+  }
+}

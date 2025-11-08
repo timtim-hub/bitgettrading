@@ -1,0 +1,32 @@
+{
+  "id": 59,
+  "name": "LightGBM_Breakout_Confirmation",
+  "category": "ML + Breakout",
+  "rationale": "Most breakouts fail. ML predicts which will succeed. After breakout, wait for retest of breakout level. Entry on successful retest + ML confirmation. Avoids false breakouts. Targets measured move (height of pattern). Professional breakout trading.",
+  "entry_threshold": 0.75,
+  "stop_loss_pct": 0.41,
+  "take_profit_pct": 0.27,
+  "trailing_callback": 0.045,
+  "volume_ratio": 2.0,
+  "confluence_required": 4,
+  "position_size_pct": 0.13,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "lightgbm_breakout",
+  "entry_method": "breakout_retest_confirmation",
+  "exit_method": "measured_move_target",
+  "risk_style": "ml_breakout_trader",
+  "ml_config": {
+    "model_path": "models/lightgbm_v1_latest.txt",
+    "confidence_threshold": 0.7
+  },
+  "breakout_params": {
+    "lookback_period": 20,
+    "breakout_threshold_pct": 0.005,
+    "retest_tolerance_pct": 0.003,
+    "min_consolidation_bars": 10,
+    "volume_spike_multiplier": 1.5,
+    "measured_move_multiplier": 1.0
+  }
+}

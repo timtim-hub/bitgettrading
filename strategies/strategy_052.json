@@ -1,0 +1,41 @@
+{
+  "id": 52,
+  "name": "MultiTimeframe_LightGBM_Ensemble",
+  "category": "Multi-Timeframe ML",
+  "rationale": "Three LightGBM models: 1min, 5min, 15min timeframes. Each model captures different patterns. Entry requires 2/3 models agree (voting). Combines short-term precision with longer-term trend confirmation. Like having 3 expert traders vote.",
+  "entry_threshold": 0.75,
+  "stop_loss_pct": 0.44,
+  "take_profit_pct": 0.23,
+  "trailing_callback": 0.035,
+  "volume_ratio": 1.4,
+  "confluence_required": 3,
+  "position_size_pct": 0.14,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "lightgbm_mtf_ensemble",
+  "entry_method": "mtf_voting",
+  "exit_method": "mtf_consensus_exit",
+  "risk_style": "ml_ensemble_conservative",
+  "ml_config": {
+    "models": [
+      {
+        "timeframe": "1m",
+        "weight": 0.4,
+        "path": "models/lightgbm_v1_latest.txt"
+      },
+      {
+        "timeframe": "5m",
+        "weight": 0.35,
+        "path": "models/lightgbm_v1_latest.txt"
+      },
+      {
+        "timeframe": "15m",
+        "weight": 0.25,
+        "path": "models/lightgbm_v1_latest.txt"
+      }
+    ],
+    "voting_threshold": 0.67,
+    "weighted_voting": true
+  }
+}

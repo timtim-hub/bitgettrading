@@ -1,0 +1,26 @@
+{
+  "id": 50,
+  "name": "Pure_LightGBM_ML_Only",
+  "category": "Pure Machine Learning",
+  "rationale": "Zero traditional indicators. Pure ML predictions with 82% accuracy. Entry when model confidence >75%. Exit when confidence drops <50%. Aggressive position sizing on high-confidence signals. Tests if ML alone beats hybrid approaches.",
+  "entry_threshold": 0.5,
+  "stop_loss_pct": 0.42,
+  "take_profit_pct": 0.24,
+  "trailing_callback": 0.045,
+  "volume_ratio": 1.0,
+  "confluence_required": 1,
+  "position_size_pct": 0.15,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "lightgbm_pure",
+  "entry_method": "ml_confidence_threshold",
+  "exit_method": "ml_confidence_exit",
+  "risk_style": "ml_pure",
+  "ml_config": {
+    "model_path": "models/lightgbm_v1_latest.txt",
+    "entry_confidence": 0.75,
+    "exit_confidence": 0.5,
+    "use_probability": true
+  }
+}

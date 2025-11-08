@@ -1,0 +1,31 @@
+{
+  "id": 56,
+  "name": "LightGBM_Smart_Money_Concepts",
+  "category": "ML + Institutional",
+  "rationale": "Institutions leave footprints: order blocks (OB), fair value gaps (FVG), liquidity voids. ML predicts direction, SMC confirms at key levels. Entry only at institutional zones. Follows big money, not retail. Targets liquidity pools.",
+  "entry_threshold": 0.8,
+  "stop_loss_pct": 0.38,
+  "take_profit_pct": 0.28,
+  "trailing_callback": 0.025,
+  "volume_ratio": 1.6,
+  "confluence_required": 4,
+  "position_size_pct": 0.12,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 150000,
+  "primary_indicator": "lightgbm_smc",
+  "entry_method": "smc_confluence",
+  "exit_method": "next_liquidity_level",
+  "risk_style": "ml_institutional_smc",
+  "ml_config": {
+    "model_path": "models/lightgbm_v1_latest.txt",
+    "confidence_threshold": 0.72
+  },
+  "smc_params": {
+    "order_block_lookback": 50,
+    "fvg_min_size_pct": 0.003,
+    "liquidity_sweep_detection": true,
+    "breaker_block_priority": true,
+    "mitigation_zone_width": 0.005
+  }
+}

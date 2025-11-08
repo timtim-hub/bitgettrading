@@ -1,0 +1,47 @@
+{
+  "id": 55,
+  "name": "LightGBM_Market_Regime_Adaptive",
+  "category": "ML + Regime Detection",
+  "rationale": "Markets have regimes: trending, ranging, breakout, choppy. ML predictions weighted differently per regime. Trending = follow ML. Ranging = fade ML. Breakout = aggressive ML. ADX + BB width detect regime. Adapts strategy to market structure.",
+  "entry_threshold": 0.75,
+  "stop_loss_pct": 0.44,
+  "take_profit_pct": 0.22,
+  "trailing_callback": 0.04,
+  "volume_ratio": 1.3,
+  "confluence_required": 3,
+  "position_size_pct": 0.13,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "lightgbm_regime",
+  "entry_method": "regime_adaptive_entry",
+  "exit_method": "regime_adaptive_exit",
+  "risk_style": "ml_regime_adaptive",
+  "ml_config": {
+    "model_path": "models/lightgbm_v1_latest.txt",
+    "base_confidence": 0.7
+  },
+  "regime_params": {
+    "trending_adx_threshold": 25,
+    "ranging_bb_width_threshold": 0.02,
+    "volatile_atr_percentile": 80,
+    "regimes": {
+      "trending": {
+        "confidence_mult": 1.0,
+        "position_size_mult": 1.2
+      },
+      "ranging": {
+        "confidence_mult": 1.3,
+        "position_size_mult": 0.8
+      },
+      "breakout": {
+        "confidence_mult": 0.9,
+        "position_size_mult": 1.3
+      },
+      "choppy": {
+        "confidence_mult": 1.5,
+        "position_size_mult": 0.5
+      }
+    }
+  }
+}

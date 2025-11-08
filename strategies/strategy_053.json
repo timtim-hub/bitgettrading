@@ -1,0 +1,31 @@
+{
+  "id": 53,
+  "name": "LightGBM_OrderFlow_Imbalance",
+  "category": "ML + Order Flow",
+  "rationale": "ML predicts direction, order flow confirms execution timing. Entry when ML says 'up' AND buy pressure >60%. Captures institutional movements. Order flow imbalance calculated from volume delta and price action. Smart money indicator.",
+  "entry_threshold": 0.8,
+  "stop_loss_pct": 0.4,
+  "take_profit_pct": 0.26,
+  "trailing_callback": 0.03,
+  "volume_ratio": 1.8,
+  "confluence_required": 3,
+  "position_size_pct": 0.12,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 150000,
+  "primary_indicator": "lightgbm_orderflow",
+  "entry_method": "orderflow_confirmation",
+  "exit_method": "orderflow_reversal",
+  "risk_style": "ml_institutional",
+  "ml_config": {
+    "model_path": "models/lightgbm_v1_latest.txt",
+    "confidence_threshold": 0.7
+  },
+  "orderflow_params": {
+    "buy_pressure_threshold": 0.6,
+    "sell_pressure_threshold": 0.4,
+    "imbalance_lookback": 10,
+    "volume_delta_weight": 0.6,
+    "price_action_weight": 0.4
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "id": 58,
+  "name": "LightGBM_Mean_Reversion_Hybrid",
+  "category": "ML + Mean Reversion",
+  "rationale": "ML predicts overall direction. Mean reversion times entries at extremes. Entry when ML says 'up' AND RSI <30 (oversold). Combines trend following (ML) with counter-trend timing (mean reversion). Best of both worlds. High win rate strategy.",
+  "entry_threshold": 0.8,
+  "stop_loss_pct": 0.47,
+  "take_profit_pct": 0.2,
+  "trailing_callback": 0.035,
+  "volume_ratio": 1.5,
+  "confluence_required": 3,
+  "position_size_pct": 0.13,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "lightgbm_mean_reversion",
+  "entry_method": "ml_with_extreme_reversal",
+  "exit_method": "mean_reversion_target",
+  "risk_style": "ml_mean_reversion",
+  "ml_config": {
+    "model_path": "models/lightgbm_v1_latest.txt",
+    "confidence_threshold": 0.72
+  },
+  "mean_reversion_params": {
+    "rsi_oversold": 25,
+    "rsi_overbought": 75,
+    "bb_lower_touch": true,
+    "stoch_rsi_threshold": 20,
+    "exit_at_mean": true
+  }
+}

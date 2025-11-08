@@ -1,0 +1,32 @@
+{
+  "id": 54,
+  "name": "Volatility_Adaptive_LightGBM",
+  "category": "ML + Dynamic Risk",
+  "rationale": "Fixed stops lose in volatile markets. This adapts: Low volatility = tighter stops, larger positions. High volatility = wider stops, smaller positions. Stop loss = 2.5 \u00d7 current ATR. Position size inversely proportional to volatility. Optimal risk management.",
+  "entry_threshold": 0.8,
+  "stop_loss_pct": 0.45,
+  "take_profit_pct": 0.21,
+  "trailing_callback": 0.04,
+  "volume_ratio": 1.4,
+  "confluence_required": 2,
+  "position_size_pct": 0.13,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "lightgbm_volatility_adaptive",
+  "entry_method": "ml_with_volatility_filter",
+  "exit_method": "atr_based_stops",
+  "risk_style": "ml_dynamic_risk",
+  "ml_config": {
+    "model_path": "models/lightgbm_v1_latest.txt",
+    "confidence_threshold": 0.72
+  },
+  "volatility_params": {
+    "atr_multiplier_stop": 2.5,
+    "atr_multiplier_target": 4.0,
+    "position_size_atr_inverse": true,
+    "min_atr_percentile": 20,
+    "max_atr_percentile": 95,
+    "atr_period": 14
+  }
+}
