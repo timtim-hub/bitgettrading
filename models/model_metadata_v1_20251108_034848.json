@@ -1,0 +1,55 @@
+{
+  "version": "v1",
+  "timestamp": "20251108_034848",
+  "model_path": "models/lightgbm_v1_20251108_034848.txt",
+  "metrics": {
+    "accuracy": 0.8208839693474728,
+    "auc": 0.8640413751414755,
+    "best_iteration": 1000,
+    "num_features": 58,
+    "train_samples": 51676,
+    "val_samples": 12919
+  },
+  "top_10_features": [
+    [
+      "adx",
+      1198
+    ],
+    [
+      "sma_200_distance",
+      1173
+    ],
+    [
+      "sma_50_distance",
+      1078
+    ],
+    [
+      "mfi",
+      974
+    ],
+    [
+      "atr_pct",
+      900
+    ],
+    [
+      "rsi_21",
+      889
+    ],
+    [
+      "sma_200",
+      889
+    ],
+    [
+      "volume_ma_20",
+      888
+    ],
+    [
+      "ema_50_distance",
+      878
+    ],
+    [
+      "obv",
+      805
+    ]
+  ]
+}
