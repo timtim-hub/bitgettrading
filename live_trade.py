@@ -418,6 +418,8 @@ class LiveTrader:
                             sl_price_pct = regime_params["stop_loss_pct"]  # Already in price % (0.006 = 0.6%)
                             tp_capital_pct = regime_params["take_profit_pct"]  # Still capital-based
                             tp_price_pct = tp_capital_pct / self.leverage  # Convert to price %
+                            # Calculate sl_capital_pct for logging (reverse convert from price %)
+                            sl_capital_pct = sl_price_pct * self.leverage
                             # 🚨 DEBUG: Log the actual values being used
                             logger.info(
                                 f"🔍 [TP/SL DEBUG] {symbol} | regime_params stop_loss_pct: {sl_capital_pct} "

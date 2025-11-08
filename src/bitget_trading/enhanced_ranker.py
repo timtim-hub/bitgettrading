@@ -838,26 +838,14 @@ class EnhancedRanker:
                     swing_trend == "bullish"
                 )
                 
-                if is_perfect_uptrend:
-                    logger.info(
-                        f"❌ [SHORT REJECTED] {state.symbol} | PERFECT uptrend (10/10, all bullish) | "
-                        f"Too risky for counter-trend short"
-                    )
-                    return (
-                        0.0,
-                        "neutral",
-                        {
-                            "reason": "against_structure",
-                            "structure": "perfect_uptrend",
-                        },
-                    )
-                else:
-                    # ALLOW: Any weakness = valid short entry
-                    logger.info(
-                        f"✅ [SHORT IN UPTREND ALLOWED] {state.symbol} | "
-                        f"votes={uptrend_votes}/10, ema={ema_trend}, slope={slope_trend}, swing={swing_trend} | "
-                        f"Pullback/reversal trade approved"
-                    )
+                # 🚀 REMOVED PERFECT UPTREND FILTER: Let grading system decide quality!
+                # The A-grade requirement (5/5 factors) will filter out truly bad shorts
+                # This allows high-quality pullback shorts in uptrends
+                logger.info(
+                    f"✅ [SHORT IN UPTREND ALLOWED] {state.symbol} | "
+                    f"votes={uptrend_votes}/10, ema={ema_trend}, slope={slope_trend}, swing={swing_trend} | "
+                    f"Pullback/reversal trade - will be graded for quality"
+                )
 
             # PRO RULE: ONLY A-grade trades! (5+ factors required out of 10)
             # B-grade and below are causing too many losses!
