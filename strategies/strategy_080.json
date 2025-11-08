@@ -1,0 +1,31 @@
+{
+  "id": 80,
+  "name": "MultiRegime_Adaptive_100x",
+  "category": "Regime Detection",
+  "rationale": "Hidden Markov Model (HMM) for regime detection, adaptive parameters per regime @ 100x. Research shows regime-aware strategies outperform static ones.",
+  "entry_threshold": 0.9657142857142857,
+  "stop_loss_pct": 0.25,
+  "take_profit_pct": 0.1,
+  "trailing_callback": 0.015,
+  "volume_ratio": 1.1777777777777776,
+  "confluence_required": 2,
+  "position_size_pct": 0.05,
+  "leverage": 100,
+  "max_positions": 6,
+  "min_liquidity": 100000,
+  "primary_indicator": "hmm_regime",
+  "entry_method": "regime_adaptive",
+  "exit_method": "regime_trailing",
+  "risk_style": "adaptive_100x",
+  "ml_config": {
+    "regime_model": "hmm",
+    "n_regimes": 4,
+    "features": [
+      "volatility",
+      "trend_strength",
+      "volume_profile",
+      "price_momentum"
+    ],
+    "lookback": 100
+  }
+}

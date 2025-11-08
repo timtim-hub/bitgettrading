@@ -1,0 +1,43 @@
+{
+  "id": 60,
+  "name": "TripleStack_ML_Ensemble_25x",
+  "category": "ML Stacking + Momentum",
+  "rationale": "3-model stacked ensemble (LightGBM, XGBoost, CatBoost) with meta-learner @ 25x. Research shows stacking reduces overfitting and improves generalization.",
+  "entry_threshold": 0.875,
+  "stop_loss_pct": 0.5,
+  "take_profit_pct": 0.2,
+  "trailing_callback": 0.03,
+  "volume_ratio": 1.3499999999999999,
+  "confluence_required": 3,
+  "position_size_pct": 0.12,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "ml_stacked_ensemble",
+  "entry_method": "ml_stacking",
+  "exit_method": "adaptive_trailing",
+  "risk_style": "ml_conservative_25x",
+  "ml_config": {
+    "models": [
+      "lightgbm",
+      "xgboost",
+      "catboost"
+    ],
+    "meta_learner": "logistic_regression",
+    "features": [
+      "rsi",
+      "macd",
+      "bb_width",
+      "volume_ratio",
+      "price_change",
+      "ema_cross",
+      "adx",
+      "mfi",
+      "atr"
+    ],
+    "lookback": 150,
+    "confidence_threshold": 0.75,
+    "use_feature_selection": true,
+    "max_features": 15
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "id": 86,
+  "name": "MultiTimeframe_Confluence_100x",
+  "category": "Multi-Timeframe Analysis",
+  "rationale": "Simultaneous analysis of 5m, 15m, 1h, 4h, 1d timeframes. Only enter when all timeframes align @ 100x. Research shows multi-timeframe confluence reduces false signals.",
+  "entry_threshold": 1.2000000000000002,
+  "stop_loss_pct": 0.25,
+  "take_profit_pct": 0.1,
+  "trailing_callback": 0.015,
+  "volume_ratio": 1.2119047619047618,
+  "confluence_required": 4,
+  "position_size_pct": 0.05,
+  "leverage": 100,
+  "max_positions": 6,
+  "min_liquidity": 100000,
+  "primary_indicator": "multi_timeframe",
+  "entry_method": "timeframe_confluence",
+  "exit_method": "multi_tf_trailing",
+  "risk_style": "high_confidence_100x"
+}

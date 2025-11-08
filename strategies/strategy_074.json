@@ -1,0 +1,20 @@
+{
+  "id": 74,
+  "name": "LiquiditySweep_SmartMoney_100x",
+  "category": "Smart Money Concepts",
+  "rationale": "Identify liquidity sweeps, stop hunts, and smart money accumulation zones @ 100x. Based on Wyckoff and institutional order flow analysis.",
+  "entry_threshold": 1.1171428571428572,
+  "stop_loss_pct": 0.25,
+  "take_profit_pct": 0.1,
+  "trailing_callback": 0.015,
+  "volume_ratio": 1.25,
+  "confluence_required": 3,
+  "position_size_pct": 0.05,
+  "leverage": 100,
+  "max_positions": 6,
+  "min_liquidity": 100000,
+  "primary_indicator": "liquidity_zones",
+  "entry_method": "smart_money",
+  "exit_method": "distribution_detection",
+  "risk_style": "institutional_100x"
+}

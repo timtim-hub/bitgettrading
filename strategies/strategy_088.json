@@ -1,0 +1,37 @@
+{
+  "id": 88,
+  "name": "ReinforcementLearning_DQN_50x",
+  "category": "Reinforcement Learning",
+  "rationale": "Deep Q-Network (DQN) agent trained to maximize Sharpe ratio @ 50x. RL learns optimal entry/exit timing through trial and error.",
+  "entry_threshold": 0.775,
+  "stop_loss_pct": 0.35,
+  "take_profit_pct": 0.15,
+  "trailing_callback": 0.02,
+  "volume_ratio": 1.2038461538461538,
+  "confluence_required": 1,
+  "position_size_pct": 0.08,
+  "leverage": 50,
+  "max_positions": 10,
+  "min_liquidity": 100000,
+  "primary_indicator": "rl_policy",
+  "entry_method": "rl_agent",
+  "exit_method": "rl_policy",
+  "risk_style": "rl_learned_50x",
+  "ml_config": {
+    "model": "dqn",
+    "state_features": [
+      "price",
+      "volume",
+      "indicators",
+      "position",
+      "pnl"
+    ],
+    "action_space": [
+      "buy",
+      "sell",
+      "hold"
+    ],
+    "reward_function": "sharpe_based",
+    "lookback": 100
+  }
+}

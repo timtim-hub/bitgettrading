@@ -1,0 +1,20 @@
+{
+  "id": 81,
+  "name": "GARCH_Volatility_Clustering_25x",
+  "category": "Volatility Modeling",
+  "rationale": "GARCH model for volatility forecasting, adjust position size and stops based on predicted volatility @ 25x. Based on econometric research in volatility clustering.",
+  "entry_threshold": 0.788125,
+  "stop_loss_pct": 0.5,
+  "take_profit_pct": 0.2,
+  "trailing_callback": 0.03,
+  "volume_ratio": 1.2979166666666668,
+  "confluence_required": 2,
+  "position_size_pct": 0.12,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "garch_volatility",
+  "entry_method": "volatility_breakout",
+  "exit_method": "volatility_mean_reversion",
+  "risk_style": "volatility_adaptive_25x"
+}

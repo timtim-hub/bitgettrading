@@ -1,0 +1,20 @@
+{
+  "id": 70,
+  "name": "OrderFlow_VolumeProfile_50x",
+  "category": "Market Microstructure",
+  "rationale": "Detect order flow imbalances and volume profile anomalies @ 50x. Based on institutional trading patterns and high-frequency trading research.",
+  "entry_threshold": 0.8666666666666666,
+  "stop_loss_pct": 0.35,
+  "take_profit_pct": 0.15,
+  "trailing_callback": 0.02,
+  "volume_ratio": 1.4571428571428573,
+  "confluence_required": 2,
+  "position_size_pct": 0.08,
+  "leverage": 50,
+  "max_positions": 10,
+  "min_liquidity": 100000,
+  "primary_indicator": "order_flow",
+  "entry_method": "volume_profile",
+  "exit_method": "flow_reversal",
+  "risk_style": "microstructure_50x"
+}

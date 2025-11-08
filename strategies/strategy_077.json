@@ -1,0 +1,20 @@
+{
+  "id": 77,
+  "name": "TapeReading_DeltaVolume_100x",
+  "category": "Order Flow Analysis",
+  "rationale": "Real-time tape reading with delta volume analysis @ 100x. Detects aggressive buying/selling and imbalances in market depth.",
+  "entry_threshold": 1.1246153846153846,
+  "stop_loss_pct": 0.25,
+  "take_profit_pct": 0.1,
+  "trailing_callback": 0.015,
+  "volume_ratio": 1.3875,
+  "confluence_required": 2,
+  "position_size_pct": 0.05,
+  "leverage": 100,
+  "max_positions": 6,
+  "min_liquidity": 100000,
+  "primary_indicator": "delta_volume",
+  "entry_method": "tape_reading",
+  "exit_method": "volume_exhaustion",
+  "risk_style": "scalping_100x"
+}

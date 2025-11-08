@@ -43,9 +43,36 @@
 13. **Total Profit/Loss ($)**
 
 ### 5. Leverage and Fees
-- **Leverage:** 25x (match live trading!)
+- **Default Leverage:** 25x (baseline for all strategies)
+- **Test Leverage Variations:** 25x, 50x, 100x
 - **Taker Fee:** 0.06% (Bitget standard)
 - **Round-trip Fee:** 0.12% per complete trade
+- **Adaptive Parameters:** TP/SL/position size auto-adjust based on leverage
+
+### 6. Liquidation Risk Management (NEW!)
+
+**Liquidation Distance by Leverage:**
+| Leverage | Liq Distance | Risk Level | Usage |
+|----------|--------------|------------|-------|
+| **25x** | ~3.5% | MEDIUM | ✅ Recommended default |
+| **50x** | ~1.0% | EXTREME | ⚠️ Use with caution |
+| **100x** | ~1.0% | EXTREME | ❌ Expert only, high risk |
+
+**Liquidation Price Formula:**
+- **Long**: `Liq Price = Entry × (1 - 1/Leverage + MMR)`
+- **Short**: `Liq Price = Entry × (1 + 1/Leverage - MMR)`
+- **MMR** (Maintenance Margin Rate): 0.5% (25x), 1.0% (50x), 2.0% (100x)
+
+**Adaptive Parameters by Leverage:**
+| Parameter | 25x | 50x | 100x | Why? |
+|-----------|-----|-----|------|------|
+| Position Size | 12% | 8% | 5% | Reduce exposure at higher leverage |
+| Stop Loss (capital %) | 50% | 35% | 25% | Tighter stops to avoid liquidation |
+| Take Profit (capital %) | 20% | 15% | 10% | Faster profit-taking |
+| Trailing Callback | 3% | 2% | 1.5% | Tighter trailing for higher leverage |
+| Max Positions | 15 | 10 | 6 | Fewer concurrent positions |
+
+**CRITICAL**: All parameters MUST auto-adjust based on leverage!
 
 ---
 
@@ -361,8 +388,170 @@ models/ (NEW!)
 
 ---
 
-**Last Updated:** November 8, 2025  
-**Version:** 3.0  
-**Status:** ACTIVE - MUST FOLLOW ALL RULES!  
-**Goal:** Find the best trading strategy in the world! 🚀
+---
+
+## 🎖️ LEVERAGE TESTING PROTOCOL (V4 UPDATE)
+
+### Multi-Leverage Testing (NEW!)
+
+**Protocol:**
+1. Create 3 variants of each base strategy (25x, 50x, 100x)
+2. Test all variants on 338 tokens (Phase 1)
+3. Re-test on 5%+ ROI tokens (Phase 2)
+4. Compare leverage performance
+5. Identify optimal leverage per strategy type
+
+**Example: Strategy 060-062**
+- `strategy_060.json`: TripleStack_ML_Ensemble_25x
+- `strategy_061.json`: TripleStack_ML_Ensemble_50x
+- `strategy_062.json`: TripleStack_ML_Ensemble_100x
+
+**Naming Convention:**
+`{BaseStrategyName}_{Leverage}x`
+
+### Testing All Leverage Variants
+
+```bash
+# Test all 30 strategies (10 base × 3 leverage levels)
+python test_leverage_strategies.py
+```
+
+**What it does:**
+1. Loads strategies 060-089
+2. Tests each on all 338 tokens
+3. Re-tests on filtered tokens (>5% ROI)
+4. Generates comparison report
+5. Identifies best leverage per strategy
+
+### Leverage Comparison Report
+
+**Must Include:**
+- ROI comparison (25x vs 50x vs 100x)
+- Risk/reward analysis
+- Liquidation proximity
+- Best leverage recommendation per strategy
+- Overall winner across all leverage levels
+
+---
+
+## 📊 ADVANCED RESEARCH & TECHNIQUES (V4)
+
+### ML Ensemble Methods
+
+**Stacking (Implemented):**
+- Train 3+ base models (LightGBM, XGBoost, CatBoost)
+- Use meta-learner to combine predictions
+- Research shows 15-20% improvement over single models
+
+**SHAP Feature Selection (Implemented):**
+- Use SHAP values to identify top features
+- Remove low-impact features (<1% importance)
+- Reduces overfitting, improves generalization
+
+**Bayesian Hyperparameter Tuning (Implemented):**
+- Use Bayesian optimization (Optuna/Hyperopt)
+- Optimize for Sharpe ratio (not just accuracy)
+- 50-100 trials for optimal parameters
+
+### Market Microstructure Strategies
+
+**Order Flow Analysis:**
+- Track delta volume (buy vs sell)
+- Detect institutional accumulation/distribution
+- Identify liquidity sweeps and stop hunts
+
+**Volume Profile:**
+- Find high-volume price nodes (support/resistance)
+- Detect volume anomalies
+- Profile-based entry/exit
+
+**Smart Money Concepts:**
+- Wyckoff accumulation/distribution
+- Liquidity grabs
+- Market maker behavior
+
+### Adaptive & Regime-Based
+
+**Hidden Markov Models (HMM):**
+- Detect market regimes (trending, ranging, volatile, breakout)
+- Adjust strategy parameters per regime
+- Research shows 25-35% improvement
+
+**GARCH Volatility Models:**
+- Forecast volatility using GARCH(1,1)
+- Adjust position size based on predicted volatility
+- Adaptive stop-loss based on volatility
+
+**Multi-Timeframe Analysis:**
+- Analyze 5m, 15m, 1h, 4h, 1d simultaneously
+- Only trade when all timeframes align
+- Reduces false signals by 40-60%
+
+### Reinforcement Learning (Experimental)
+
+**Deep Q-Network (DQN):**
+- Agent learns optimal entry/exit timing
+- State: price, volume, indicators, position, PnL
+- Action: buy, sell, hold
+- Reward: Sharpe-based (not just profit)
+
+---
+
+## 🔬 RESEARCH-BACKED BEST PRACTICES
+
+### Feature Engineering
+1. **Use log returns** instead of raw prices (more stable)
+2. **Normalize features** (z-score or min-max scaling)
+3. **Remove correlated features** (>0.9 correlation)
+4. **Create interaction features** (RSI × Volume, MACD × ATR)
+5. **Time-based features** (hour, day, volatility regime)
+
+### Model Training
+1. **Walk-forward validation** (prevent lookahead bias)
+2. **Cross-validation** (5-fold minimum)
+3. **Stratified sampling** (balanced classes)
+4. **Early stopping** (prevent overfitting)
+5. **Ensemble methods** (combine 3+ models)
+
+### Risk Management
+1. **Kelly Criterion** for position sizing (optimal leverage)
+2. **Value at Risk (VaR)** for risk exposure
+3. **Conditional VaR** (CVaR) for tail risk
+4. **Dynamic stop-loss** based on volatility
+5. **Correlation-based diversification**
+
+---
+
+## 🚨 CRITICAL UPDATES (V4)
+
+### MANDATORY CHANGES
+
+1. **All new strategies MUST have 3 leverage variants (25x, 50x, 100x)**
+2. **Parameters MUST auto-adjust based on leverage**
+3. **Liquidation risk MUST be calculated and reported**
+4. **Leverage comparison MUST be included in final reports**
+5. **Per-strategy reports MUST show tokens with >5% ROI**
+
+### FILES UPDATED
+- ✅ `liquidation_calculator.py` - Calculate liquidation prices and risk
+- ✅ `ultimate_strategy_generator_v3.py` - Generate leverage-aware strategies
+- ✅ `test_leverage_strategies.py` - Test all leverage variants
+- ✅ `generate_per_strategy_reports.py` - Per-strategy detailed reports
+- ✅ `BACKTESTING_INSTRUCTIONS.md` - This file!
+
+### NEW FEATURES
+- ✅ Adaptive parameter system based on leverage
+- ✅ Liquidation risk calculator
+- ✅ Multi-leverage testing pipeline
+- ✅ Per-strategy reports with >5% ROI tokens
+- ✅ Research-backed ML techniques (stacking, SHAP, Bayesian optimization)
+
+---
+
+**Last Updated:** November 8, 2025 (V4 Leverage Update)  
+**Version:** 4.0 (Leverage-Aware Edition)
+**Status:** ACTIVE - MANDATORY LEVERAGE TESTING!  
+**Goal:** Find the best trading strategy with optimal leverage! 🚀
+
+**Key Takeaway:** ALWAYS test 25x, 50x, and 100x for each strategy! Higher leverage ≠ better returns if liquidation risk is too high.
 

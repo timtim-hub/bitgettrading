@@ -1,0 +1,39 @@
+{
+  "id": 66,
+  "name": "Bayesian_Tuned_ML_25x",
+  "category": "ML Hyperparameter Optimization",
+  "rationale": "LightGBM with Bayesian-optimized hyperparameters @ 25x. Research shows Bayesian optimization finds better hyperparameters than grid search with fewer iterations.",
+  "entry_threshold": 0.8633333333333334,
+  "stop_loss_pct": 0.5,
+  "take_profit_pct": 0.2,
+  "trailing_callback": 0.03,
+  "volume_ratio": 1.2583333333333333,
+  "confluence_required": 3,
+  "position_size_pct": 0.12,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "ml_bayesian_tuned",
+  "entry_method": "ml_optimized",
+  "exit_method": "dynamic_trailing",
+  "risk_style": "precision_25x",
+  "ml_config": {
+    "model": "lightgbm",
+    "hyperparameter_optimization": "bayesian",
+    "features": [
+      "rsi",
+      "macd",
+      "bb_width",
+      "volume_ratio",
+      "atr",
+      "adx",
+      "mfi",
+      "obv",
+      "price_change"
+    ],
+    "lookback": 140,
+    "confidence_threshold": 0.7914285714285714,
+    "n_trials": 100,
+    "optimize_metric": "sharpe_ratio"
+  }
+}

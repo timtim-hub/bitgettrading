@@ -1,0 +1,39 @@
+{
+  "id": 64,
+  "name": "SHAP_Feature_Optimized_50x",
+  "category": "ML Feature Engineering",
+  "rationale": "Use SHAP values to identify top features, train on only high-impact indicators @ 50x. Research shows SHAP-based feature selection improves model interpretability and reduces noise.",
+  "entry_threshold": 0.9199999999999999,
+  "stop_loss_pct": 0.35,
+  "take_profit_pct": 0.15,
+  "trailing_callback": 0.02,
+  "volume_ratio": 1.375,
+  "confluence_required": 2,
+  "position_size_pct": 0.08,
+  "leverage": 50,
+  "max_positions": 10,
+  "min_liquidity": 100000,
+  "primary_indicator": "ml_shap_optimized",
+  "entry_method": "ml_feature_importance",
+  "exit_method": "profit_trailing",
+  "risk_style": "data_driven_50x",
+  "ml_config": {
+    "model": "lightgbm",
+    "feature_selection": "shap",
+    "top_n_features": 10,
+    "features": [
+      "adx",
+      "mfi",
+      "atr",
+      "bb_width",
+      "rsi",
+      "macd",
+      "volume_ratio",
+      "price_momentum",
+      "ema_distance",
+      "trend_strength"
+    ],
+    "lookback": 120,
+    "confidence_threshold": 0.805
+  }
+}
