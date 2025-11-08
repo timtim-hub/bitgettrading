@@ -2582,23 +2582,40 @@ class LiveTrader:
                     balance = await self.rest_client.get_account_balance()
                     if balance and balance.get("code") == "00000":
                         data = balance.get("data", [{}])[0]
-                        # Use EQUITY (total capital) not available (remaining balance)
-                        # Equity = available + margin in positions + unrealized PnL
-                        total_equity = float(data.get("equity", 0))
                         available_balance = float(data.get("available", 0))
                         frozen = float(data.get("frozen", 0))
                         unrealized_pnl = float(data.get("unrealizedPL", 0))
                         
-                        # If equity field exists, use it. Otherwise calculate from components
-                        if total_equity > 0:
-                            base_position_value = total_equity * self.position_size_pct
-                        else:
-                            # Fallback: calculate equity manually
-                            total_equity = available_balance + frozen + unrealized_pnl
-                            base_position_value = total_equity * self.position_size_pct
+                        # 🚨 CRITICAL FIX: Bitget's "equity" field doesn't correctly sum all locked margin!
+                        # We MUST fetch all positions and sum their marginSize to get true total equity
+                        
+                        # Fetch all positions to get locked margin
+                        all_positions_endpoint = "/api/v2/mix/position/all-position"
+                        all_positions_params = {"productType": "USDT-FUTURES", "marginCoin": "USDT"}
+                        positions_response = await self.rest_client._request("GET", all_positions_endpoint, params=all_positions_params)
+                        
+                        total_margin_locked = 0.0
+                        if positions_response.get("code") == "00000" and "data" in positions_response:
+                            for pos in positions_response.get("data", []):
+                                # Only count positions with actual size (filter out closed positions)
+                                if float(pos.get("total", 0)) > 0:
+                                    margin_size = float(pos.get("marginSize", 0))
+                                    total_margin_locked += margin_size
+                        
+                        # Calculate TRUE total equity: available + locked margin + frozen + unrealized PnL
+                        total_equity = available_balance + total_margin_locked + frozen + unrealized_pnl
+                        base_position_value = total_equity * self.position_size_pct
                         
                         # Update self.equity for consistency
                         self.equity = total_equity
+                        
+                        logger.info(
+                            f"📊 [TOTAL EQUITY CALC] Available: ${available_balance:.2f} + "
+                            f"Margin Locked: ${total_margin_locked:.2f} + "
+                            f"Frozen: ${frozen:.2f} + "
+                            f"Unrealized PnL: ${unrealized_pnl:+.2f} = "
+                            f"Total Equity: ${total_equity:.2f}"
+                        )
                         
                         # 🚨 CRITICAL: Validate minimum margin requirements!
                         # Ensure we maintain at least 5% of equity as available margin for safety
