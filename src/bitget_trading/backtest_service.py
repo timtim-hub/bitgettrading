@@ -4,13 +4,13 @@ import asyncio
 from typing import Any
 
 from src.bitget_trading.backtest_scheduler import BacktestScheduler
-from bitget_trading.bitget_rest import BitgetRestClient
-from bitget_trading.config import TradingConfig
-from bitget_trading.enhanced_ranker import EnhancedRanker
-from bitget_trading.logger import get_logger
-from bitget_trading.multi_symbol_state import MultiSymbolStateManager
-from bitget_trading.stats_generator import StatsGenerator
-from bitget_trading.symbol_performance_tracker import SymbolPerformanceTracker
+from src.bitget_trading.bitget_rest import BitgetRestClient
+from src.bitget_trading.config import TradingConfig
+from src.bitget_trading.enhanced_ranker import EnhancedRanker
+from src.bitget_trading.logger import get_logger
+from src.bitget_trading.multi_symbol_state import MultiSymbolStateManager
+from src.bitget_trading.stats_generator import StatsGenerator
+from src.bitget_trading.symbol_performance_tracker import SymbolPerformanceTracker
 
 logger = get_logger()
 
