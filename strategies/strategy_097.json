@@ -1,0 +1,26 @@
+{
+  "id": 97,
+  "name": "Breakout_VolumeSurge_50x",
+  "category": "Breakout + Volume",
+  "rationale": "Catches explosive breakouts with volume confirmation @ 50x. Enters on strong momentum with high volume.",
+  "entry_threshold": 0.8,
+  "stop_loss_pct": 0.36,
+  "take_profit_pct": 0.2,
+  "trailing_callback": 0.025,
+  "volume_ratio": 2.0,
+  "confluence_required": 3,
+  "position_size_pct": 0.11,
+  "leverage": 50,
+  "max_positions": 10,
+  "min_liquidity": 100000,
+  "primary_indicator": "breakout",
+  "entry_method": "volume_breakout",
+  "exit_method": "momentum_reversal",
+  "risk_style": "breakout_50x",
+  "breakout_config": {
+    "lookback_period": 20,
+    "breakout_threshold": 0.015,
+    "volume_surge_multiplier": 2.5,
+    "consolidation_required": true
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "id": 104,
+  "name": "VolatilityBreakout_ML_25x",
+  "category": "Volatility + ML",
+  "rationale": "Enters during low volatility, exits on high volatility + ML @ 25x. Catches explosive moves after consolidation.",
+  "entry_threshold": 0.76,
+  "stop_loss_pct": 0.5,
+  "take_profit_pct": 0.27,
+  "trailing_callback": 0.033,
+  "volume_ratio": 1.7,
+  "confluence_required": 3,
+  "position_size_pct": 0.14,
+  "leverage": 25,
+  "max_positions": 13,
+  "min_liquidity": 100000,
+  "primary_indicator": "volatility",
+  "entry_method": "low_vol_breakout",
+  "exit_method": "high_vol_exit",
+  "risk_style": "volatility_25x",
+  "ml_config": {
+    "model": "ultra_lightgbm_v2",
+    "confidence_threshold": 0.71,
+    "volatility_indicators": [
+      "atr",
+      "bb_width",
+      "volatility_10",
+      "volatility_20"
+    ],
+    "low_vol_threshold": 0.6,
+    "high_vol_threshold": 1.4
+  }
+}

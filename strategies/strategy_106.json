@@ -1,0 +1,30 @@
+{
+  "id": 106,
+  "name": "SmartMoney_ML_25x",
+  "category": "Smart Money + ML",
+  "rationale": "Follows institutional money flow (OBV, MFI, AD) + ML @ 25x. Trades with the smart money.",
+  "entry_threshold": 0.74,
+  "stop_loss_pct": 0.53,
+  "take_profit_pct": 0.21,
+  "trailing_callback": 0.027,
+  "volume_ratio": 1.55,
+  "confluence_required": 4,
+  "position_size_pct": 0.12,
+  "leverage": 25,
+  "max_positions": 16,
+  "min_liquidity": 100000,
+  "primary_indicator": "money_flow",
+  "entry_method": "smart_money_ml",
+  "exit_method": "flow_reversal",
+  "risk_style": "institutional_25x",
+  "ml_config": {
+    "model": "ultra_lightgbm_v2",
+    "confidence_threshold": 0.72,
+    "money_flow_indicators": [
+      "obv",
+      "mfi",
+      "volume_ratio"
+    ],
+    "flow_strength_threshold": 0.7
+  }
+}

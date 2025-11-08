@@ -1,0 +1,32 @@
+{
+  "id": 102,
+  "name": "MultiTimeframe_ML_25x",
+  "category": "Multi-Timeframe + ML",
+  "rationale": "Analyzes 5m, 15m, 1h, 4h, 1d + ML prediction @ 25x. Only trades when all timeframes + ML align.",
+  "entry_threshold": 0.85,
+  "stop_loss_pct": 0.56,
+  "take_profit_pct": 0.23,
+  "trailing_callback": 0.028,
+  "volume_ratio": 1.5,
+  "confluence_required": 6,
+  "position_size_pct": 0.11,
+  "leverage": 25,
+  "max_positions": 17,
+  "min_liquidity": 100000,
+  "primary_indicator": "multi_timeframe",
+  "entry_method": "mtf_ml_confluence",
+  "exit_method": "mtf_trailing",
+  "risk_style": "high_confidence_25x",
+  "ml_config": {
+    "model": "ultra_lightgbm_v2",
+    "confidence_threshold": 0.78,
+    "timeframes": [
+      "5m",
+      "15m",
+      "1h",
+      "4h",
+      "1d"
+    ],
+    "alignment_threshold": 0.8
+  }
+}

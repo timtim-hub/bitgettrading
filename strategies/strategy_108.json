@@ -1,0 +1,38 @@
+{
+  "id": 108,
+  "name": "Adaptive_Dynamic_ML_25x",
+  "category": "Adaptive + ML",
+  "rationale": "Adapts ALL parameters based on market regime + ML @ 25x. Changes strategy based on market conditions.",
+  "entry_threshold": 0.7,
+  "stop_loss_pct": 0.57,
+  "take_profit_pct": 0.24,
+  "trailing_callback": 0.03,
+  "volume_ratio": 1.4,
+  "confluence_required": 3,
+  "position_size_pct": 0.13,
+  "leverage": 25,
+  "max_positions": 17,
+  "min_liquidity": 100000,
+  "primary_indicator": "adaptive",
+  "entry_method": "regime_adaptive_ml",
+  "exit_method": "adaptive_dynamic",
+  "risk_style": "adaptive_25x",
+  "ml_config": {
+    "model": "ultra_lightgbm_v2",
+    "confidence_threshold": 0.69,
+    "regime_detection": "hmm",
+    "regimes": [
+      "trending_up",
+      "trending_down",
+      "ranging",
+      "volatile",
+      "breakout"
+    ],
+    "adapt_parameters": [
+      "entry_threshold",
+      "stop_loss",
+      "take_profit",
+      "position_size"
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "id": 101,
+  "name": "TrendFollowing_ML_50x",
+  "category": "Trend Following + ML",
+  "rationale": "Rides strong trends with ML confirmation @ 50x. Only trades in direction of strong trend.",
+  "entry_threshold": 0.77,
+  "stop_loss_pct": 0.38,
+  "take_profit_pct": 0.19,
+  "trailing_callback": 0.023,
+  "volume_ratio": 1.45,
+  "confluence_required": 4,
+  "position_size_pct": 0.09,
+  "leverage": 50,
+  "max_positions": 11,
+  "min_liquidity": 100000,
+  "primary_indicator": "trend_strength",
+  "entry_method": "trend_ml",
+  "exit_method": "trend_reversal",
+  "risk_style": "trend_50x",
+  "ml_config": {
+    "model": "ultra_lightgbm_v2",
+    "confidence_threshold": 0.73,
+    "trend_indicators": [
+      "ema_cross_9_21",
+      "ema_cross_12_26",
+      "adx",
+      "trend_strength"
+    ],
+    "min_trend_strength": 0.03,
+    "min_adx": 28
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "id": 93,
+  "name": "Momentum_ML_Hybrid_50x",
+  "category": "Momentum + ML Prediction",
+  "rationale": "Combines strong momentum signals (RSI, MACD, ADX) with ML prediction @ 50x. Trade only when both momentum AND ML agree.",
+  "entry_threshold": 0.78,
+  "stop_loss_pct": 0.38,
+  "take_profit_pct": 0.16,
+  "trailing_callback": 0.02,
+  "volume_ratio": 1.6,
+  "confluence_required": 4,
+  "position_size_pct": 0.09,
+  "leverage": 50,
+  "max_positions": 11,
+  "min_liquidity": 100000,
+  "primary_indicator": "momentum_ml_combined",
+  "entry_method": "momentum_ml_confluence",
+  "exit_method": "momentum_trailing",
+  "risk_style": "aggressive_50x",
+  "ml_config": {
+    "model": "ultra_lightgbm_v2",
+    "confidence_threshold": 0.7,
+    "momentum_indicators": [
+      "rsi",
+      "macd",
+      "adx",
+      "mfi"
+    ],
+    "momentum_thresholds": {
+      "rsi": [
+        30,
+        70
+      ],
+      "macd": "positive_hist",
+      "adx": 25,
+      "mfi": [
+        20,
+        80
+      ]
+    }
+  }
+}

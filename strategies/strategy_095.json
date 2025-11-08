@@ -1,0 +1,27 @@
+{
+  "id": 95,
+  "name": "Portfolio_Optimizer_50x",
+  "category": "Portfolio Optimization",
+  "rationale": "Dynamically allocates capital across tokens based on Sharpe ratio and correlation @ 50x. Maximizes risk-adjusted returns.",
+  "entry_threshold": 0.75,
+  "stop_loss_pct": 0.42,
+  "take_profit_pct": 0.17,
+  "trailing_callback": 0.022,
+  "volume_ratio": 1.4,
+  "confluence_required": 3,
+  "position_size_pct": 0.08,
+  "leverage": 50,
+  "max_positions": 14,
+  "min_liquidity": 100000,
+  "primary_indicator": "sharpe_optimized",
+  "entry_method": "portfolio_optimization",
+  "exit_method": "sharpe_trailing",
+  "risk_style": "risk_adjusted_50x",
+  "portfolio_config": {
+    "optimization_method": "markowitz",
+    "rebalance_frequency": "daily",
+    "correlation_threshold": 0.7,
+    "min_sharpe": 1.5,
+    "target_volatility": 0.15
+  }
+}
