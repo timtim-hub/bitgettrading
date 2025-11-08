@@ -1,0 +1,20 @@
+{
+  "id": 49,
+  "name": "ML_Feature_ATR_Volatility_Breakout",
+  "category": "ML-Inspired Volatility Breakout",
+  "rationale": "Uses ATR_pct (900 importance) to identify volatility expansion. ML model learned that high ATR predicts directional moves. Trades breakouts during volatility spikes. Fast in/out.",
+  "entry_threshold": 1.0,
+  "stop_loss_pct": 0.4,
+  "take_profit_pct": 0.25,
+  "trailing_callback": 0.02,
+  "volume_ratio": 2.0,
+  "confluence_required": 2,
+  "position_size_pct": 0.1,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "atr",
+  "entry_method": "volatility_expansion",
+  "exit_method": "fast_exit",
+  "risk_style": "ml_volatility_trader"
+}

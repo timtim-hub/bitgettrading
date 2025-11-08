@@ -1,0 +1,20 @@
+{
+  "id": 47,
+  "name": "ML_Feature_MFI_Volume_Flow",
+  "category": "ML-Inspired Volume Analysis",
+  "rationale": "Uses MFI (974 importance) + volume indicators (top ML features). MFI <20 = oversold with money flowing in. Volume confirmation prevents fake signals. High win rate focus.",
+  "entry_threshold": 0.85,
+  "stop_loss_pct": 0.5,
+  "take_profit_pct": 0.18,
+  "trailing_callback": 0.03,
+  "volume_ratio": 1.6,
+  "confluence_required": 2,
+  "position_size_pct": 0.12,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "mfi",
+  "entry_method": "mfi_oversold_reversal",
+  "exit_method": "quick_tp",
+  "risk_style": "ml_balanced"
+}

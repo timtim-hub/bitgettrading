@@ -1,0 +1,20 @@
+{
+  "id": 48,
+  "name": "ML_Feature_Multi_Indicator_Ensemble",
+  "category": "ML-Inspired Ensemble",
+  "rationale": "Ensemble approach using ALL top 5 ML features: ADX (1198), SMA distances (1173, 1078), MFI (974), ATR (900). Weighted scoring system mimics ML decision tree. Only trades when ensemble score >70%.",
+  "entry_threshold": 0.75,
+  "stop_loss_pct": 0.48,
+  "take_profit_pct": 0.2,
+  "trailing_callback": 0.04,
+  "volume_ratio": 1.5,
+  "confluence_required": 4,
+  "position_size_pct": 0.14,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "ml_ensemble",
+  "entry_method": "ensemble_score",
+  "exit_method": "adaptive_tp",
+  "risk_style": "ml_aggressive"
+}

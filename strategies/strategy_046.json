@@ -1,0 +1,20 @@
+{
+  "id": 46,
+  "name": "ML_Feature_ADX_Trend_Focus",
+  "category": "ML-Inspired Trend Following",
+  "rationale": "Uses ADX (top ML feature, 1198 importance) as primary signal. ADX >25 indicates strong trend. Confirmed by SMA distances (2nd & 3rd top features). Conservative entries, aggressive exits.",
+  "entry_threshold": 0.9,
+  "stop_loss_pct": 0.45,
+  "take_profit_pct": 0.22,
+  "trailing_callback": 0.035,
+  "volume_ratio": 1.4,
+  "confluence_required": 3,
+  "position_size_pct": 0.13,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000,
+  "primary_indicator": "adx",
+  "entry_method": "adx_strong_trend",
+  "exit_method": "trailing_tp_aggressive",
+  "risk_style": "ml_conservative"
+}
