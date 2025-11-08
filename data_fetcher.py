@@ -15,61 +15,14 @@ import pandas as pd
 from src.bitget_trading.bitget_rest import BitgetRestClient
 from src.bitget_trading.config import TradingConfig
 
-# 45+ LIQUID COINS TO TEST (Top volume across different market caps)
-TEST_SYMBOLS = [
-    # === TIER 1: MEGA CAPS (>$50B) ===
-    "BTCUSDT",   # Bitcoin - King
-    "ETHUSDT",   # Ethereum - Smart contracts leader
-    "XRPUSDT",   # Ripple - Banking/payments
-    "BNBUSDT",   # Binance Coin - Exchange token
-    "SOLUSDT",   # Solana - High-speed blockchain
-    
-    # === TIER 2: LARGE CAPS ($10B-$50B) ===
-    "ADAUSDT",   # Cardano - Research-driven
-    "DOGEUSDT",  # Dogecoin - Meme king
-    "AVAXUSDT",  # Avalanche - DeFi platform
-    "TRXUSDT",   # Tron - Entertainment blockchain
-    "LINKUSDT",  # Chainlink - Oracle network
-    "DOTUSDT",   # Polkadot - Multi-chain
-    "TONUSDT",   # TON - Telegram blockchain
-    
-    # === TIER 3: MID CAPS ($1B-$10B) ===
-    "SHIBUSDT",  # Shiba Inu - Meme token
-    "LTCUSDT",   # Litecoin - Silver to BTC's gold
-    "UNIUSDT",   # Uniswap - DEX leader
-    "ATOMUSDT",  # Cosmos - Internet of blockchains
-    "FILUSDT",   # Filecoin - Decentralized storage
-    "APTUSDT",   # Aptos - Move-based L1
-    "ARBUSDT",   # Arbitrum - ETH L2
-    "NEARUSDT",  # NEAR - Sharded L1
-    "SUIUSDT",   # Sui - Next-gen L1
-    "OPUSDT",    # Optimism - ETH L2
-    "INJUSDT",   # Injective - DeFi L1
-    
-    # === TIER 4: SMALL-MID CAPS ($500M-$1B) ===
-    "PEPEUSDT",  # Pepe - Meme token
-    "WIFUSDT",   # Dogwifhat - Solana meme
-    "FETUSDT",   # Fetch.ai - AI blockchain
-    "FLOKIUSDT", # Floki - Meme token
-    "FTMUSDT",   # Fantom - Fast L1
-    "RNDRUSDT",  # Render - GPU rendering
-    "AAVEUSDT",  # Aave - Lending protocol
-    "TIAUSDT",   # Celestia - Modular blockchain
-    "SEIUSDT",   # Sei - Trading-focused L1
-    "JUPUSDT",   # Jupiter - Solana DEX aggregator
-    
-    # === TIER 5: HIGH VOLATILITY / MOMENTUM ($100M-$500M) ===
-    "GALAUSDT",  # Gala - Gaming ecosystem
-    "ICPUSDT",   # Internet Computer - Web3 platform
-    "ALGOUSDT",  # Algorand - Pure PoS
-    "XTZUSDT",   # Tezos - Self-amending blockchain
-    "ETCUSDT",   # Ethereum Classic - Original ETH
-    "LDOUSDT",   # Lido DAO - Staking protocol
-    "GMXUSDT",   # GMX - Perps DEX
-    "RUNEUSDT",  # THORChain - Cross-chain swaps
-    "PENDLEUSDT",# Pendle - Yield trading
-    "1000SATSUSDT", # 1000SATS - BTC ordinals
-]
+# Load ALL 338 symbols from the full Bitget universe
+try:
+    with open("all_bitget_symbols.txt", "r") as f:
+        TEST_SYMBOLS = [line.strip() for line in f if line.strip()]
+    print(f"✅ Loaded {len(TEST_SYMBOLS)} symbols from all_bitget_symbols.txt")
+except FileNotFoundError:
+    print("❌ all_bitget_symbols.txt not found! Using minimal fallback...")
+    TEST_SYMBOLS = ["BTCUSDT", "ETHUSDT"]  # Fallback
 
 
 class HistoricalDataFetcher:
