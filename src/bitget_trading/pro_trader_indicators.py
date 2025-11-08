@@ -451,13 +451,13 @@ class ProTraderIndicators:
         factors_met = 0
         reasons = []
         
-        # Factor 1: R:R >= 2.5:1 (RELAXED for short-term leverage trading!)
-        # 2.5:1 is acceptable for high-frequency crypto trading
-        if risk_reward >= 2.5:
+        # Factor 1: R:R >= 2.3:1 (RELAXED for short-term leverage trading + rounding tolerance!)
+        # 2.3:1 is acceptable for high-frequency crypto trading
+        if risk_reward >= 2.3:
             factors_met += 1
             reasons.append(f"✓ Good R:R ({risk_reward:.1f}:1)")
         else:
-            reasons.append(f"✗ Poor R:R ({risk_reward:.1f}:1 - need 2.5:1+)")
+            reasons.append(f"✗ Poor R:R ({risk_reward:.1f}:1 - need 2.3:1+)")
         
         # Factor 2: With market structure OR valid counter-trend setup
         # 🚀 IMPROVED: Allow shorts in weak uptrends (pullback trading) and longs in weak downtrends
@@ -512,10 +512,10 @@ class ProTraderIndicators:
         # For shorts, we want NEGATIVE returns (falling prices)
         # For longs, we want POSITIVE returns (rising prices)
         if side == "short":
-            momentum_ok = return_15s <= -0.0010  # -0.10%+ downward move
+            momentum_ok = return_15s <= -0.0005  # -0.05%+ downward move (RELAXED!)
             momentum_str = f"{return_15s*100:.3f}% (bearish)"
         else:  # long
-            momentum_ok = return_15s >= 0.0010  # +0.10%+ upward move
+            momentum_ok = return_15s >= 0.0005  # +0.05%+ upward move (RELAXED!)
             momentum_str = f"{return_15s*100:.3f}% (bullish)"
         
         if momentum_ok:

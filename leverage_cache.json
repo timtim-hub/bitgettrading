@@ -3072,5 +3072,15 @@
     "leverage": 25,
     "timestamp": 1762562169.334898,
     "failed": false
+  },
+  "SWELLUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762562594.3945322,
+    "failed": false
+  },
+  "SWELLUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762562594.9353652,
+    "failed": false
   }
 }
