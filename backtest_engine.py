@@ -81,6 +81,10 @@ class BacktestEngine:
         self.position_size_pct = strategy["position_size_pct"]
         self.leverage = strategy["leverage"]
         self.max_positions = strategy["max_positions"]
+        
+        # Trading fees (Bitget taker fee: 0.06% per side)
+        self.taker_fee_pct = 0.0006  # 0.06%
+        self.fee_per_trade = self.taker_fee_pct * 2  # Entry + Exit = 0.12%
     
     def calculate_signal(self, df: pd.DataFrame, idx: int) -> Tuple[str, float]:
         """
@@ -272,8 +276,20 @@ class BacktestEngine:
                 
                 # Exit if reason found
                 if exit_reason:
+                    # Calculate gross PnL
                     pnl_usd = price_change * size_usd * self.leverage
-                    capital += pnl_usd
+                    
+                    # Deduct fees (0.06% entry + 0.06% exit = 0.12% total on position size)
+                    # Fee is calculated on notional value (size_usd * leverage)
+                    notional_value = size_usd * self.leverage
+                    fee_usd = notional_value * self.fee_per_trade
+                    
+                    # Net PnL after fees
+                    net_pnl_usd = pnl_usd - fee_usd
+                    capital += net_pnl_usd
+                    
+                    # Recalculate PnL % based on net PnL (after fees)
+                    net_pnl_pct = (net_pnl_usd / size_usd) * 100
                     
                     trade = Trade(
                         entry_time=df.iloc[position['entry_idx']]['timestamp'],
@@ -283,8 +299,8 @@ class BacktestEngine:
                         side=side,
                         size_usd=size_usd,
                         leverage=self.leverage,
-                        pnl_usd=pnl_usd,
-                        pnl_pct=pnl_pct,
+                        pnl_usd=net_pnl_usd,  # Store net PnL after fees
+                        pnl_pct=net_pnl_pct,  # Store net PnL % after fees
                         exit_reason=exit_reason,
                     )
                     trades.append(trade)
@@ -319,9 +335,17 @@ class BacktestEngine:
             else:
                 price_change = (entry_price / current_price - 1)
             
+            # Calculate gross PnL
             pnl_usd = price_change * size_usd * self.leverage
-            pnl_pct = price_change * self.leverage * 100
-            capital += pnl_usd
+            
+            # Deduct fees
+            notional_value = size_usd * self.leverage
+            fee_usd = notional_value * self.fee_per_trade
+            
+            # Net PnL after fees
+            net_pnl_usd = pnl_usd - fee_usd
+            net_pnl_pct = (net_pnl_usd / size_usd) * 100
+            capital += net_pnl_usd
             
             trade = Trade(
                 entry_time=df.iloc[position['entry_idx']]['timestamp'],
@@ -331,8 +355,8 @@ class BacktestEngine:
                 side=side,
                 size_usd=size_usd,
                 leverage=self.leverage,
-                pnl_usd=pnl_usd,
-                pnl_pct=pnl_pct,
+                pnl_usd=net_pnl_usd,
+                pnl_pct=net_pnl_pct,
                 exit_reason="end",
             )
             trades.append(trade)
