@@ -927,26 +927,17 @@ class LiveTrader:
                                             f"Trailing will wait for price to reach trigger, then activate and trail from that point!"
                                         )
                                 else:  # short
-                                    # For short positions, trigger price must be ≤ current market price
-                                    # 🚨 CRITICAL FIX: If price is already below TP threshold, set trigger BELOW current price
-                                    # This prevents immediate activation and early exits!
-                                    # Solution: Set trigger slightly below current price (0.2% buffer) so trailing waits
-                                    # Once price goes down and hits trigger, trailing activates and trails from that point
-                                    if current_market_price > take_profit_price:
-                                        # Price hasn't reached TP threshold yet - set trigger at TP threshold or slightly below current
-                                        trailing_trigger_price = min(take_profit_price, current_market_price * 0.999)  # 0.1% below current to ensure it activates
-                                    else:
-                                        # 🚨 FIX: Price already at/below TP threshold!
-                                        # Bitget requires trigger ≤ current price, but we don't want immediate activation
-                                        # Solution: Set trigger 0.2% BELOW current price so trailing waits for price to go down
-                                        # This prevents early exits from immediate activation!
-                                        trailing_trigger_price = current_market_price * 0.998  # 0.2% below current - trailing waits!
-                                        logger.info(
-                                            f"✅ [TRAILING TP FIX] {symbol} | "
-                                            f"Current price (${current_market_price:.4f}) is already BELOW TP threshold (${take_profit_price:.4f})! | "
-                                            f"Setting trigger 0.2% BELOW current (${trailing_trigger_price:.4f}) to prevent immediate activation | "
-                                            f"Trailing will wait for price to reach trigger, then activate and trail from that point!"
-                                        )
+                                    # For short positions: trigger activates when price goes DOWN (profit)
+                                    # Trigger should be set at the take-profit threshold or slightly below
+                                    # 🚀 SIMPLIFIED: Just use the TP price as trigger, let trailing handle the rest!
+                                    trailing_trigger_price = take_profit_price
+                                    logger.info(
+                                        f"✅ [SHORT TRAILING TP] {symbol} | "
+                                        f"Trigger set at TP threshold: ${trailing_trigger_price:.4f} | "
+                                        f"Current price: ${current_market_price:.4f} | "
+                                        f"Callback: {trailing_range_rate*100:.2f}% | "
+                                        f"When price drops to ${trailing_trigger_price:.4f}, trailing activates!"
+                                    )
                                 
                                 # 🚨 CRITICAL: Round trigger price to correct decimal places (error 40808: checkBDScale)
                                 # Bitget API requires trigger price to have exact precision based on contract's pricePlace
