@@ -9,11 +9,13 @@
   },
   "ETHUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500932.7030652
+    "timestamp": 1762613487.3924851,
+    "failed": false
   },
   "ETHUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500933.1767528
+    "timestamp": 1762613487.7204869,
+    "failed": false
   },
   "XRPUSDT_long": {
     "leverage": 25,
@@ -33,11 +35,13 @@
   },
   "LTCUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500935.772224
+    "timestamp": 1762613488.073104,
+    "failed": false
   },
   "LTCUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500936.3295329
+    "timestamp": 1762613488.408638,
+    "failed": false
   },
   "ADAUSDT_long": {
     "leverage": 25,
@@ -49,11 +53,13 @@
   },
   "ETCUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500938.482336
+    "timestamp": 1762613488.783763,
+    "failed": false
   },
   "ETCUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500939.011786
+    "timestamp": 1762613489.2123818,
+    "failed": false
   },
   "LINKUSDT_long": {
     "leverage": 25,
@@ -73,19 +79,23 @@
   },
   "DOTUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500941.5337741
+    "timestamp": 1762613489.547599,
+    "failed": false
   },
   "DOTUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500942.097051
+    "timestamp": 1762613489.999051,
+    "failed": false
   },
   "DOGEUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500942.582727
+    "timestamp": 1762613490.319693,
+    "failed": false
   },
   "DOGEUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500943.051289
+    "timestamp": 1762613490.6943932,
+    "failed": false
   },
   "SOLUSDT_long": {
     "leverage": 25,
@@ -105,19 +115,23 @@
   },
   "UNIUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500945.6967869
+    "timestamp": 1762613491.0484219,
+    "failed": false
   },
   "UNIUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500946.172235
+    "timestamp": 1762613491.423656,
+    "failed": false
   },
   "ICPUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500946.790346
+    "timestamp": 1762613491.855655,
+    "failed": false
   },
   "ICPUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500947.300709
+    "timestamp": 1762613492.2700539,
+    "failed": false
   },
   "AAVEUSDT_long": {
     "leverage": 25,
@@ -129,11 +143,13 @@
   },
   "FILUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500948.800919
+    "timestamp": 1762613492.6193159,
+    "failed": false
   },
   "FILUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500949.260641
+    "timestamp": 1762613492.9706979,
+    "failed": false
   },
   "XLMUSDT_long": {
     "leverage": 25,
@@ -145,19 +161,23 @@
   },
   "ATOMUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500950.795277
+    "timestamp": 1762613493.405438,
+    "failed": false
   },
   "ATOMUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500951.298333
+    "timestamp": 1762613493.841405,
+    "failed": false
   },
   "XTZUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500951.808594
+    "timestamp": 1762613494.187156,
+    "failed": false
   },
   "XTZUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500952.3898082
+    "timestamp": 1762613494.693408,
+    "failed": false
   },
   "SUSHIUSDT_long": {
     "leverage": 25,
@@ -201,11 +221,13 @@
   },
   "SHIBUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500958.20913
+    "timestamp": 1762613495.041247,
+    "failed": false
   },
   "SHIBUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500958.756563
+    "timestamp": 1762613495.4144871,
+    "failed": false
   },
   "MANAUSDT_long": {
     "leverage": 25,
@@ -249,27 +271,33 @@
   },
   "NEARUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500964.884471
+    "timestamp": 1762613495.747597,
+    "failed": false
   },
   "NEARUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500965.400029
+    "timestamp": 1762613496.114305,
+    "failed": false
   },
   "KSMUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500965.889856
+    "timestamp": 1762613496.540386,
+    "failed": false
   },
   "KSMUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500966.3505092
+    "timestamp": 1762613496.987686,
+    "failed": false
   },
   "ARUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500966.843298
+    "timestamp": 1762613497.332777,
+    "failed": false
   },
   "ARUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500967.384932
+    "timestamp": 1762613497.683624,
+    "failed": false
   },
   "PEOPLEUSDT_long": {
     "leverage": 25,
@@ -329,11 +357,13 @@
   },
   "APTUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500975.2621171
+    "timestamp": 1762613498.147813,
+    "failed": false
   },
   "APTUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500975.816183
+    "timestamp": 1762613498.5595589,
+    "failed": false
   },
   "ROSEUSDT_long": {
     "leverage": 25,
@@ -465,11 +495,13 @@
   },
   "BATUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762500992.512574
+    "timestamp": 1762613498.926713,
+    "failed": false
   },
   "BATUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762500993.023883
+    "timestamp": 1762613499.299802,
+    "failed": false
   },
   "LDOUSDT_long": {
     "leverage": 25,
@@ -521,11 +553,13 @@
   },
   "FETUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501000.087845
+    "timestamp": 1762613499.7280169,
+    "failed": false
   },
   "FETUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501000.606935
+    "timestamp": 1762613500.136867,
+    "failed": false
   },
   "FXSUSDT_long": {
     "leverage": 25,
@@ -537,11 +571,13 @@
   },
   "HOOKUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501002.075566
+    "timestamp": 1762613500.503228,
+    "failed": false
   },
   "HOOKUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501002.543704
+    "timestamp": 1762613500.984859,
+    "failed": false
   },
   "SSVUSDT_long": {
     "leverage": 25,
@@ -649,11 +685,13 @@
   },
   "FLOKIUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501016.40013
+    "timestamp": 1762613501.3268962,
+    "failed": false
   },
   "FLOKIUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501016.861152
+    "timestamp": 1762613501.704725,
+    "failed": false
   },
   "SUIUSDT_long": {
     "leverage": 25,
@@ -665,11 +703,13 @@
   },
   "PEPEUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501018.5130181
+    "timestamp": 1762613502.085153,
+    "failed": false
   },
   "PEPEUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501019.037127
+    "timestamp": 1762613502.557648,
+    "failed": false
   },
   "TURBOUSDT_long": {
     "leverage": 25,
@@ -681,11 +721,13 @@
   },
   "TONUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501020.84914
+    "timestamp": 1762613502.91485,
+    "failed": false
   },
   "TONUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501021.543726
+    "timestamp": 1762613503.392864,
+    "failed": false
   },
   "ZENUSDT_long": {
     "leverage": 25,
@@ -697,11 +739,13 @@
   },
   "ORDIUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501023.16611
+    "timestamp": 1762613503.8029718,
+    "failed": false
   },
   "ORDIUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501023.723716
+    "timestamp": 1762613504.1843798,
+    "failed": false
   },
   "1000BONKUSDT_long": {
     "leverage": 25,
@@ -721,11 +765,13 @@
   },
   "WLDUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501027.4693341
+    "timestamp": 1762613504.653167,
+    "failed": false
   },
   "WLDUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501028.0973701
+    "timestamp": 1762613505.0208519,
+    "failed": false
   },
   "PENDLEUSDT_long": {
     "leverage": 25,
@@ -785,11 +831,13 @@
   },
   "PYTHUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501036.2307289
+    "timestamp": 1762613505.474725,
+    "failed": false
   },
   "PYTHUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501036.692924
+    "timestamp": 1762613505.899284,
+    "failed": false
   },
   "JTOUSDT_long": {
     "leverage": 25,
@@ -801,19 +849,23 @@
   },
   "1000SATSUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501038.2103128
+    "timestamp": 1762613506.237643,
+    "failed": false
   },
   "1000SATSUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501038.7668731
+    "timestamp": 1762613506.595538,
+    "failed": false
   },
   "1000RATSUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501039.393619
+    "timestamp": 1762613506.9547362,
+    "failed": false
   },
   "1000RATSUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501039.931913
+    "timestamp": 1762613507.302289,
+    "failed": false
   },
   "JUPUSDT_long": {
     "leverage": 25,
@@ -825,19 +877,23 @@
   },
   "STRKUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501041.4515011
+    "timestamp": 1762613507.691091,
+    "failed": false
   },
   "STRKUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501042.0086248
+    "timestamp": 1762613508.13974,
+    "failed": false
   },
   "WIFUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501042.511168
+    "timestamp": 1762613508.492926,
+    "failed": false
   },
   "WIFUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501043.099408
+    "timestamp": 1762613508.861452,
+    "failed": false
   },
   "BOMEUSDT_long": {
     "leverage": 25,
@@ -849,11 +905,13 @@
   },
   "METISUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501044.762253
+    "timestamp": 1762613509.22299,
+    "failed": false
   },
   "METISUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501045.25314
+    "timestamp": 1762613509.640128,
+    "failed": false
   },
   "AEVOUSDT_long": {
     "leverage": 25,
@@ -913,11 +971,13 @@
   },
   "TAOUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501054.289284
+    "timestamp": 1762613510.002145,
+    "failed": false
   },
   "TAOUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501054.8240929
+    "timestamp": 1762613510.391339,
+    "failed": false
   },
   "RAYUSDT_long": {
     "leverage": 25,
@@ -985,11 +1045,13 @@
   },
   "ZKUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501066.214161
+    "timestamp": 1762613510.7281432,
+    "failed": false
   },
   "ZKUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501066.67507
+    "timestamp": 1762613511.0999732,
+    "failed": false
   },
   "MEWUSDT_long": {
     "leverage": 25,
@@ -1041,19 +1103,23 @@
   },
   "POPCATUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501075.5269
+    "timestamp": 1762613511.4624262,
+    "failed": false
   },
   "POPCATUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501076.075572
+    "timestamp": 1762613511.8314838,
+    "failed": false
   },
   "RENDERUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501076.5397298
+    "timestamp": 1762613512.198219,
+    "failed": false
   },
   "RENDERUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501077.0353868
+    "timestamp": 1762613512.545287,
+    "failed": false
   },
   "RAREUSDT_long": {
     "leverage": 25,
@@ -1145,11 +1211,13 @@
   },
   "ETHWUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501090.62718
+    "timestamp": 1762613512.895091,
+    "failed": false
   },
   "ETHWUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501091.120648
+    "timestamp": 1762613513.242241,
+    "failed": false
   },
   "KMNOUSDT_long": {
     "leverage": 25,
@@ -1201,11 +1269,13 @@
   },
   "VIRTUALUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501097.9072099
+    "timestamp": 1762613513.625083,
+    "failed": false
   },
   "VIRTUALUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501098.3956192
+    "timestamp": 1762613513.9611342,
+    "failed": false
   },
   "AEROUSDT_long": {
     "leverage": 25,
@@ -1537,11 +1607,13 @@
   },
   "PARTIUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501148.2400682
+    "timestamp": 1762613514.3002582,
+    "failed": false
   },
   "PARTIUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501148.737355
+    "timestamp": 1762613514.669878,
+    "failed": false
   },
   "FUNUSDT_long": {
     "leverage": 25,
@@ -1593,11 +1665,13 @@
   },
   "EPTUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501156.5244591
+    "timestamp": 1762613515.048438,
+    "failed": false
   },
   "EPTUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501157.111964
+    "timestamp": 1762613515.370271,
+    "failed": false
   },
   "ZORAUSDT_long": {
     "leverage": 25,
@@ -1657,11 +1731,13 @@
   },
   "RESOLVUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501172.3765051
+    "timestamp": 1762613515.7416708,
+    "failed": false
   },
   "RESOLVUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501172.900552
+    "timestamp": 1762613516.085134,
+    "failed": false
   },
   "SQDUSDT_long": {
     "leverage": 25,
@@ -1801,11 +1877,13 @@
   },
   "SAPIENUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501194.080845
+    "timestamp": 1762613516.4167192,
+    "failed": false
   },
   "SAPIENUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501194.593129
+    "timestamp": 1762613516.754765,
+    "failed": false
   },
   "WLFIUSDT_long": {
     "leverage": 25,
@@ -1953,11 +2031,13 @@
   },
   "0GUSDT_long": {
     "leverage": 25,
-    "timestamp": 1762501218.417577
+    "timestamp": 1762613517.2784572,
+    "failed": false
   },
   "0GUSDT_short": {
     "leverage": 25,
-    "timestamp": 1762501218.957887
+    "timestamp": 1762613517.624018,
+    "failed": false
   },
   "BARDUSDT_long": {
     "leverage": 25,

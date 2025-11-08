@@ -2901,10 +2901,11 @@ class LiveTrader:
                 continue
             
             # Get historical candles for ADX calculation
-            candles_5m = state.get_candles("5m")
+            # Access candles directly from state (candles_5m, candles_1m, candles_15m)
+            candles_5m = list(state.candles_5m) if hasattr(state, 'candles_5m') else []
             if not candles_5m or len(candles_5m) < 30:
                 # Try 1m candles if 5m not available
-                candles_1m = state.get_candles("1m")
+                candles_1m = list(state.candles_1m) if hasattr(state, 'candles_1m') else []
                 if not candles_1m or len(candles_1m) < 30:
                     continue
                 candles = candles_1m
