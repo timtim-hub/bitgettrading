@@ -822,38 +822,41 @@ class EnhancedRanker:
                     },
                 )
             elif direction == "short" and market_structure["structure"] == "uptrend":
-                # RELAXED: Only reject shorts in STRONG uptrends (8+ votes out of 10)
-                # Allow shorts in weak/moderate uptrends (pullbacks/reversals)
-                uptrend_votes = market_structure.get("uptrend_votes", 10)
-                logger.info(
-                    f"🔍 [SHORT VS UPTREND] {state.symbol} | SHORT signal in UPTREND | "
-                    f"uptrend_votes={uptrend_votes}/10, structure={market_structure.get('structure')}, "
-                    f"ema_trend={market_structure.get('ema_trend', 'unknown')}, "
-                    f"slope_trend={market_structure.get('slope_trend', 'unknown')}, "
-                    f"swing_trend={market_structure.get('swing_trend', 'unknown')}"
+                # 🚀 ULTRA-PERMISSIVE: Allow ALL shorts in uptrends (pullback/reversal strategy)
+                # Short-term bearish signals are valid even in uptrends
+                # Only reject if PERFECT uptrend (10/10 votes AND all 3 methods agree)
+                uptrend_votes = market_structure.get("uptrend_votes", 0)
+                ema_trend = market_structure.get("ema_trend", "unknown")
+                slope_trend = market_structure.get("slope_trend", "unknown")
+                swing_trend = market_structure.get("swing_trend", "unknown")
+                
+                # Only reject in PERFECT uptrend (all 3 methods bullish = 10/10 votes)
+                is_perfect_uptrend = (
+                    uptrend_votes == 10 and 
+                    ema_trend == "bullish" and 
+                    slope_trend == "bullish" and 
+                    swing_trend == "bullish"
                 )
-                if uptrend_votes >= 8:  # Very strong uptrend (80%+)
-                    logger.debug(
-                        "trade_rejected_against_structure",
-                        symbol=state.symbol,
-                        direction=direction,
-                        structure=market_structure["structure"],
-                        uptrend_votes=uptrend_votes,
-                        reason="SHORT rejected: STRONG uptrend (8+ votes)",
+                
+                if is_perfect_uptrend:
+                    logger.info(
+                        f"❌ [SHORT REJECTED] {state.symbol} | PERFECT uptrend (10/10, all bullish) | "
+                        f"Too risky for counter-trend short"
                     )
                     return (
                         0.0,
                         "neutral",
                         {
                             "reason": "against_structure",
-                            "structure": market_structure["structure"],
+                            "structure": "perfect_uptrend",
                         },
                     )
                 else:
-                    # Allow shorts in weak/moderate uptrends (pullbacks)
+                    # ALLOW: Any weakness = valid short entry
                     logger.info(
-                        f"✅ [SHORT ALLOWED IN UPTREND] {state.symbol} | "
-                        f"Weak uptrend ({uptrend_votes}/10 votes) allows short entry (pullback/reversal)"
+                        f"✅ [SHORT IN UPTREND ALLOWED] {state.symbol} | "
+                        f"votes={uptrend_votes}/10, ema={ema_trend}, slope={slope_trend}, swing={swing_trend} | "
+                        f"Pullback/reversal trade approved"
                     )
 
             # PRO RULE: ONLY A-grade trades! (5+ factors required out of 10)
