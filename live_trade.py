@@ -2924,8 +2924,8 @@ class LiveTrader:
                 continue
             
             # Get current price for position sizing
-            ticker = state.ticker
-            if not ticker:
+            # Use last_price from state (not ticker attribute)
+            if not state.last_price or state.last_price <= 0:
                 continue
             
             ranked.append({
