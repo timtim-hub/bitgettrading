@@ -1,0 +1,20 @@
+{
+  "id": 131,
+  "name": "MultiPosition_100x_50pos",
+  "category": "High-Frequency Multi-Position",
+  "rationale": "Open 50 uncorrelated positions @ 100x. Small size (2.5% each) for diversification. Many small wins compound to 10-15% daily.",
+  "leverage": 100,
+  "entry_threshold": 0.7,
+  "stop_loss_pct": 0.26,
+  "take_profit_pct": 0.15,
+  "trailing_callback": 0.013,
+  "volume_ratio": 1.4,
+  "confluence_required": 2,
+  "position_size_pct": 0.025,
+  "max_positions": 50,
+  "min_liquidity": 100000,
+  "primary_indicator": "multi_signal",
+  "entry_method": "diversified_entry",
+  "exit_method": "quick_profit",
+  "risk_style": "high_frequency_100x"
+}

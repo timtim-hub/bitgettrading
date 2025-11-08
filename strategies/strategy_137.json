@@ -1,0 +1,21 @@
+{
+  "id": 137,
+  "name": "OrderBook_Imbalance_75x",
+  "category": "Order Book Imbalance",
+  "rationale": "Trade on bid/ask imbalance >72% @ 75x. Simulated order book metrics from volume. Quick exits on reversion.",
+  "leverage": 75,
+  "entry_threshold": 0.75,
+  "stop_loss_pct": 0.28,
+  "take_profit_pct": 0.17,
+  "trailing_callback": 0.015,
+  "volume_ratio": 1.8,
+  "confluence_required": 3,
+  "position_size_pct": 0.14,
+  "max_positions": 22,
+  "min_liquidity": 100000,
+  "primary_indicator": "orderbook_imbalance",
+  "entry_method": "imbalance_entry",
+  "exit_method": "reversion_exit",
+  "risk_style": "orderbook_75x",
+  "imbalance_threshold": 0.72
+}

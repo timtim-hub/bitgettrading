@@ -1,0 +1,21 @@
+{
+  "id": 143,
+  "name": "TimeOptimized_100x_eu_open",
+  "category": "Time-of-Day Optimized",
+  "rationale": "Trade only during eu_open @ 100x. Highest volatility hours. Aggressive during window, flat otherwise.",
+  "leverage": 100,
+  "entry_threshold": 0.78,
+  "stop_loss_pct": 0.29,
+  "take_profit_pct": 0.18,
+  "trailing_callback": 0.017,
+  "volume_ratio": 1.7,
+  "confluence_required": 3,
+  "position_size_pct": 0.19,
+  "max_positions": 25,
+  "min_liquidity": 100000,
+  "primary_indicator": "time_volatility",
+  "entry_method": "time_window_entry",
+  "exit_method": "time_aware_exit",
+  "risk_style": "time_optimized_100x",
+  "active_time_window": "eu_open"
+}

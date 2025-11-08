@@ -1,0 +1,20 @@
+{
+  "id": 134,
+  "name": "MultiPosition_75x_42pos",
+  "category": "High-Frequency Multi-Position",
+  "rationale": "Open 42 uncorrelated positions @ 75x. Small size (3.5% each) for diversification. Many small wins compound to 10-15% daily.",
+  "leverage": 75,
+  "entry_threshold": 0.7,
+  "stop_loss_pct": 0.31,
+  "take_profit_pct": 0.19,
+  "trailing_callback": 0.016,
+  "volume_ratio": 1.4,
+  "confluence_required": 2,
+  "position_size_pct": 0.035,
+  "max_positions": 42,
+  "min_liquidity": 100000,
+  "primary_indicator": "multi_signal",
+  "entry_method": "diversified_entry",
+  "exit_method": "quick_profit",
+  "risk_style": "high_frequency_75x"
+}

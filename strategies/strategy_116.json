@@ -1,0 +1,20 @@
+{
+  "id": 116,
+  "name": "Ultra_Aggressive_ML_75x_v7",
+  "category": "Ultra-Aggressive ML",
+  "rationale": "Maximum aggression @ 75x: 20%+ position size, 40 simultaneous positions, ML confidence 0.84. Target 0.2-0.4% moves with high leverage.",
+  "leverage": 75,
+  "entry_threshold": 0.84,
+  "stop_loss_pct": 0.36,
+  "take_profit_pct": 0.22,
+  "trailing_callback": 0.024,
+  "volume_ratio": 1.6,
+  "confluence_required": 4,
+  "position_size_pct": 0.24,
+  "max_positions": 40,
+  "min_liquidity": 100000,
+  "primary_indicator": "ml_ultra",
+  "entry_method": "ml_high_confidence",
+  "exit_method": "tight_trailing",
+  "risk_style": "ultra_aggressive_75x"
+}

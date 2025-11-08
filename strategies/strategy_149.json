@@ -1,0 +1,22 @@
+{
+  "id": 149,
+  "name": "Kelly_Criterion_75x",
+  "category": "Kelly Criterion Position Sizing",
+  "rationale": "Dynamic position sizing based on Kelly formula @ 75x. Allocate more to high-probability setups. Base size 12%, scales 0.5x-2x.",
+  "leverage": 75,
+  "entry_threshold": 0.76,
+  "stop_loss_pct": 0.34,
+  "take_profit_pct": 0.21,
+  "trailing_callback": 0.019,
+  "volume_ratio": 1.5,
+  "confluence_required": 3,
+  "position_size_pct": 0.12,
+  "max_positions": 28,
+  "min_liquidity": 100000,
+  "primary_indicator": "kelly_optimized",
+  "entry_method": "kelly_sized_entry",
+  "exit_method": "kelly_exit",
+  "risk_style": "kelly_75x",
+  "kelly_multiplier": 0.5,
+  "dynamic_sizing": true
+}

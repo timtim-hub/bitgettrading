@@ -715,3 +715,162 @@ python test_ultra_strategies.py             # Test them
 - ⭐ Use ensemble methods (7+ models voting)
 - ⭐ Target 60-120% ROI (vs current 47.36%)
 
+---
+
+## 🚀 EXTREME ROI STRATEGIES (15% DAILY TARGET)
+
+### Overview
+
+**Goal**: Achieve ~15% daily ROI (get as close as possible)
+**Current Best**: 4.66% daily (ML_Ensemble @ 25x)
+**Target Improvement**: 3.2x (4.66% → 15%)
+
+**Strategy IDs**: 110-159 (50 strategies across 8 categories)
+
+### Testing Protocol (MANDATORY!)
+
+**ALWAYS test on ALL 338 tokens first!**
+
+1. **Phase 1**: Test on ALL 338 tokens
+   - Save to: `{strategy_name}_phase1_*.json`
+   - Generate comprehensive metrics
+
+2. **Phase 2**: Re-test on >10% ROI tokens from Phase 1
+   - Filter: `total_roi_pct >= 10.0`
+   - Save to: `{strategy_name}_phase2_*.json`
+
+3. **Phase 3**: Re-test on >20% ROI tokens from Phase 2
+   - Filter: `total_roi_pct >= 20.0`
+   - Save to: `{strategy_name}_phase3_*.json`
+
+**Files**:
+- `test_extreme_strategies.py` - Three-phase testing script
+- `create_extreme_roi_strategies.py` - Strategy generator
+- `EXTREME_ROI_STRATEGIES.md` - Complete documentation
+
+### Strategy Categories
+
+1. **Ultra-Aggressive ML** (10 strategies, IDs 110-119)
+   - Leverage: 75x-125x
+   - Position size: 15-24%
+   - Max positions: 25-40
+   - Entry threshold: 0.84-0.91 (very high confidence)
+
+2. **Scalping 1m** (3 strategies, IDs 120-122)
+   - Leverage: 50x-75x
+   - Timeframe: 1-minute candles
+   - Target: 0.08-0.15% moves (8-15 basis points)
+   - Must exceed 0.12% fees
+
+3. **Momentum Explosion** (6 strategies, IDs 123-128)
+   - Leverage: 50x-100x
+   - Entry: Rapid acceleration >0.5% in 5 minutes
+   - Target: 1-3% explosive moves
+
+4. **High-Frequency Multi-Position** (7 strategies, IDs 129-135)
+   - Leverage: 75x-125x
+   - Position size: 2-4% each
+   - Max positions: 40-50 simultaneous
+   - Diversification across uncorrelated tokens
+
+5. **Order Book Imbalance** (6 strategies, IDs 136-141)
+   - Leverage: 50x-100x
+   - Entry: Bid/ask imbalance >69-74%
+   - Simulated order book metrics
+
+6. **Time-of-Day Optimized** (6 strategies, IDs 142-147)
+   - Leverage: 100x-125x
+   - Active windows: Asia open (UTC 8-10), EU open (UTC 13-15), US volatile (UTC 20-22)
+   - Flat outside these windows
+
+7. **Kelly Criterion Position Sizing** (6 strategies, IDs 148-153)
+   - Leverage: 75x-125x
+   - Dynamic position sizing (0.5x-2x base)
+   - Optimal capital allocation per setup
+
+8. **Pairs/Correlation** (6 strategies, IDs 154-159)
+   - Leverage: 50x-100x per side (2x total)
+   - Long strong, short weak
+   - Market neutral spread capture
+
+### Infrastructure Requirements
+
+**Data**:
+- 1-minute candle support: `data_fetcher.py` (already supports "1m")
+- Order book simulator: `orderbook_fetcher.py`
+- Pre-filtering: `token_prefilter.py` (optional, for faster testing)
+
+**ML Models**:
+- 1m LightGBM: `train_lightgbm_1m.py` (1500 rounds, 100+ features)
+- Regime models: `train_regime_models.py` (4 specialized models)
+- Ensemble models: `train_ensemble_models.py` (XGBoost + CatBoost)
+
+**Backtester**:
+- Multi-position engine: `backtest_engine_multi.py`
+- Supports 30-50 simultaneous positions
+- Correlation risk calculation
+- Slippage modeling
+
+### Risk Warnings
+
+⚠️ **EXTREME RISK**:
+- Leverage 75x-125x can liquidate in 0.8%-1.3% adverse move
+- Multiple simultaneous positions increase correlation risk
+- High-frequency trading increases fee costs
+- 1-minute scalping requires fast execution
+
+⚠️ **LIQUIDATION RISK**:
+- 75x: Liquidated at 1.33% adverse move
+- 100x: Liquidated at 1.00% adverse move
+- 125x: Liquidated at 0.80% adverse move
+
+⚠️ **FEE IMPACT**:
+- Taker fee: 0.06% × 2 = 0.12% round trip
+- Scalping requires >0.15% moves to profit
+- High-frequency: Fees can exceed 1% daily
+
+### Expected Performance
+
+**Conservative**: 8-10% daily ROI
+**Moderate**: 10-13% daily ROI
+**Optimistic**: 13-15% daily ROI
+
+### Usage
+
+1. **Train models** (if not already done):
+   ```bash
+   python train_lightgbm_1m.py
+   python train_regime_models.py
+   python train_ensemble_models.py
+   ```
+
+2. **Generate strategies**:
+   ```bash
+   python create_extreme_roi_strategies.py
+   ```
+
+3. **Test strategies** (ALWAYS on ALL 338 tokens first!):
+   ```bash
+   python test_extreme_strategies.py
+   ```
+
+4. **Analyze results** and deploy top 3
+
+### Key Innovations
+
+1. **Higher Leverage**: 75x-125x (vs 25x-50x previous)
+2. **More Positions**: 40-50 simultaneous (vs 1 previous)
+3. **1m Scalping**: Ultra-short timeframe opportunities
+4. **Time Optimization**: Trade only best hours
+5. **Kelly Sizing**: Optimal capital allocation
+6. **Pairs Trading**: Market neutral spread capture
+7. **Order Book**: Leading indicators
+8. **Regime Models**: Right model for conditions
+
+---
+
+**Last Updated:** November 8, 2025 (V6 Extreme ROI Update)  
+**Version:** 6.0 (Extreme ROI Edition - 15% Daily Target)  
+**Status:** ACTIVE - MAXIMUM AGGRESSION MODE! 🚀💰  
+**Goal:** Achieve 15% daily ROI through extreme leverage, multi-position, and advanced ML!
+

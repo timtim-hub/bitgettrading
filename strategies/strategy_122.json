@@ -1,0 +1,22 @@
+{
+  "id": 122,
+  "name": "Scalping_1m_75x",
+  "category": "Scalping 1m",
+  "rationale": "Ultra-short timeframe scalping @ 75x. Target 0.08-0.15% moves (8-15bps). Hold 2-10 minutes. Accounts for 0.12% fees.",
+  "leverage": 75,
+  "entry_threshold": 0.81,
+  "stop_loss_pct": 0.17,
+  "take_profit_pct": 0.11,
+  "trailing_callback": 0.011,
+  "volume_ratio": 2.0,
+  "confluence_required": 3,
+  "position_size_pct": 0.14,
+  "max_positions": 20,
+  "min_liquidity": 100000,
+  "primary_indicator": "momentum_burst",
+  "entry_method": "scalp_entry",
+  "exit_method": "scalp_quick_exit",
+  "risk_style": "scalping_75x",
+  "timeframe": "1m",
+  "min_profit_bps": 15
+}

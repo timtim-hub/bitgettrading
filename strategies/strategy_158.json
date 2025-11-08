@@ -1,0 +1,22 @@
+{
+  "id": 158,
+  "name": "Pairs_Correlation_75x",
+  "category": "Pairs/Correlation",
+  "rationale": "Long strong, short weak pairs @ 75x per side (2x total). BTC/ETH, Layer1s. Market neutral but captures spread. Correlation >0.76.",
+  "leverage": 75,
+  "entry_threshold": 0.77,
+  "stop_loss_pct": 0.31,
+  "take_profit_pct": 0.19,
+  "trailing_callback": 0.017,
+  "volume_ratio": 1.6,
+  "confluence_required": 3,
+  "position_size_pct": 0.13,
+  "max_positions": 20,
+  "min_liquidity": 100000,
+  "primary_indicator": "relative_strength",
+  "entry_method": "pairs_entry",
+  "exit_method": "spread_exit",
+  "risk_style": "pairs_75x",
+  "correlation_threshold": 0.76,
+  "pairs_mode": true
+}
