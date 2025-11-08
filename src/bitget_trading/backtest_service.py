@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any
 
-from bitget_trading.backtest_scheduler import BacktestScheduler
+from src.bitget_trading.backtest_scheduler import BacktestScheduler
 from bitget_trading.bitget_rest import BitgetRestClient
 from bitget_trading.config import TradingConfig
 from bitget_trading.enhanced_ranker import EnhancedRanker
