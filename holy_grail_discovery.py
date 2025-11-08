@@ -31,8 +31,12 @@ class HolyGrailDiscovery:
         """Load all backtest results from Phase 2 (5%+ ROI)."""
         all_results = []
         
-        # Find all Phase 2 result files
-        phase2_files = list(self.results_dir.glob("*_phase2_5pct_plus_*.json"))
+        # Find all Phase 2 result files (both naming conventions)
+        phase2_files = (
+            list(self.results_dir.glob("*_phase2_5pct_plus_*.json")) +
+            list(self.results_dir.glob("*_5pct_plus_detailed_*.json")) +
+            list(self.results_dir.glob("*_5pct_plus_summary_*.json"))
+        )
         
         print(f"📂 Found {len(phase2_files)} Phase 2 result files")
         
@@ -41,13 +45,23 @@ class HolyGrailDiscovery:
                 with open(file, 'r') as f:
                     results = json.load(f)
                     if results:
-                        # Extract strategy name from filename
-                        strategy_name = file.stem.split('_phase2_5pct_plus_')[0]
-                        all_results.append({
-                            'strategy_name': strategy_name,
-                            'file': file.name,
-                            'results': results
-                        })
+                        # Extract strategy name from filename (handle different naming conventions)
+                        if '_phase2_5pct_plus_' in file.stem:
+                            strategy_name = file.stem.split('_phase2_5pct_plus_')[0]
+                        elif '_5pct_plus_detailed_' in file.stem:
+                            strategy_name = file.stem.split('_5pct_plus_detailed_')[0]
+                        elif '_5pct_plus_summary_' in file.stem:
+                            strategy_name = file.stem.split('_5pct_plus_summary_')[0]
+                        else:
+                            strategy_name = file.stem
+                        
+                        # Skip summary files (we want detailed results)
+                        if 'summary' not in file.name.lower() or 'detailed' in file.name.lower():
+                            all_results.append({
+                                'strategy_name': strategy_name,
+                                'file': file.name,
+                                'results': results if isinstance(results, list) else []
+                            })
             except Exception as e:
                 print(f"⚠️ Error loading {file.name}: {e}")
         

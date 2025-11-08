@@ -248,9 +248,7 @@ class ExtremeStrategiesTester:
             p2 = s['phase2']
             report += f"| {idx} | {s['strategy'][:30]} | {s['leverage']}x | {p2['avg_roi_pct']:.2f}% | {p2['avg_roi_per_day_pct']:.2f}% | {p2['avg_roi_per_week_pct']:.2f}% | {p2['avg_roi_per_month_pct']:.2f}% | {p2['avg_win_rate_pct']:.2f}% | {p2['total_tokens']} |\n"
         
-        report += "\n---\n\n## 🏆 Top Performers (Phase 3: >20% ROI)
-
-"""
+        report += "\n---\n\n## 🏆 Top Performers (Phase 3: >20% ROI)\n\n"
         
         # Sort by Phase 3 avg ROI
         phase3_sorted = sorted(
