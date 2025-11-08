@@ -1,0 +1,15 @@
+{
+  "id": 4,
+  "name": "Conservative_004",
+  "description": "Conservative strategy variation 4",
+  "entry_threshold": 2.5,
+  "stop_loss_pct": 0.35,
+  "take_profit_pct": 0.12,
+  "trailing_callback": 0.03,
+  "volume_ratio": 2.0,
+  "confluence_required": 5,
+  "position_size_pct": 0.1,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000
+}

@@ -161,3 +161,5 @@ With this fix:
 - Consistent risk management across all trades
 - Proper portfolio allocation
 
+
+

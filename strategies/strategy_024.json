@@ -1,0 +1,15 @@
+{
+  "id": 24,
+  "name": "Aggressive_024",
+  "description": "Aggressive strategy variation 24",
+  "entry_threshold": 1.5,
+  "stop_loss_pct": 0.6,
+  "take_profit_pct": 0.2,
+  "trailing_callback": 0.04,
+  "volume_ratio": 1.5,
+  "confluence_required": 3,
+  "position_size_pct": 0.1,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000
+}

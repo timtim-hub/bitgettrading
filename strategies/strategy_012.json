@@ -1,0 +1,15 @@
+{
+  "id": 12,
+  "name": "Balanced_012",
+  "description": "Balanced strategy variation 12",
+  "entry_threshold": 2.0,
+  "stop_loss_pct": 0.4,
+  "take_profit_pct": 0.16,
+  "trailing_callback": 0.02,
+  "volume_ratio": 2.0,
+  "confluence_required": 4,
+  "position_size_pct": 0.1,
+  "leverage": 25,
+  "max_positions": 15,
+  "min_liquidity": 100000
+}
