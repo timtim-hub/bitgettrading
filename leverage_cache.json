@@ -3082,5 +3082,15 @@
     "leverage": 25,
     "timestamp": 1762562594.9353652,
     "failed": false
+  },
+  "HYPERUSDT_long": {
+    "leverage": 25,
+    "timestamp": 1762563074.371775,
+    "failed": false
+  },
+  "HYPERUSDT_short": {
+    "leverage": 25,
+    "timestamp": 1762563074.9061801,
+    "failed": false
   }
 }

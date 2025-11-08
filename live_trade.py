@@ -414,17 +414,19 @@ class LiveTrader:
                         
                         # Calculate TP/SL prices from regime_params
                         if regime_params:
-                            # 🚀 NEW: SL is now PRICE-BASED (0.6%), not capital-based
-                            sl_price_pct = regime_params["stop_loss_pct"]  # Already in price % (0.006 = 0.6%)
-                            tp_capital_pct = regime_params["take_profit_pct"]  # Still capital-based
-                            tp_price_pct = tp_capital_pct / self.leverage  # Convert to price %
-                            # Calculate sl_capital_pct for logging (reverse convert from price %)
-                            sl_capital_pct = sl_price_pct * self.leverage
+                            # 🚨 CRITICAL FIX: regime_params["stop_loss_pct"] is in CAPITAL %, not price %!
+                            # Must divide by leverage to convert to price %, same as TP!
+                            sl_capital_pct = regime_params["stop_loss_pct"]  # Capital % (e.g., 0.50 = 50%)
+                            tp_capital_pct = regime_params["take_profit_pct"]  # Capital % (e.g., 0.16 = 16%)
+                            
+                            # Convert both from capital % to price % by dividing by leverage
+                            sl_price_pct = sl_capital_pct / self.leverage  # 50% capital @ 25x = 2% price
+                            tp_price_pct = tp_capital_pct / self.leverage  # 16% capital @ 25x = 0.64% price
+                            
                             # 🚨 DEBUG: Log the actual values being used
                             logger.info(
-                                f"🔍 [TP/SL DEBUG] {symbol} | regime_params stop_loss_pct: {sl_capital_pct} "
-                                f"({sl_capital_pct*100:.0f}%) | leverage: {self.leverage}x | "
-                                f"sl_price_pct: {sl_price_pct:.6f} ({sl_price_pct*100:.4f}%)"
+                                f"🔍 [TP/SL DEBUG] {symbol} | SL: {sl_capital_pct*100:.0f}% capital → {sl_price_pct*100:.2f}% price | "
+                                f"TP: {tp_capital_pct*100:.0f}% capital → {tp_price_pct*100:.2f}% price | Leverage: {self.leverage}x"
                             )
                         else:
                             # Fallback (should never happen) - Use correct values: 50% SL, 8% TP
@@ -956,7 +958,7 @@ class LiveTrader:
                                     f"🧵 [TRAILING TP SETUP] {symbol} | "
                                     f"Side: {side.upper()} | Current Price: ${current_market_price:.4f} | "
                                     f"Trigger Price (Rückrufpreis): ${trailing_trigger_price:.4f} | "
-                                    f"Callback Rate: {trailing_stop_pct_capital*100:.1f}% capital ({trailing_range_rate*100:.3f}% price @ {actual_leverage}x) | "
+                                    f"Callback Rate: {trailing_stop_pct_capital*100:.1f}% capital ({trailing_range_rate*100:.3f}% price @ {position_actual_leverage}x) | "
                                     f"TP Threshold: ${take_profit_price:.4f}"
                                 )
                                 
