@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
 from src.bitget_trading.backtest_service import BacktestService
 from src.bitget_trading.bitget_rest import BitgetRestClient
@@ -2746,8 +2747,16 @@ class LiveTrader:
                 
                 size = (adjusted_position_value * self.leverage) / price
 
-                # Get regime-specific parameters
-                regime_params = self.regime_detector.get_regime_parameters(regime)
+                # 🎯 HOLY GRAIL: Use strategy parameters if enabled
+                if self.use_holy_grail and self.holy_grail:
+                    regime_params = {
+                        "stop_loss_pct": self.holy_grail.stop_loss_pct,  # 45% capital
+                        "take_profit_pct": self.holy_grail.take_profit_pct,  # 22% capital
+                        "trailing_stop_pct": self.holy_grail.trailing_callback,  # 3.5%
+                    }
+                else:
+                    # Get regime-specific parameters
+                    regime_params = self.regime_detector.get_regime_parameters(regime)
 
                 # Calculate final notional value for logging
                 final_notional_value = adjusted_position_value * self.leverage
@@ -2876,6 +2885,73 @@ class LiveTrader:
         # Log all position settings for debugging
         if trades_successful > 0:
             self.position_manager.log_all_position_settings()
+    
+    def _rank_with_holy_grail(self, symbols: list[str]) -> list[dict]:
+        """
+        Rank symbols using Holy Grail ADX-based strategy.
+        
+        Returns:
+            List of ranked symbols with scores and directions
+        """
+        ranked = []
+        
+        for symbol in symbols:
+            state = self.state_manager.get_state(symbol)
+            if not state:
+                continue
+            
+            # Get historical candles for ADX calculation
+            candles_5m = state.get_candles("5m")
+            if not candles_5m or len(candles_5m) < 30:
+                # Try 1m candles if 5m not available
+                candles_1m = state.get_candles("1m")
+                if not candles_1m or len(candles_1m) < 30:
+                    continue
+                candles = candles_1m
+            else:
+                candles = candles_5m
+            
+            # Convert to DataFrame
+            df = pd.DataFrame(candles)
+            if len(df) < 30:
+                continue
+            
+            # Calculate Holy Grail signal
+            direction, score = self.holy_grail.calculate_signal(df, symbol, self.state_manager)
+            
+            if direction == "neutral" or score < self.holy_grail.entry_threshold:
+                continue
+            
+            # Get current price for position sizing
+            ticker = state.ticker
+            if not ticker:
+                continue
+            
+            ranked.append({
+                "symbol": symbol,
+                "score": score,
+                "predicted_side": direction,
+                "position_size_multiplier": 1.0,  # Will be adjusted by position manager
+                "regime": "trending",  # ADX indicates trend
+                "confluence": 3,  # Holy Grail requires 3+ signals
+                "volume_ratio": 1.4,  # From strategy
+                "funding_rate": 0.0,  # Not used in Holy Grail
+                "volatility": 0.01,  # Default
+                "grade": "A",  # High confidence (entry threshold 0.9)
+                "market_structure": "trending",
+                "near_sr": False,
+                "rr_ratio": self.holy_grail.take_profit_pct / self.holy_grail.stop_loss_pct,  # 22% / 45% = 0.49
+            })
+        
+        # Sort by score (highest first)
+        ranked.sort(key=lambda x: x["score"], reverse=True)
+        
+        logger.info(
+            f"✅ [HOLY GRAIL] Ranked {len(ranked)} symbols with ADX-based signals "
+            f"(threshold: {self.holy_grail.entry_threshold})"
+        )
+        
+        return ranked
 
     async def trading_loop(self) -> None:
         """
@@ -2982,22 +3058,32 @@ class LiveTrader:
                     logger.info(f"[PROGRESS] Ranking {len(self.symbols)} symbols...")
                     logger.info(f"{'='*70}")
 
-                    # 🚀 NEW: Filter symbols before ranking (if enabled)
+                    # 🎯 HOLY GRAIL: Filter to ONLY profitable tokens!
                     symbols_to_rank = self.symbols
-                    if self.symbol_filter:
+                    if self.use_holy_grail and self.holy_grail:
+                        symbols_to_rank = self.holy_grail.filter_symbols(self.symbols)
+                        logger.info(
+                            f"🎯 [HOLY GRAIL] Filtered to {len(symbols_to_rank)} profitable tokens "
+                            f"(from {len(self.symbols)} total symbols)"
+                        )
+                    elif self.symbol_filter:
                         symbols_to_rank = self.symbol_filter.filter_symbols(self.symbols)
                         logger.info(
                             f"🔍 [FILTER] Filtered {len(self.symbols)} symbols -> {len(symbols_to_rank)} passed "
                             f"({len(self.symbols) - len(symbols_to_rank)} filtered out)"
                         )
                     
-                    # Rank ALL symbols - then pick top ones for available slots
-                    # This ensures we're trading the BEST opportunities across ALL 300+ tokens!
-                    logger.info(f"📊 [RANKING] Analyzing {len(symbols_to_rank)} symbols...")
-                    all_ranked = self.enhanced_ranker.rank_symbols_enhanced(
-                        self.state_manager,
-                        top_k=len(symbols_to_rank),  # Rank filtered symbols
-                    )
+                    # 🎯 HOLY GRAIL: Use ADX-based signal calculation
+                    if self.use_holy_grail and self.holy_grail:
+                        logger.info(f"📊 [HOLY GRAIL] Calculating ADX-based signals for {len(symbols_to_rank)} symbols...")
+                        all_ranked = self._rank_with_holy_grail(symbols_to_rank)
+                    else:
+                        # Fallback to enhanced ranker
+                        logger.info(f"📊 [RANKING] Analyzing {len(symbols_to_rank)} symbols...")
+                        all_ranked = self.enhanced_ranker.rank_symbols_enhanced(
+                            self.state_manager,
+                            top_k=len(symbols_to_rank),  # Rank filtered symbols
+                        )
                     # Then take only the top ones for available slots
                     allocations = all_ranked[:available_slots] if len(all_ranked) > available_slots else all_ranked
 
