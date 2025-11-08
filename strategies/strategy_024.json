@@ -1,16 +1,20 @@
 {
   "id": 24,
-  "name": "Balanced_SmartMoney",
-  "category": "Balanced",
-  "rationale": "Follows 'smart money' - requires high volume + strong confluence to confirm institutional flow.",
-  "entry_threshold": 1.9,
+  "name": "AD_Line_Smart_Money",
+  "category": "Volume Analysis",
+  "rationale": "Follow Accumulation/Distribution - smart money flow indicator.",
+  "entry_threshold": 1.4,
   "stop_loss_pct": 0.45,
-  "take_profit_pct": 0.18,
+  "take_profit_pct": 0.2,
   "trailing_callback": 0.03,
-  "volume_ratio": 2.8,
-  "confluence_required": 4,
+  "volume_ratio": 2.5,
+  "confluence_required": 3,
   "position_size_pct": 0.1,
   "leverage": 25,
   "max_positions": 15,
-  "min_liquidity": 100000
+  "min_liquidity": 100000,
+  "primary_indicator": "ad_line",
+  "entry_method": "ad_divergence",
+  "exit_method": "ad_convergence",
+  "risk_style": "balanced"
 }

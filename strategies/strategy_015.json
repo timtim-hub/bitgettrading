@@ -1,16 +1,20 @@
 {
   "id": 15,
-  "name": "Swing_SupportResistance",
-  "category": "Swing",
-  "rationale": "Trade bounces from key S/R levels. Medium stops, medium TPs for S/R range.",
-  "entry_threshold": 1.8,
-  "stop_loss_pct": 0.45,
+  "name": "Candlestick_Pattern_Master",
+  "category": "Pattern Recognition",
+  "rationale": "Trade Japanese candlestick patterns - doji, hammer, engulfing, etc.",
+  "entry_threshold": 1.5,
+  "stop_loss_pct": 0.4,
   "take_profit_pct": 0.18,
   "trailing_callback": 0.03,
-  "volume_ratio": 2.0,
-  "confluence_required": 4,
+  "volume_ratio": 2.2,
+  "confluence_required": 3,
   "position_size_pct": 0.1,
   "leverage": 25,
   "max_positions": 15,
-  "min_liquidity": 100000
+  "min_liquidity": 100000,
+  "primary_indicator": "candlestick",
+  "entry_method": "pattern_recognition",
+  "exit_method": "pattern_completion",
+  "risk_style": "balanced"
 }

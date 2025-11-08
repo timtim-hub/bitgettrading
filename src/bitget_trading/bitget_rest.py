@@ -10,7 +10,7 @@ from typing import Any
 import aiohttp
 import orjson
 
-from bitget_trading.logger import get_logger
+from .logger import get_logger
 
 logger = get_logger()
 

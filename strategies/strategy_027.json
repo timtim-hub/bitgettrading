@@ -1,16 +1,20 @@
 {
   "id": 27,
-  "name": "Aggressive_VolatilityHunter",
-  "category": "Aggressive",
-  "rationale": "Seeks high volatility for explosive moves. Very wide stops for wild swings, huge TPs.",
-  "entry_threshold": 1.5,
-  "stop_loss_pct": 0.65,
-  "take_profit_pct": 0.32,
-  "trailing_callback": 0.06,
+  "name": "MFI_Volume_Weighted_RSI",
+  "category": "Volume + Momentum",
+  "rationale": "MFI combines volume + RSI. <20 oversold, >80 overbought.",
+  "entry_threshold": 1.1,
+  "stop_loss_pct": 0.4,
+  "take_profit_pct": 0.16,
+  "trailing_callback": 0.025,
   "volume_ratio": 2.5,
   "confluence_required": 3,
   "position_size_pct": 0.1,
   "leverage": 25,
   "max_positions": 15,
-  "min_liquidity": 100000
+  "min_liquidity": 100000,
+  "primary_indicator": "mfi",
+  "entry_method": "mfi_extremes",
+  "exit_method": "mfi_middle",
+  "risk_style": "balanced"
 }

@@ -1,16 +1,20 @@
 {
   "id": 20,
-  "name": "Balanced_VolumePrice",
-  "category": "Balanced",
-  "rationale": "Combines volume and price analysis. Requires strong volume confirmation for entries.",
-  "entry_threshold": 1.7,
-  "stop_loss_pct": 0.45,
+  "name": "CCI_Overbought_Oversold",
+  "category": "Mean Reversion",
+  "rationale": "CCI >+100 = overbought fade, <-100 = oversold buy.",
+  "entry_threshold": 1.0,
+  "stop_loss_pct": 0.4,
   "take_profit_pct": 0.16,
   "trailing_callback": 0.025,
-  "volume_ratio": 2.5,
-  "confluence_required": 4,
+  "volume_ratio": 2.0,
+  "confluence_required": 3,
   "position_size_pct": 0.1,
   "leverage": 25,
   "max_positions": 15,
-  "min_liquidity": 100000
+  "min_liquidity": 100000,
+  "primary_indicator": "cci",
+  "entry_method": "extreme_cci",
+  "exit_method": "cci_normalization",
+  "risk_style": "balanced"
 }

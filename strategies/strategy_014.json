@@ -1,16 +1,20 @@
 {
   "id": 14,
-  "name": "Swing_VolatilityExpansion",
-  "category": "Swing",
-  "rationale": "Enter when volatility expands (Bollinger squeeze breakouts). Wide stops for volatility.",
+  "name": "Fibonacci_Golden_Ratio_Entries",
+  "category": "Retracement",
+  "rationale": "Enter at Fib levels (0.382, 0.5, 0.618) - golden ratio support/resistance.",
   "entry_threshold": 1.6,
-  "stop_loss_pct": 0.55,
-  "take_profit_pct": 0.24,
-  "trailing_callback": 0.04,
-  "volume_ratio": 2.5,
+  "stop_loss_pct": 0.45,
+  "take_profit_pct": 0.2,
+  "trailing_callback": 0.03,
+  "volume_ratio": 2.0,
   "confluence_required": 4,
   "position_size_pct": 0.1,
   "leverage": 25,
   "max_positions": 15,
-  "min_liquidity": 100000
+  "min_liquidity": 100000,
+  "primary_indicator": "fibonacci",
+  "entry_method": "fib_level_bounce",
+  "exit_method": "next_fib_level",
+  "risk_style": "conservative"
 }

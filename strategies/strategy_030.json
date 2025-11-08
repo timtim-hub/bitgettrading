@@ -1,16 +1,20 @@
 {
   "id": 30,
-  "name": "Aggressive_PumpCatcher",
-  "category": "Aggressive",
-  "rationale": "Catch pump beginnings with low threshold + high volume. Quick TP before dump.",
-  "entry_threshold": 1.2,
-  "stop_loss_pct": 0.45,
-  "take_profit_pct": 0.22,
+  "name": "Pivot_Points_Intraday_SR",
+  "category": "Support/Resistance",
+  "rationale": "Trade bounces from daily pivot points - S1, S2, R1, R2.",
+  "entry_threshold": 1.5,
+  "stop_loss_pct": 0.4,
+  "take_profit_pct": 0.18,
   "trailing_callback": 0.03,
-  "volume_ratio": 3.0,
+  "volume_ratio": 2.2,
   "confluence_required": 3,
   "position_size_pct": 0.1,
   "leverage": 25,
   "max_positions": 15,
-  "min_liquidity": 100000
+  "min_liquidity": 100000,
+  "primary_indicator": "pivot_points",
+  "entry_method": "pivot_bounce",
+  "exit_method": "next_pivot",
+  "risk_style": "conservative"
 }

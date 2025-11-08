@@ -1,16 +1,20 @@
 {
   "id": 6,
-  "name": "Scalper_RangeTrader",
-  "category": "Scalping",
-  "rationale": "Exploit range-bound markets. Tight stops/TPs for quick profits in consolidation zones.",
+  "name": "VWAP_Mean_Reversion",
+  "category": "Mean Reversion",
+  "rationale": "Buy when price is >1.5% below VWAP, sell when >1.5% above. Institutional levels.",
   "entry_threshold": 1.0,
-  "stop_loss_pct": 0.25,
-  "take_profit_pct": 0.1,
-  "trailing_callback": 0.015,
-  "volume_ratio": 1.8,
+  "stop_loss_pct": 0.35,
+  "take_profit_pct": 0.15,
+  "trailing_callback": 0.02,
+  "volume_ratio": 2.5,
   "confluence_required": 3,
   "position_size_pct": 0.1,
   "leverage": 25,
   "max_positions": 15,
-  "min_liquidity": 100000
+  "min_liquidity": 100000,
+  "primary_indicator": "vwap",
+  "entry_method": "deviation_from_vwap",
+  "exit_method": "return_to_vwap",
+  "risk_style": "conservative"
 }
