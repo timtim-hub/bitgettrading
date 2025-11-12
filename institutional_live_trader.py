@@ -837,62 +837,88 @@ class InstitutionalLiveTrader:
                             # Place Bitget trailing stop (track_plan) - adaptive callback
                             # Use 3% callback for tighter trailing (allows more profit capture)
                             # CRITICAL: Ensure minimum 2.5% profit is locked in
-                            callback_ratio = 0.03  # 3% trailing callback (tighter = more profit potential)
-                            
-                            # Calculate minimum profit price (2.5% above/below entry)
-                            min_profit_pct = 0.025  # 2.5% minimum profit
-                            
-                            # Get TP1 price (where we want trailing to activate)
-                            tp1_price = position.tp_levels[0][0] if position.tp_levels else None
-                            
-                            if position.side == 'long':
-                                min_profit_price = position.entry_price * (1 + min_profit_pct)
-                                # For LONG: Trigger at TP1 price (where profit starts)
-                                # Bitget trailing activates when price reaches trigger, then trails up
-                                if tp1_price:
-                                    # If current price is already at/above TP1, use current price (trailing activates immediately)
-                                    # Otherwise use TP1 (trailing activates when price reaches TP1)
-                                    trigger_price = max(tp1_price, current_price * 1.001)
-                                else:
-                                    trigger_price = max(current_price * 1.001, min_profit_price * 1.001)
-                                logger.info(f"🔒 Trailing stop for LONG: Trigger @ ${trigger_price:.4f} (TP1: ${tp1_price:.4f if tp1_price else 0:.4f}, Current: ${current_price:.4f}, min profit: {min_profit_pct*100:.1f}%)")
-                            else:
-                                min_profit_price = position.entry_price * (1 - min_profit_pct)
-                                # For SHORT: Trigger at TP1 price (where profit starts)
-                                # Bitget trailing activates when price reaches trigger (drops to TP1), then trails down
-                                if tp1_price:
-                                    # If current price is already at/below TP1, use current price (trailing activates immediately)
-                                    # Otherwise use TP1 (trailing activates when price drops to TP1)
-                                    trigger_price = min(tp1_price, current_price * 0.999)
-                                else:
-                                    trigger_price = min(current_price * 0.999, min_profit_price * 0.999)
-                                logger.info(f"🔒 Trailing stop for SHORT: Trigger @ ${trigger_price:.4f} (TP1: ${tp1_price:.4f if tp1_price else 0:.4f}, Current: ${current_price:.4f}, min profit: {min_profit_pct*100:.1f}%)")
-                            
-                            # Verify we're locking in at least 2.5% profit
-                            if position.side == 'long':
-                                profit_at_trigger = ((trigger_price - position.entry_price) / position.entry_price) * 100
-                            else:
-                                profit_at_trigger = ((position.entry_price - trigger_price) / position.entry_price) * 100
-                            
-                            if profit_at_trigger < min_profit_pct * 100:
-                                logger.warning(f"⚠️ Trailing trigger only locks {profit_at_trigger:.2f}% profit (need {min_profit_pct*100:.1f}%) - adjusting...")
-                                # Adjust trigger to ensure minimum profit
+                            try:
+                                callback_ratio = 0.03  # 3% trailing callback (tighter = more profit potential)
+                                
+                                # Calculate minimum profit price (2.5% above/below entry)
+                                min_profit_pct = 0.025  # 2.5% minimum profit
+                                
+                                # Get TP1 price (where we want trailing to activate)
+                                tp1_price = position.tp_levels[0][0] if position.tp_levels else None
+                                
                                 if position.side == 'long':
-                                    trigger_price = min_profit_price
+                                    min_profit_price = position.entry_price * (1 + min_profit_pct)
+                                    # For LONG: Trigger at TP1 price (where profit starts)
+                                    # Bitget trailing activates when price reaches trigger, then trails up
+                                    if tp1_price:
+                                        # If current price is already at/above TP1, use current price (trailing activates immediately)
+                                        # Otherwise use TP1 (trailing activates when price reaches TP1)
+                                        trigger_price = max(tp1_price, current_price * 1.001)
+                                    else:
+                                        trigger_price = max(current_price * 1.001, min_profit_price * 1.001)
+                                    tp1_display = f"${tp1_price:.4f}" if tp1_price else "N/A"
+                                    logger.info(f"🔒 Trailing stop for LONG: Trigger @ ${trigger_price:.4f} (TP1: {tp1_display}, Current: ${current_price:.4f}, min profit: {min_profit_pct*100:.1f}%)")
                                 else:
-                                    trigger_price = min_profit_price
-                                logger.info(f"✅ Adjusted trigger to ${trigger_price:.4f} to lock {min_profit_pct*100:.1f}% minimum profit")
+                                    min_profit_price = position.entry_price * (1 - min_profit_pct)
+                                    # For SHORT: Trigger at TP1 price (where profit starts)
+                                    # Bitget trailing activates when price reaches trigger (drops to TP1), then trails down
+                                    if tp1_price:
+                                        # If current price is already at/below TP1, use current price (trailing activates immediately)
+                                        # Otherwise use TP1 (trailing activates when price drops to TP1)
+                                        trigger_price = min(tp1_price, current_price * 0.999)
+                                    else:
+                                        trigger_price = min(current_price * 0.999, min_profit_price * 0.999)
+                                    tp1_display = f"${tp1_price:.4f}" if tp1_price else "N/A"
+                                    logger.info(f"🔒 Trailing stop for SHORT: Trigger @ ${trigger_price:.4f} (TP1: {tp1_display}, Current: ${current_price:.4f}, min profit: {min_profit_pct*100:.1f}%)")
+                                
+                                # Verify we're locking in at least 2.5% profit
+                                if position.side == 'long':
+                                    profit_at_trigger = ((trigger_price - position.entry_price) / position.entry_price) * 100
+                                else:
+                                    profit_at_trigger = ((position.entry_price - trigger_price) / position.entry_price) * 100
+                                
+                                if profit_at_trigger < min_profit_pct * 100:
+                                    logger.warning(f"⚠️ Trailing trigger only locks {profit_at_trigger:.2f}% profit (need {min_profit_pct*100:.1f}%) - adjusting...")
+                                    # Adjust trigger to ensure minimum profit
+                                    if position.side == 'long':
+                                        trigger_price = min_profit_price
+                                    else:
+                                        trigger_price = min_profit_price
+                                    logger.info(f"✅ Adjusted trigger to ${trigger_price:.4f} to lock {min_profit_pct*100:.1f}% minimum profit")
+                                
+                                # CRITICAL: Wait a moment after TP1 hit before placing trailing stop
+                                # Bitget needs time to process the TP1 execution
+                                await asyncio.sleep(2.0)
+                                
+                                # Get fresh position size after TP1 execution
+                                positions_list = await self.rest_client.get_positions(symbol)
+                                fresh_size = actual_size
+                                if positions_list:
+                                    for pos in positions_list:
+                                        if pos.get('symbol') == symbol:
+                                            fresh_size = float(pos.get('total', 0) or pos.get('available', 0))
+                                            break
+                                
+                                # Ensure we have a valid size (minimum 0.001)
+                                if fresh_size < 0.001:
+                                    logger.warning(f"⚠️ Position size too small for trailing stop ({fresh_size:.4f}) | {symbol} | Using fallback fixed stop")
+                                    raise ValueError(f"Position size too small: {fresh_size}")
+                                
+                                logger.info(f"🚀 Placing trailing stop | {symbol} | Size: {fresh_size:.4f} | Trigger: ${trigger_price:.4f} | Callback: {callback_ratio*100:.1f}%")
+                                
+                                trailing_response = await self.rest_client.place_trailing_stop_full_position(
+                                    symbol=symbol,
+                                    hold_side=position.side,
+                                    callback_ratio=callback_ratio,
+                                    trigger_price=trigger_price,
+                                    size=fresh_size,
+                                    size_precision=3
+                                )
+                            except Exception as e:
+                                logger.error(f"❌ Error preparing trailing stop for {symbol}: {e}", exc_info=True)
+                                trailing_response = None
                             
-                            trailing_response = await self.rest_client.place_trailing_stop_full_position(
-                                symbol=symbol,
-                                hold_side=position.side,
-                                callback_ratio=callback_ratio,
-                                trigger_price=trigger_price,
-                                size=actual_size,
-                                size_precision=3
-                            )
-                            
-                            if trailing_response.get('code') == '00000':
+                            if trailing_response and trailing_response.get('code') == '00000':
                                 trailing_order_id = trailing_response.get('data', {}).get('orderId')
                                 position.stop_order_id = trailing_order_id
                                 position.moved_to_be = True
