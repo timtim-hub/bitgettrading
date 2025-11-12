@@ -1084,13 +1084,13 @@ class InstitutionalLiveTrader:
                         f"TP1: ${tp_price:.4f} ({tp_dist:+.2f}%) | SL: ${position.stop_price:.4f} ({sl_dist:+.2f}%) | "
                         f"Trailing: {trailing_status}"
                     )
+            
+            except Exception as e:
+                logger.error(f"❌ Error monitoring position {symbol}: {e}")
         
         # Update last TP/SL check time
         if check_tpsl:
             self._last_tpsl_check = datetime.now()
-            
-            except Exception as e:
-                logger.error(f"❌ Error monitoring position {symbol}: {e}")
     
     async def scan_for_signals(self, symbols: List[str]):
         """Scan symbols for trading signals"""
