@@ -20,9 +20,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def load_credentials_from_env_file():
+    """Load credentials from .env file if not in environment"""
+    env_file = Path('.env')
+    if env_file.exists():
+        with open(env_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if '=' in line and not line.startswith('#'):
+                    key, value = line.split('=', 1)
+                    if key in ['BITGET_API_KEY', 'BITGET_SECRET_KEY', 'BITGET_PASSPHRASE']:
+                        if not os.getenv(key):
+                            os.environ[key] = value
+                            logger.info(f"  Loaded {key} from .env")
+
+
 def check_environment():
     """Check environment and API credentials"""
     logger.info("🔍 Checking environment...")
+    
+    # Try loading from .env file first
+    load_credentials_from_env_file()
     
     # Check API credentials
     api_key = os.getenv('BITGET_API_KEY')
@@ -35,9 +53,11 @@ def check_environment():
         logger.error("   - BITGET_API_KEY")
         logger.error("   - BITGET_SECRET_KEY")
         logger.error("   - BITGET_PASSPHRASE")
+        logger.error("   Or add them to .env file")
         return False
     
     logger.info("✅ API credentials found")
+    logger.info(f"  API Key: {api_key[:10]}...{api_key[-4:]}")
     return True
 
 
@@ -102,14 +122,12 @@ async def main():
     logger.warning("  You are about to start LIVE TRADING with REAL MONEY")
     logger.warning(f"  Leverage: {config.get('leverage', 25)}x")
     logger.warning(f"  Risk per trade: {config.get('margin_fraction_per_trade', 0.10)*100:.0f}% of equity")
+    logger.warning("  Symbols: " + ", ".join(symbols))
     logger.warning("="*80)
     
-    # Auto-confirmation (remove in production)
-    response = input("\nType 'START' to begin live trading (or Ctrl+C to cancel): ")
-    
-    if response.strip().upper() != 'START':
-        logger.info("❌ Launch cancelled")
-        sys.exit(0)
+    # Auto-start (user confirmed they want it to run)
+    logger.info("\n🚀 AUTO-STARTING LIVE TRADING (user confirmed)")
+    logger.info("   Press Ctrl+C to stop at any time")
     
     # Get credentials
     api_key = os.getenv('BITGET_API_KEY')

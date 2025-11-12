@@ -12,8 +12,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import logging
 
-from data_fetcher import HistoricalDataFetcher
-from src.bitget_rest import BitgetRestClient
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
+from bitget_trading.bitget_rest import BitgetRestClient
 from institutional_indicators import InstitutionalIndicators
 from institutional_universe import UniverseFilter, RegimeClassifier, MarketData
 from institutional_risk import RiskManager
@@ -68,8 +71,7 @@ class InstitutionalLiveTrader:
         self.risk_manager = RiskManager(config)
         
         # API clients
-        self.rest_client = BitgetRestClient(api_key, secret_key, passphrase)
-        self.data_fetcher = HistoricalDataFetcher()
+        self.rest_client = BitgetRestClient(api_key, secret_key, passphrase, sandbox=False)
         
         # Trading state
         self.positions: Dict[str, LivePosition] = {}
@@ -90,21 +92,58 @@ class InstitutionalLiveTrader:
         logger.info(f"  Max symbols: {self.concurrency_config.get('max_symbols', 3)}")
         logger.info(f"  Max per sector: {self.concurrency_config.get('max_per_sector', 2)}")
     
+    async def fetch_candles(self, symbol: str, timeframe: str, days: int = 7) -> Optional[pd.DataFrame]:
+        """Fetch historical candles"""
+        try:
+            # Calculate how many candles we need
+            candles_per_day = {'1m': 1440, '3m': 480, '5m': 288, '15m': 96, '1h': 24}
+            total_candles = days * candles_per_day.get(timeframe, 288)
+            
+            # Bitget returns max 200 candles per request
+            all_candles = []
+            limit = min(200, total_candles)
+            
+            response = await self.rest_client.get_historical_candles(
+                symbol=symbol,
+                granularity=timeframe,
+                limit=limit
+            )
+            
+            if response.get('code') == '00000' and 'data' in response:
+                candles = response['data']
+                if candles:
+                    # Convert to DataFrame
+                    df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'quote_volume'])
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                    df = df.sort_values('timestamp')
+                    
+                    # Convert to numeric
+                    for col in ['open', 'high', 'low', 'close', 'volume']:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                    
+                    return df
+            
+            return None
+        
+        except Exception as e:
+            logger.error(f"❌ Error fetching candles for {symbol}: {e}")
+            return None
+    
     async def get_account_equity(self) -> float:
         """Get total account equity in USDT"""
         try:
-            response = await self.rest_client.get_account_info()
+            balance = await self.rest_client.get_account_balance()
             
-            if response.get('code') == '00000' and 'data' in response:
-                account_data = response['data']
-                if isinstance(account_data, list) and len(account_data) > 0:
-                    equity = float(account_data[0].get('usdtEquity', 0))
+            if balance.get('code') == '00000' and 'data' in balance:
+                data = balance['data']
+                if isinstance(data, list) and len(data) > 0:
+                    equity = float(data[0].get('usdtEquity', 0))
                     return equity
-                elif isinstance(account_data, dict):
-                    equity = float(account_data.get('usdtEquity', 0))
+                elif isinstance(data, dict):
+                    equity = float(data.get('usdtEquity', 0))
                     return equity
             
-            logger.warning(f"⚠️ Could not get account equity: {response}")
+            logger.warning(f"⚠️ Could not get account equity: {balance}")
             return 0.0
         
         except Exception as e:
@@ -476,7 +515,7 @@ class InstitutionalLiveTrader:
                     position.lowest_price = min(position.lowest_price, current_price) if position.lowest_price > 0 else current_price
                 
                 # Get latest bar for tripwire checks
-                df = await self.data_fetcher.fetch_candles(symbol, timeframe='5m', days=1, use_cache=False)
+                df = await self.fetch_candles(symbol, timeframe='5m', days=1)
                 if df is None or len(df) == 0:
                     continue
                 
@@ -535,7 +574,7 @@ class InstitutionalLiveTrader:
                     continue
                 
                 # Get data
-                df_5m = await self.data_fetcher.fetch_candles(symbol, timeframe='5m', days=7, use_cache=True)
+                df_5m = await self.fetch_candles(symbol, timeframe='5m', days=7)
                 if df_5m is None or len(df_5m) < 100:
                     continue
                 
