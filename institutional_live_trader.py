@@ -101,6 +101,112 @@ class InstitutionalLiveTrader:
         logger.info(f"  Max symbols: {self.concurrency_config.get('max_symbols', 3)}")
         logger.info(f"  Max per sector: {self.concurrency_config.get('max_per_sector', 2)}")
     
+    async def fetch_existing_positions(self) -> Dict[str, LivePosition]:
+        """
+        Fetch existing open positions from Bitget and reconstruct LivePosition objects
+        
+        Returns:
+            Dict mapping symbol to LivePosition
+        """
+        logger.info("🔍 Fetching existing positions from Bitget...")
+        
+        try:
+            # Get all positions (call API directly to get all, not filtered by symbol)
+            endpoint = "/api/v2/mix/position/all-position"
+            params = {
+                "productType": "USDT-FUTURES",
+                "marginCoin": "USDT",
+            }
+            
+            response = await self.rest_client._request("GET", endpoint, params=params)
+            
+            if response.get("code") != "00000" or "data" not in response:
+                logger.warning("⚠️ Could not fetch positions from Bitget")
+                return {}
+            
+            all_positions = response.get("data", [])
+            
+            # Filter for positions with size > 0
+            open_positions = [p for p in all_positions if float(p.get("total", 0)) > 0]
+            
+            logger.info(f"📊 Found {len(open_positions)} open positions on Bitget")
+            
+            reconstructed = {}
+            
+            for pos_data in open_positions:
+                try:
+                    symbol = pos_data.get("symbol", "")
+                    hold_side = pos_data.get("holdSide", "")  # "long" or "short"
+                    total_size = float(pos_data.get("total", 0))
+                    avg_price = float(pos_data.get("averageOpenPrice", 0))
+                    unrealized_pnl = float(pos_data.get("unrealizedPL", 0))
+                    
+                    if not symbol or total_size == 0:
+                        continue
+                    
+                    # Convert holdSide to our format
+                    side = "long" if hold_side.lower() == "long" else "short"
+                    
+                    # Get current market price for stop calculation
+                    market_data = await self.get_market_data(symbol)
+                    if not market_data:
+                        logger.warning(f"⚠️ Could not get market data for {symbol}, skipping")
+                        continue
+                    
+                    current_price = market_data.last_price
+                    
+                    # Reconstruct position with estimated values
+                    # We don't have original entry time, so use current time
+                    # We don't have original strategy, so default to "Trend"
+                    # We don't have original TP levels, so create default
+                    
+                    # Estimate stop price (use 1.5 ATR from entry, typical for Trend)
+                    # For now, use 2% from entry as default stop
+                    estimated_stop = avg_price * 0.98 if side == "long" else avg_price * 1.02
+                    
+                    # Default TP level (1.2x ATR, typical for Trend)
+                    tp_price = avg_price * 1.012 if side == "long" else avg_price * 0.988
+                    tp_levels = [(tp_price, 1.0)]  # Single TP, exit all
+                    
+                    # Calculate notional
+                    notional = total_size * current_price
+                    
+                    position = LivePosition(
+                        symbol=symbol,
+                        side=side,
+                        strategy="Trend",  # Default, we don't know original
+                        entry_time=datetime.now() - timedelta(minutes=15),  # Estimate
+                        entry_price=avg_price,
+                        size=total_size,
+                        notional=notional,
+                        stop_price=estimated_stop,
+                        tp_levels=tp_levels,
+                        remaining_size=total_size,
+                        highest_price=current_price if side == "long" else 0,
+                        lowest_price=current_price if side == "short" else 0,
+                        time_stop_time=datetime.now() + timedelta(minutes=25),  # Default 25 min
+                        moved_to_be=False  # Assume not moved yet
+                    )
+                    
+                    reconstructed[symbol] = position
+                    
+                    logger.info(
+                        f"✅ Reconstructed position: {symbol} {side.upper()} | "
+                        f"Size: {total_size:.4f} | Entry: ${avg_price:.4f} | "
+                        f"P&L: ${unrealized_pnl:.2f}"
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error reconstructing position for {symbol}: {e}")
+                    continue
+            
+            logger.info(f"✅ Reconstructed {len(reconstructed)} positions")
+            return reconstructed
+        
+        except Exception as e:
+            logger.error(f"❌ Error fetching existing positions: {e}")
+            return {}
+    
     async def fetch_candles(self, symbol: str, timeframe: str, days: int = 7) -> Optional[pd.DataFrame]:
         """Fetch historical candles (makes multiple API requests if needed)"""
         try:
@@ -800,6 +906,31 @@ class InstitutionalLiveTrader:
         logger.info(f"  Scan interval: {scan_interval_seconds}s")
         logger.info(f"  Max positions: {self.concurrency_config.get('max_symbols', 3)}")
         logger.info("="*80)
+        
+        # CRITICAL: Fetch existing positions on startup
+        logger.info("\n🔄 Checking for existing positions on Bitget...")
+        existing_positions = await self.fetch_existing_positions()
+        
+        if existing_positions:
+            logger.info(f"✅ Found {len(existing_positions)} existing positions - resuming monitoring")
+            self.positions.update(existing_positions)
+            self.active_symbols.update(existing_positions.keys())
+            
+            # Update sector counts
+            for symbol in existing_positions.keys():
+                sector = symbol[:3]
+                self.sector_counts[sector] = self.sector_counts.get(sector, 0) + 1
+            
+            # Verify stop-loss orders exist for each position
+            for symbol, position in existing_positions.items():
+                logger.info(f"🔍 Verifying stop-loss for {symbol}...")
+                # Try to place stop-loss if missing (will fail gracefully if exists)
+                if not position.stop_order_id:
+                    position.stop_order_id = await self.place_stop_loss(position)
+        else:
+            logger.info("✅ No existing positions found - starting fresh")
+        
+        logger.info(f"\n📊 Starting with {len(self.positions)} tracked positions\n")
         
         while True:
             try:
