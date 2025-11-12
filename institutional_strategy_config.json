@@ -12,25 +12,24 @@
     "min_fraction_of_liq_distance": 0.30
   },
   "concurrency": {
-    "max_symbols": 3,
-    "max_per_sector": 2
+    "max_symbols": 10,
+    "max_per_sector": 3
   },
   "buckets": {
     "majors": {
-      "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"],
-      "spread_bps_cap": 6,
-      "min_depth_usd": 100000,
-      "min_quote_vol_24h": 80000000
+      "spread_bps_cap": 15,
+      "min_depth_usd": 10000,
+      "min_quote_vol_24h": 5000000
     },
     "midcaps": {
-      "spread_bps_cap": 8,
-      "min_depth_usd": 50000,
-      "min_quote_vol_24h": 80000000
+      "spread_bps_cap": 25,
+      "min_depth_usd": 5000,
+      "min_quote_vol_24h": 2000000
     },
     "micros": {
-      "spread_bps_cap": 12,
-      "min_depth_usd": 20000,
-      "min_quote_vol_24h": 120000000
+      "spread_bps_cap": 40,
+      "min_depth_usd": 2000,
+      "min_quote_vol_24h": 500000
     }
   },
   "regime": {
@@ -119,7 +118,8 @@
   },
   "scheduling": {
     "funding_blackout_min": 2,
-    "gate_check_interval_min": 60
+    "gate_check_interval_min": 30,
+    "scan_interval_seconds": 15
   },
   "features": {
     "use_orderflow": false,

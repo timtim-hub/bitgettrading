@@ -87,6 +87,15 @@ class InstitutionalLiveTrader:
         # Symbol data cache
         self.symbol_data_cache: Dict[str, Dict] = {}
         
+        # Load symbol buckets
+        self.symbol_buckets: Dict[str, List[str]] = {}
+        bucket_file = Path('symbol_buckets.json')
+        if bucket_file.exists():
+            import json
+            with open(bucket_file, 'r') as f:
+                self.symbol_buckets = json.load(f)
+            logger.info(f"✅ Loaded symbol buckets: {self.symbol_buckets.get('total_symbols', 0)} symbols")
+        
         logger.info("✅ InstitutionalLiveTrader initialized")
         logger.info(f"  Mode: {'LIVE' if self.mode_config.get('live_enabled') else 'BACKTEST ONLY'}")
         logger.info(f"  Max symbols: {self.concurrency_config.get('max_symbols', 3)}")

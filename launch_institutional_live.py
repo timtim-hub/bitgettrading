@@ -91,12 +91,25 @@ def check_config():
 
 def get_trading_symbols():
     """Get list of symbols to trade"""
-    # Start with majors only
-    symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
+    # Load ALL symbols from bucket configuration
+    bucket_file = Path('symbol_buckets.json')
     
-    logger.info(f"📋 Trading symbols: {', '.join(symbols)}")
+    if not bucket_file.exists():
+        logger.warning("⚠️  symbol_buckets.json not found, using defaults")
+        return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
     
-    return symbols
+    with open(bucket_file, 'r') as f:
+        buckets = json.load(f)
+    
+    # Combine all buckets
+    all_symbols = buckets.get('majors', []) + buckets.get('midcaps', []) + buckets.get('micros', [])
+    
+    logger.info(f"📋 Trading symbols: {len(all_symbols)} total")
+    logger.info(f"  Majors: {len(buckets.get('majors', []))}")
+    logger.info(f"  Mid-caps: {len(buckets.get('midcaps', []))}")
+    logger.info(f"  Micros: {len(buckets.get('micros', []))}")
+    
+    return all_symbols
 
 
 async def main():
@@ -138,9 +151,12 @@ async def main():
     logger.info("\n🚀 Initializing trader...")
     trader = InstitutionalLiveTrader(config, api_key, secret_key, passphrase)
     
-    # Run
+    # Run with fast scanning (15s interval)
+    scan_interval = config.get('scheduling', {}).get('scan_interval_seconds', 15)
+    logger.info(f"⏱️  Scan interval: {scan_interval}s")
+    
     try:
-        await trader.run(symbols, scan_interval_seconds=60)
+        await trader.run(symbols, scan_interval_seconds=scan_interval)
     except KeyboardInterrupt:
         logger.info("\n⚠️  Interrupted by user")
     except Exception as e:

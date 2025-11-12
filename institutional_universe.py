@@ -8,6 +8,8 @@ import numpy as np
 from typing import Dict, Optional, Tuple, List
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -41,18 +43,32 @@ class UniverseFilter:
         self.config = config
         self.buckets = config.get('buckets', {})
         
-        # Define major symbols
-        self.major_symbols = self.buckets.get('majors', {}).get('symbols', ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'])
+        # Load bucket assignments from symbol_buckets.json
+        self.bucket_assignments = {'majors': [], 'midcaps': [], 'micros': []}
+        bucket_file = Path('symbol_buckets.json')
+        if bucket_file.exists():
+            with open(bucket_file, 'r') as f:
+                self.bucket_assignments = json.load(f)
+            logger.info(f"✅ Loaded {self.bucket_assignments.get('total_symbols', 0)} symbol assignments")
+        
+        # Major symbols list for fast lookup
+        self.major_symbols = set(self.bucket_assignments.get('majors', []))
+        self.midcap_symbols = set(self.bucket_assignments.get('midcaps', []))
+        self.micro_symbols = set(self.bucket_assignments.get('micros', []))
         
         logger.info(f"✅ UniverseFilter initialized with {len(self.buckets)} buckets")
+        logger.info(f"  Majors: {len(self.major_symbols)}, Mid-caps: {len(self.midcap_symbols)}, Micros: {len(self.micro_symbols)}")
     
     def get_bucket(self, symbol: str) -> str:
         """Determine which bucket a symbol belongs to"""
         if symbol in self.major_symbols:
             return 'majors'
-        # For now, we'll use volume to classify mid-caps vs micros
-        # This will be updated with actual market data in real-time
-        return 'midcaps'  # Default
+        elif symbol in self.midcap_symbols:
+            return 'midcaps'
+        elif symbol in self.micro_symbols:
+            return 'micros'
+        # Default to midcaps if not found
+        return 'midcaps'
     
     def update_bucket_from_volume(self, symbol: str, quote_vol_24h: float) -> str:
         """Update bucket classification based on 24h volume"""
