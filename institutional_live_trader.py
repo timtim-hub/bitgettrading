@@ -102,38 +102,56 @@ class InstitutionalLiveTrader:
         logger.info(f"  Max per sector: {self.concurrency_config.get('max_per_sector', 2)}")
     
     async def fetch_candles(self, symbol: str, timeframe: str, days: int = 7) -> Optional[pd.DataFrame]:
-        """Fetch historical candles"""
+        """Fetch historical candles (makes multiple API requests if needed)"""
         try:
             # Calculate how many candles we need
             candles_per_day = {'1m': 1440, '3m': 480, '5m': 288, '15m': 96, '1h': 24}
             total_candles = days * candles_per_day.get(timeframe, 288)
             
-            # Bitget returns max 200 candles per request
+            # Bitget returns max 200 candles per request - need multiple requests
             all_candles = []
-            limit = min(200, total_candles)
+            requests_needed = min((total_candles + 199) // 200, 10)  # Max 10 requests (2000 candles)
             
-            response = await self.rest_client.get_historical_candles(
-                symbol=symbol,
-                granularity=timeframe,
-                limit=limit
-            )
+            for i in range(requests_needed):
+                response = await self.rest_client.get_historical_candles(
+                    symbol=symbol,
+                    granularity=timeframe,
+                    limit=200
+                )
+                
+                if response.get('code') == '00000' and 'data' in response:
+                    candles = response['data']
+                    if candles:
+                        # Deduplicate by timestamp
+                        existing_timestamps = {c[0] for c in all_candles}
+                        new_candles = [c for c in candles if c[0] not in existing_timestamps]
+                        all_candles.extend(new_candles)
+                        
+                        if len(candles) < 200:  # No more historical data
+                            break
+                    else:
+                        break
+                else:
+                    break
+                
+                # Small delay between requests to avoid rate limit
+                if i < requests_needed - 1:
+                    await asyncio.sleep(0.05)
             
-            if response.get('code') == '00000' and 'data' in response:
-                candles = response['data']
-                if candles:
-                    # Convert to DataFrame
-                    df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'quote_volume'])
-                    df['timestamp'] = pd.to_datetime(pd.to_numeric(df['timestamp'], errors='coerce'), unit='ms')
-                    df = df.sort_values('timestamp')
-                    
-                    # Set timestamp as index (required for indicators)
-                    df = df.set_index('timestamp')
-                    
-                    # Convert to numeric
-                    for col in ['open', 'high', 'low', 'close', 'volume']:
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
-                    
-                    return df
+            if all_candles:
+                # Convert to DataFrame
+                df = pd.DataFrame(all_candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'quote_volume'])
+                df['timestamp'] = pd.to_datetime(pd.to_numeric(df['timestamp'], errors='coerce'), unit='ms')
+                df = df.sort_values('timestamp')
+                
+                # Set timestamp as index (required for indicators)
+                df = df.set_index('timestamp')
+                
+                # Convert to numeric
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                
+                return df
             
             return None
         
@@ -575,19 +593,33 @@ class InstitutionalLiveTrader:
     
     async def scan_for_signals(self, symbols: List[str]):
         """Scan symbols for trading signals"""
+        logger.info(f"🔍 Starting signal scan: {len(symbols)} symbols, {len(self.positions)} open positions")
+        
+        stats = {'checked': 0, 'gates_failed': 0, 'data_failed': 0, 'no_signal': 0, 'signals_found': 0}
+        
         for symbol in symbols:
             try:
+                stats['checked'] += 1
+                
                 # Check if can open position
                 if not await self.can_open_position(symbol, 'any'):
                     continue
                 
                 # Check universe gates
                 if not await self.passes_universe_gates(symbol):
+                    stats['gates_failed'] += 1
+                    if stats['gates_failed'] <= 3:  # Log first 3 failures
+                        logger.debug(f"  ⛔ {symbol}: Failed universe gates")
                     continue
                 
-                # Get data
-                df_5m = await self.fetch_candles(symbol, timeframe='5m', days=7)
-                if df_5m is None or len(df_5m) < 100:
+                # Get data (need way more for 15m resampling and EMA200)
+                # 200 5m bars = only 67 15m bars (not enough!)
+                # Need 5000+ 5m bars for good 15m data (333+ 15m bars for EMA200)
+                df_5m = await self.fetch_candles(symbol, timeframe='5m', days=30)  # ~8640 bars
+                if df_5m is None or len(df_5m) < 500:
+                    stats['data_failed'] += 1
+                    if stats['data_failed'] <= 3:  # Log first 3 failures
+                        logger.debug(f"  ⚠️  {symbol}: Insufficient data ({0 if df_5m is None else len(df_5m)} bars)")
                     continue
                 
                 # Calculate indicators
@@ -622,7 +654,14 @@ class InstitutionalLiveTrader:
                     signal = trend.generate_signal(df_15m, -1)
                 
                 if not signal:
+                    stats['no_signal'] += 1
+                    if stats['no_signal'] <= 5:  # Log first 5
+                        logger.debug(f"  ⚪ {symbol}: No signal ({regime_data.regime} regime)")
                     continue
+                
+                # Found a signal!
+                stats['signals_found'] += 1
+                logger.info(f"🎯 SIGNAL FOUND: {symbol} {signal.side.upper()} | {signal.strategy} | {regime_data.regime} regime")
                 
                 # Get account equity
                 equity = await self.get_account_equity()
@@ -689,6 +728,15 @@ class InstitutionalLiveTrader:
             
             except Exception as e:
                 logger.error(f"❌ Error scanning {symbol}: {e}")
+        
+        # Summary
+        logger.info(
+            f"📊 Scan complete: checked={stats['checked']}, "
+            f"gates_failed={stats['gates_failed']}, "
+            f"data_failed={stats['data_failed']}, "
+            f"no_signal={stats['no_signal']}, "
+            f"signals_found={stats['signals_found']}"
+        )
     
     def _get_levels(self, df):
         """Get price levels from DataFrame"""

@@ -13,7 +13,7 @@ import logging
 from institutional_live_trader import InstitutionalLiveTrader
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Enable DEBUG to see detailed scanning logs
     format='%(asctime)s | %(levelname)7s | %(name)s | %(message)s',
     datefmt='%H:%M:%S'
 )
