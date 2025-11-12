@@ -114,8 +114,11 @@ class InstitutionalLiveTrader:
                 if candles:
                     # Convert to DataFrame
                     df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'quote_volume'])
-                    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                    df['timestamp'] = pd.to_datetime(pd.to_numeric(df['timestamp'], errors='coerce'), unit='ms')
                     df = df.sort_values('timestamp')
+                    
+                    # Set timestamp as index (required for indicators)
+                    df = df.set_index('timestamp')
                     
                     # Convert to numeric
                     for col in ['open', 'high', 'low', 'close', 'volume']:
