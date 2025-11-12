@@ -748,19 +748,38 @@ class InstitutionalLiveTrader:
                                 
                                 # Place Bitget trailing stop (track_plan) - adaptive callback
                                 # Use 3% callback for tighter trailing (allows more profit capture)
-                                # This gives room for price to move beyond TP1 while protecting gains
+                                # CRITICAL: Ensure minimum 2.5% profit is locked in
                                 callback_ratio = 0.03  # 3% trailing callback (tighter = more profit potential)
                                 
-                                # Trigger price: Activate immediately (at current price)
-                                # For LONG: Trigger at current (trails up as price rises)
-                                # For SHORT: Trigger at current (trails down as price falls)
-                                # Bitget requires trigger to be in direction of trailing
+                                # Calculate minimum profit price (2.5% above/below entry)
+                                min_profit_pct = 0.025  # 2.5% minimum profit
                                 if position.side == 'long':
-                                    # For LONG trailing: trigger should be >= current (trails up)
-                                    trigger_price = current_price * 1.001  # Slightly above to ensure activation
+                                    min_profit_price = position.entry_price * (1 + min_profit_pct)
+                                    # Trigger price: Must be at least 2.5% above entry to lock in minimum profit
+                                    # Then trail with 3% callback from peak
+                                    trigger_price = max(current_price * 1.001, min_profit_price * 1.001)
+                                    logger.info(f"🔒 Trailing stop for LONG: Trigger @ ${trigger_price:.4f} (min profit locked: ${min_profit_price:.4f} = {min_profit_pct*100:.1f}%)")
                                 else:
-                                    # For SHORT trailing: trigger should be <= current (trails down)
-                                    trigger_price = current_price * 0.999  # Slightly below to ensure activation
+                                    min_profit_price = position.entry_price * (1 - min_profit_pct)
+                                    # Trigger price: Must be at least 2.5% below entry to lock in minimum profit
+                                    # Then trail with 3% callback from peak
+                                    trigger_price = min(current_price * 0.999, min_profit_price * 0.999)
+                                    logger.info(f"🔒 Trailing stop for SHORT: Trigger @ ${trigger_price:.4f} (min profit locked: ${min_profit_price:.4f} = {min_profit_pct*100:.1f}%)")
+                                
+                                # Verify we're locking in at least 2.5% profit
+                                if position.side == 'long':
+                                    profit_at_trigger = ((trigger_price - position.entry_price) / position.entry_price) * 100
+                                else:
+                                    profit_at_trigger = ((position.entry_price - trigger_price) / position.entry_price) * 100
+                                
+                                if profit_at_trigger < min_profit_pct * 100:
+                                    logger.warning(f"⚠️ Trailing trigger only locks {profit_at_trigger:.2f}% profit (need {min_profit_pct*100:.1f}%) - adjusting...")
+                                    # Adjust trigger to ensure minimum profit
+                                    if position.side == 'long':
+                                        trigger_price = min_profit_price * 1.001
+                                    else:
+                                        trigger_price = min_profit_price * 0.999
+                                    logger.info(f"✅ Adjusted trigger to ${trigger_price:.4f} to lock {min_profit_pct*100:.1f}% minimum profit")
                                 
                                 trailing_response = await self.rest_client.place_trailing_stop_full_position(
                                     symbol=symbol,
