@@ -1043,6 +1043,21 @@ class InstitutionalLiveTrader:
                             
                             if len(tp_orders) == 0 and position.tp_levels:
                                 tp1_price = position.tp_levels[0][0]
+                                
+                                # Validate TP price before re-placing
+                                if position.side == 'short':
+                                    # For SHORT: TP must be below current price
+                                    if tp1_price >= current_price:
+                                        tp1_price = current_price * 0.999
+                                        logger.warning(f"⚠️ Adjusted TP1 to {tp1_price:.4f} (below current {current_price:.4f})")
+                                        position.tp_levels[0] = (tp1_price, position.tp_levels[0][1])
+                                else:
+                                    # For LONG: TP must be above current price
+                                    if tp1_price <= current_price:
+                                        tp1_price = current_price * 1.001
+                                        logger.warning(f"⚠️ Adjusted TP1 to {tp1_price:.4f} (above current {current_price:.4f})")
+                                        position.tp_levels[0] = (tp1_price, position.tp_levels[0][1])
+                                
                                 logger.warning(f"⚠️ Missing TP order detected | {symbol} | Re-placing...")
                                 tp_response = await self.rest_client.place_tpsl_order(
                                     symbol=symbol,
@@ -1527,24 +1542,49 @@ class InstitutionalLiveTrader:
                     except Exception as e:
                         logger.debug(f"⚠️ Could not validate TP price: {e}")
                 
-                tpsl_response = await self.rest_client.place_tpsl_order(
-                    symbol=symbol,
-                    hold_side=position.side,
-                    size=position.remaining_size,
-                    stop_loss_price=position.stop_price,
-                    take_profit_price=round(tp1_price, 2) if tp1_price else None,
-                    size_precision=3
-                )
+                # Retry TP/SL placement for recovered positions (they may need more time)
+                tpsl_response = None
+                for attempt in range(3):
+                    try:
+                        tpsl_response = await self.rest_client.place_tpsl_order(
+                            symbol=symbol,
+                            hold_side=position.side,
+                            size=position.remaining_size,
+                            stop_loss_price=position.stop_price,
+                            take_profit_price=round(tp1_price, 2) if tp1_price else None,
+                            size_precision=3
+                        )
+                        
+                        sl_ok = tpsl_response.get('sl', {}).get('code') == '00000'
+                        tp_ok = tpsl_response.get('tp', {}).get('code') == '00000' if tp1_price else True
+                        
+                        if sl_ok and tp_ok:
+                            break
+                        elif attempt < 2:
+                            await asyncio.sleep(3.0 * (attempt + 1))  # 3s, 6s
+                    except Exception as e:
+                        if attempt < 2:
+                            await asyncio.sleep(3.0 * (attempt + 1))
+                        else:
+                            logger.error(f"❌ Failed to place TP/SL for recovered {symbol}: {e}")
                 
                 # Store order IDs
-                if tpsl_response.get('sl', {}).get('code') == '00000':
+                if tpsl_response and tpsl_response.get('sl', {}).get('code') == '00000':
                     position.stop_order_id = tpsl_response.get('sl', {}).get('data', {}).get('orderId')
                     logger.info(f"✅ Exchange SL placed for recovered position | {symbol}")
+                elif tpsl_response:
+                    sl_code = tpsl_response.get('sl', {}).get('code', 'N/A')
+                    logger.warning(f"⚠️ SL placement failed for recovered {symbol} | Code: {sl_code}")
                 
-                if tpsl_response.get('tp', {}).get('code') == '00000':
+                if tpsl_response and tpsl_response.get('tp', {}).get('code') == '00000' and tp1_price:
                     tp_order_id = tpsl_response.get('tp', {}).get('data', {}).get('orderId')
                     position.tp_order_ids[0] = tp_order_id
                     logger.info(f"✅ Exchange TP1 placed for recovered position | {symbol}")
+                elif tpsl_response and tp1_price:
+                    tp_code = tpsl_response.get('tp', {}).get('code', 'N/A')
+                    tp_msg = tpsl_response.get('tp', {}).get('msg', 'N/A')
+                    logger.warning(f"⚠️ TP placement failed for recovered {symbol} | Code: {tp_code} | Msg: {tp_msg}")
+                    logger.warning(f"   Position will be monitored - periodic check will re-place TP if needed")
         else:
             logger.info("✅ No existing positions found - starting fresh")
         
