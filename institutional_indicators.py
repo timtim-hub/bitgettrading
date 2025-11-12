@@ -221,17 +221,22 @@ class InstitutionalIndicators:
         """
         df = df.copy()
         
-        # Ensure datetime index
-        if 'timestamp' in df.columns:
-            df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
-        elif not isinstance(df.index, pd.DatetimeIndex):
-            df.index = pd.to_datetime(df.index)
-            df['datetime'] = df.index
+        # Ensure datetime column exists
+        if not isinstance(df.index, pd.DatetimeIndex):
+            if 'timestamp' in df.columns:
+                df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
+            else:
+                df['datetime'] = pd.to_datetime(df.index)
         else:
-            df['datetime'] = df.index
+            # Index is datetime, use it directly
+            df = df.reset_index()
+            if 'index' in df.columns:
+                df = df.rename(columns={'index': 'datetime'})
+            elif 'datetime' not in df.columns:
+                df['datetime'] = df.index
         
-        df['date'] = df['datetime'].dt.date
-        df['hour'] = df['datetime'].dt.hour
+        df['date'] = pd.to_datetime(df['datetime']).dt.date
+        df['hour'] = pd.to_datetime(df['datetime']).dt.hour
         
         # Get prior day
         current_date = current_time.date()

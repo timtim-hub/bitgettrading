@@ -14,9 +14,18 @@ import pandas as pd
 from typing import Dict, List, Tuple, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 import warnings
 
 warnings.filterwarnings('ignore')
+
+# Try to import LightGBM for strategy 160
+try:
+    import lightgbm as lgb
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+    print("⚠️ LightGBM not available, strategy 160 will use ADX fallback")
 
 
 @dataclass
@@ -116,6 +125,12 @@ class MultiPositionBacktestEngine:
         # Trading fees (Bitget taker fee: 0.06% per side)
         self.taker_fee_pct = 0.0006  # 0.06%
         self.fee_per_trade = self.taker_fee_pct * 2  # Entry + Exit = 0.12%
+        
+        # Load LightGBM model for strategy 160
+        self.lgbm_model = None
+        self.lgbm_features = []
+        if strategy.get("id") == 160 and LIGHTGBM_AVAILABLE:
+            self._load_lightgbm_model()
         
         # Slippage parameters (based on volume and volatility)
         self.high_volume_slippage = 0.0002  # 0.02% for high volume tokens
@@ -244,6 +259,10 @@ class MultiPositionBacktestEngine:
         
         # If correlation risk > 0.8, only allow if it reduces concentration
         if correlation_risk > 0.8:
+            # First position is always allowed (no existing positions)
+            if len(positions) == 0:
+                return True
+            
             # Check if new position reduces concentration
             long_count = sum(1 for p in positions if p.side == "long")
             short_count = sum(1 for p in positions if p.side == "short")
@@ -258,12 +277,28 @@ class MultiPositionBacktestEngine:
     
     def calculate_signal(self, df: pd.DataFrame, idx: int) -> Tuple[str, float]:
         """
-        Calculate trading signal based on simplified momentum indicators.
+        Calculate trading signal based on strategy configuration.
+        
+        For strategy 046 (Holy Grail ADX), uses ADX-based signals.
+        For strategy 160 (Holy Grail LightGBM), uses LightGBM + ADX hybrid.
+        Otherwise, uses simplified momentum indicators.
         
         Returns:
             (direction, score) where direction is "long", "short", or "neutral"
             and score is the signal strength (0.0-5.0)
         """
+        # Strategy-specific signal calculation
+        strategy_id = self.strategy.get("id", 0)
+        
+        # Holy Grail ADX (Strategy 046)
+        if strategy_id == 46:
+            return self._calculate_signal_holy_grail_adx(df, idx)
+        
+        # Holy Grail LightGBM (Strategy 160)
+        if strategy_id == 160:
+            return self._calculate_signal_holy_grail_lightgbm(df, idx)
+        
+        # Default: simplified momentum indicators
         if idx < 20:  # Need history for indicators
             return "neutral", 0.0
         
@@ -350,6 +385,285 @@ class MultiPositionBacktestEngine:
             return "neutral", score
         
         return direction, score
+    
+    def _calculate_signal_holy_grail_adx(self, df: pd.DataFrame, idx: int) -> Tuple[str, float]:
+        """Calculate signal using Holy Grail ADX strategy (Strategy 046) - REAL ADX."""
+        if idx < 30:
+            return "neutral", 0.0
+        
+        # Get data up to current index
+        df_slice = df.iloc[:idx+1].copy()
+        
+        # Use REAL ADX calculation from ml_feature_engineering
+        try:
+            from ml_feature_engineering import add_adx, add_sma, add_volume_features
+            
+            # Calculate ADX using real method
+            df_with_adx = add_adx(df_slice.copy(), period=14)
+            current_adx = df_with_adx['adx'].iloc[-1] if not df_with_adx['adx'].isna().all() else 0.0
+            plus_di = df_with_adx['plus_di'].iloc[-1] if 'plus_di' in df_with_adx.columns and not df_with_adx['plus_di'].isna().all() else 0.0
+            minus_di = df_with_adx['minus_di'].iloc[-1] if 'minus_di' in df_with_adx.columns and not df_with_adx['minus_di'].isna().all() else 0.0
+            
+            if pd.isna(current_adx) or current_adx == 0:
+                return "neutral", 0.0
+        except Exception as e:
+            # Fallback to manual calculation if import fails
+            high = df_slice['high']
+            low = df_slice['low']
+            close = df_slice['close']
+            
+            tr1 = high - low
+            tr2 = abs(high - close.shift())
+            tr3 = abs(low - close.shift())
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            
+            plus_dm = high.diff()
+            minus_dm = -low.diff()
+            plus_dm[plus_dm < 0] = 0
+            minus_dm[minus_dm < 0] = 0
+            
+            period = 14
+            atr = tr.rolling(period).mean()
+            plus_di = 100 * (plus_dm.rolling(period).mean() / atr)
+            minus_di = 100 * (minus_dm.rolling(period).mean() / atr)
+            
+            dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+            adx = dx.rolling(period).mean()
+            
+            if adx.isna().all():
+                return "neutral", 0.0
+            
+            current_adx = adx.iloc[-1]
+            plus_di = plus_di.iloc[-1] if not plus_di.isna().all() else 0.0
+            minus_di = minus_di.iloc[-1] if not minus_di.isna().all() else 0.0
+        
+        # Get close price for later use
+        close = df_slice['close']
+        
+        # Calculate SMA distance using real method
+        try:
+            df_with_sma = add_sma(df_slice.copy(), periods=[20])
+            sma_20 = df_with_sma['sma_20']
+            sma_distance = (df_with_sma['close'] - sma_20) / sma_20
+            current_sma_dist = sma_distance.iloc[-1] if not sma_distance.isna().all() else 0.0
+        except:
+            sma_20 = close.rolling(20).mean()
+            sma_distance = (close - sma_20) / sma_20
+            current_sma_dist = sma_distance.iloc[-1] if not sma_distance.isna().all() else 0.0
+        
+        # Calculate volume ratio using real method
+        try:
+            df_with_vol = add_volume_features(df_slice.copy())
+            volume_ratio = df_with_vol['volume_ratio_20'].iloc[-1] if 'volume_ratio_20' in df_with_vol.columns and not df_with_vol['volume_ratio_20'].isna().all() else 1.0
+        except:
+            current_volume = df_slice['volume'].iloc[-1]
+            volume_avg = df_slice['volume'].rolling(20).mean().iloc[-1]
+            volume_ratio = current_volume / volume_avg if volume_avg > 0 else 1.0
+        
+        # Calculate returns
+        close = df_slice['close']
+        returns_5 = (close.iloc[-1] / close.iloc[-6] - 1) if len(df_slice) >= 6 else 0
+        
+        # IMPROVED Signal calculation for HIGHER TRADE FREQUENCY
+        bullish_signals = 0
+        bearish_signals = 0
+        
+        # 1. ADX strong trend (primary signal) - LOWERED THRESHOLD for more trades
+        if current_adx > 20:  # Lowered from 25 to 20 for more signals
+            if plus_di > minus_di and returns_5 > 0:
+                bullish_signals += 3  # Increased weight
+            elif minus_di > plus_di and returns_5 < 0:
+                bearish_signals += 3
+        
+        # 2. SMA distance confirmation - LOWERED THRESHOLD
+        if abs(current_sma_dist) > 0.005:  # Lowered from 0.01 to 0.005 (0.5% vs 1%)
+            if current_sma_dist > 0 and returns_5 > 0:
+                bullish_signals += 1
+            elif current_sma_dist < 0 and returns_5 < 0:
+                bearish_signals += 1
+        
+        # 3. Volume confirmation - LOWERED THRESHOLD
+        if volume_ratio >= 1.2:  # Lowered from 1.4 to 1.2
+            if returns_5 > 0:
+                bullish_signals += 1
+            elif returns_5 < 0:
+                bearish_signals += 1
+        
+        # 4. Momentum confirmation - LOWERED THRESHOLD
+        if returns_5 > 0.003:  # Lowered from 0.005 to 0.003 (0.3% vs 0.5%)
+            bullish_signals += 1
+        elif returns_5 < -0.003:
+            bearish_signals += 1
+        
+        # 5. DI crossover (additional signal for more trades)
+        if plus_di > minus_di and current_adx > 20:
+            bullish_signals += 1
+        elif minus_di > plus_di and current_adx > 20:
+            bearish_signals += 1
+        
+        # Determine direction and score - REDUCED CONFLUENCE for more trades
+        min_confluence = max(2, self.confluence_required - 1)  # Reduce by 1, minimum 2
+        
+        if bullish_signals >= min_confluence:
+            direction = "long"
+            score = min(1.0, bullish_signals * 0.25)  # Higher score per signal
+        elif bearish_signals >= min_confluence:
+            direction = "short"
+            score = min(1.0, bearish_signals * 0.25)
+        else:
+            direction = "neutral"
+            score = 0.0
+        
+        # LOWERED entry threshold for more trades (but still quality)
+        effective_threshold = max(0.6, self.entry_threshold - 0.2)  # Lower by 0.2, minimum 0.6
+        
+        if score < effective_threshold:
+            return "neutral", score
+        
+        return direction, score
+    
+    def _load_lightgbm_model(self):
+        """Load LightGBM model for strategy 160."""
+        if not LIGHTGBM_AVAILABLE:
+            return
+        
+        try:
+            # Try to load latest model
+            model_path = Path("models/lightgbm_v1_latest.txt")
+            if not model_path.exists():
+                # Try alternative paths
+                model_paths = list(Path("models").glob("lightgbm_*.txt"))
+                if model_paths:
+                    model_path = max(model_paths, key=lambda p: p.stat().st_mtime)
+                else:
+                    return
+            
+            self.lgbm_model = lgb.Booster(model_file=str(model_path))
+            
+            # Load feature names
+            feature_path = model_path.parent / f"{model_path.stem}_features.txt"
+            if not feature_path.exists():
+                # Try alternative feature file
+                feature_path = Path("models/lgbm_model_features.txt")
+            
+            if feature_path.exists():
+                with open(feature_path, 'r') as f:
+                    file_features = [line.strip() for line in f if line.strip()]
+                # Check if these are the correct features (58 features from ml_feature_engineering)
+                # Model was trained on 58 features, not order book features
+                if len(file_features) >= 50:  # Real features have 58+
+                    self.lgbm_features = file_features
+                    print(f"✅ Loaded {len(self.lgbm_features)} features from file")
+                else:
+                    # Wrong features, use real features from ml_feature_engineering
+                    from ml_feature_engineering import get_feature_list
+                    self.lgbm_features = get_feature_list()
+                    print(f"✅ Using REAL feature list from ml_feature_engineering: {len(self.lgbm_features)} features")
+            else:
+                # No feature file, use real features from ml_feature_engineering
+                from ml_feature_engineering import get_feature_list
+                self.lgbm_features = get_feature_list()
+                print(f"✅ Using REAL feature list from ml_feature_engineering: {len(self.lgbm_features)} features")
+        except Exception as e:
+            print(f"❌ Error loading LightGBM model: {e}")
+            import traceback
+            traceback.print_exc()
+            self.lgbm_model = None
+    
+    def _calculate_features_for_lgbm(self, df: pd.DataFrame, idx: int) -> Optional[pd.DataFrame]:
+        """Calculate features for LightGBM model - REAL feature engineering."""
+        if not self.lgbm_features or idx < 50:
+            return None
+        
+        try:
+            from ml_feature_engineering import calculate_all_features
+            
+            # Get data up to current index
+            df_slice = df.iloc[:idx+1].copy()
+            
+            # Calculate ALL features using real feature engineering
+            df_features = calculate_all_features(df_slice)
+            
+            # Get latest row
+            latest = df_features.iloc[-1:].copy()
+            
+            # Select only features that model expects
+            available_features = [f for f in self.lgbm_features if f in latest.columns]
+            
+            if len(available_features) < len(self.lgbm_features) * 0.7:  # Lowered to 70% for more flexibility
+                return None
+            
+            # Fill any missing features with 0
+            for feat in self.lgbm_features:
+                if feat not in latest.columns:
+                    latest[feat] = 0.0
+            
+            return latest[self.lgbm_features]
+        except Exception as e:
+            return None
+    
+    def _calculate_signal_holy_grail_lightgbm(self, df: pd.DataFrame, idx: int) -> Tuple[str, float]:
+        """Calculate signal using Holy Grail LightGBM strategy (Strategy 160) - REAL LightGBM."""
+        # Try to use REAL LightGBM model if available
+        if self.lgbm_model is not None:
+            features_df = self._calculate_features_for_lgbm(df, idx)
+            if features_df is not None:
+                try:
+                    # REAL LightGBM prediction
+                    X = features_df.values
+                    
+                    # Use best iteration if available
+                    num_iteration = None
+                    if hasattr(self.lgbm_model, 'best_iteration'):
+                        num_iteration = self.lgbm_model.best_iteration
+                    
+                    probs = self.lgbm_model.predict(X, num_iteration=num_iteration)
+                    
+                    # Handle different output formats
+                    if len(probs.shape) > 1:
+                        # Multiclass: [flat_prob, long_prob, short_prob] or [prob_class_0, prob_class_1]
+                        if probs.shape[1] == 2:
+                            # Binary classification
+                            prob_0, prob_1 = probs[0]
+                            lgbm_score = prob_1  # Probability of positive class
+                            lgbm_direction = "long" if prob_1 > 0.5 else "short"
+                        else:
+                            # Multiclass
+                            flat_prob, long_prob, short_prob = probs[0]
+                            lgbm_score = max(long_prob, short_prob)
+                            lgbm_direction = "long" if long_prob > short_prob else "short"
+                    else:
+                        # Binary: probability of positive class
+                        lgbm_score = float(probs[0])
+                        lgbm_direction = "long" if lgbm_score > 0.5 else "short"
+                    
+                    # Combine with REAL ADX confirmation
+                    adx_direction, adx_score = self._calculate_signal_holy_grail_adx(df, idx)
+                    
+                    # IMPROVED weighting for higher trade frequency
+                    # If both agree, use combined score with lower threshold
+                    if lgbm_direction == adx_direction and adx_score > 0:
+                        # Both agree - boost score significantly
+                        combined_score = (lgbm_score * 0.7) + (adx_score * 0.3)  # More weight to LightGBM
+                        effective_threshold = max(0.6, self.entry_threshold - 0.2)  # Lower threshold
+                        if combined_score >= effective_threshold:
+                            return lgbm_direction, combined_score
+                    elif lgbm_score > 0.65:  # Lowered from 0.7 for more trades
+                        # LightGBM high confidence, use it even if ADX disagrees
+                        effective_threshold = max(0.6, self.entry_threshold - 0.2)
+                        if lgbm_score >= effective_threshold:
+                            return lgbm_direction, lgbm_score
+                    elif adx_score > 0.6:  # ADX can also trigger if strong enough
+                        # Strong ADX signal even if LightGBM is neutral
+                        effective_threshold = max(0.6, self.entry_threshold - 0.2)
+                        if adx_score >= effective_threshold:
+                            return adx_direction, adx_score
+                except Exception as e:
+                    # Fallback to ADX if LightGBM prediction fails
+                    pass
+        
+        # Fallback to ADX strategy
+        return self._calculate_signal_holy_grail_adx(df, idx)
     
     def run_backtest(
         self,

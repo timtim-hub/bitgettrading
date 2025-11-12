@@ -453,6 +453,11 @@ class VWAPMRStrategy:
     def _check_stoch_rsi_cross(self, df: pd.DataFrame, current_idx: int, 
                                 direction: str) -> bool:
         """Check if Stoch RSI crossed threshold within last N bars"""
+        # Check if Stoch RSI is available (only on 1-3m timeframes)
+        if 'stoch_rsi_k' not in df.columns:
+            # If not available, skip this check (return True to allow trade based on other conditions)
+            return True
+        
         lookback = self.stoch_within_bars
         
         if current_idx - lookback < -len(df):

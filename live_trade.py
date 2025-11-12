@@ -37,6 +37,7 @@ from src.bitget_trading.symbol_filter import SymbolFilter
 from src.bitget_trading.universe import UniverseManager
 from src.bitget_trading.leverage_cache import LeverageCache
 from holy_grail_strategy import HolyGrailStrategy
+from lightgbm_live_predictor import get_predictor, LightGBMLivePredictor
 
 logger = setup_logging()
 
@@ -88,6 +89,16 @@ class LiveTrader:
             logger.warning(f"⚠️ [HOLY GRAIL] Failed to load strategy: {e}")
             self.holy_grail = None
             self.use_holy_grail = False
+        
+        # 🤖 LIGHTGBM PREDICTOR INTEGRATION
+        try:
+            self.lightgbm_predictor = get_predictor()
+            self.use_lightgbm = True
+            logger.info("✅ [LightGBM] Predictor initialized successfully!")
+        except Exception as e:
+            logger.warning(f"⚠️ [LightGBM] Failed to initialize predictor: {e}")
+            self.lightgbm_predictor = None
+            self.use_lightgbm = False
         
         # 🚀 NEW: Backtesting and performance tracking
         self.config = get_config()
@@ -2886,6 +2897,97 @@ class LiveTrader:
         if trades_successful > 0:
             self.position_manager.log_all_position_settings()
     
+    def _rank_with_lightgbm(self, symbols: list[str]) -> list[dict]:
+        """
+        Rank symbols using LightGBM predictions (optimized for short-term trading).
+        
+        Returns:
+            List of ranked symbols with scores and directions
+        """
+        ranked = []
+        confidence_threshold = 0.65  # 65% minimum confidence for signal
+        
+        for symbol in symbols:
+            # Check if model is available
+            if not self.lightgbm_predictor.is_model_available(symbol):
+                continue
+            
+            state = self.state_manager.get_state(symbol)
+            if not state:
+                continue
+            
+            # Get historical candles (prefer 5m for LightGBM training)
+            candles_5m = list(state.candles_5m) if hasattr(state, 'candles_5m') else []
+            if not candles_5m or len(candles_5m) < 200:  # Need enough history for features
+                # Try 1m candles if 5m not available
+                candles_1m = list(state.candles_1m) if hasattr(state, 'candles_1m') else []
+                if not candles_1m or len(candles_1m) < 200:
+                    continue
+                candles = candles_1m
+            else:
+                candles = candles_5m
+            
+            # Convert to DataFrame
+            df = pd.DataFrame(candles)
+            if len(df) < 200:  # Need enough history for feature calculation
+                continue
+            
+            # Ensure DataFrame has required columns
+            required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            if not all(col in df.columns for col in required_cols):
+                # Try to reconstruct from candles format
+                if len(candles) > 0 and isinstance(candles[0], dict):
+                    df = pd.DataFrame(candles)
+                else:
+                    continue
+            
+            # Make LightGBM prediction
+            direction, confidence, probability = self.lightgbm_predictor.predict(
+                symbol=symbol,
+                df=df,
+                confidence_threshold=confidence_threshold
+            )
+            
+            if direction == "neutral":
+                continue
+            
+            # Get current price
+            if not state.last_price or state.last_price <= 0:
+                continue
+            
+            # Get model info for additional context
+            model_info = self.lightgbm_predictor.get_model_info(symbol)
+            win_rate = model_info.get('metrics', {}).get('accuracy', 0.0) if model_info else 0.0
+            
+            ranked.append({
+                "symbol": symbol,
+                "score": confidence,  # Use confidence as score
+                "predicted_side": direction,
+                "position_size_multiplier": 1.0,
+                "regime": "trending",  # LightGBM optimized for short-term trends
+                "confluence": 1,  # Single LightGBM prediction
+                "volume_ratio": 1.0,  # Not used in LightGBM
+                "funding_rate": 0.0,
+                "volatility": 0.01,
+                "grade": "A" if confidence > 0.75 else "B" if confidence > 0.65 else "C",
+                "market_structure": "trending",
+                "near_sr": False,
+                "rr_ratio": 0.5,  # Default 1:2 risk/reward
+                "lightgbm_confidence": confidence,
+                "lightgbm_probability": probability,
+                "model_win_rate": win_rate,
+            })
+        
+        # Sort by confidence (highest first)
+        ranked.sort(key=lambda x: x["score"], reverse=True)
+        
+        logger.info(
+            f"✅ [LightGBM] Ranked {len(ranked)} symbols with ML predictions "
+            f"(confidence threshold: {confidence_threshold})"
+        )
+        
+        return ranked
+    
     def _rank_with_holy_grail(self, symbols: list[str]) -> list[dict]:
         """
         Rank symbols using Holy Grail ADX-based strategy.
@@ -3074,8 +3176,12 @@ class LiveTrader:
                             f"({len(self.symbols) - len(symbols_to_rank)} filtered out)"
                         )
                     
-                    # 🎯 HOLY GRAIL: Use ADX-based signal calculation
-                    if self.use_holy_grail and self.holy_grail:
+                    # 🤖 LIGHTGBM: Use ML predictions (highest priority for short-term trading)
+                    if self.use_lightgbm and self.lightgbm_predictor:
+                        logger.info(f"🤖 [LightGBM] Making ML predictions for {len(symbols_to_rank)} symbols...")
+                        all_ranked = self._rank_with_lightgbm(symbols_to_rank)
+                    # 🎯 HOLY GRAIL: Use ADX-based signal calculation (fallback)
+                    elif self.use_holy_grail and self.holy_grail:
                         logger.info(f"📊 [HOLY GRAIL] Calculating ADX-based signals for {len(symbols_to_rank)} symbols...")
                         all_ranked = self._rank_with_holy_grail(symbols_to_rank)
                     else:

@@ -82,26 +82,65 @@ class HistoricalDataFetcher:
         print(f"🌐 Fetching {symbol} {timeframe} from Bitget API ({days} days requested)...")
         
         # Bitget API returns max 200 candles per request
-        # For now, we'll fetch the maximum available (200) which gives us recent data for backtesting
-        # Note: Bitget's public API limits historical data depth
+        # For 30 days, we need to make multiple requests
+        # Calculate how many requests needed
         all_candles = []
         
+        # Calculate candles needed for requested days
+        if timeframe == "1m":
+            candles_per_day = 1440  # 24 * 60
+        elif timeframe == "5m":
+            candles_per_day = 288  # 24 * 12
+        elif timeframe == "15m":
+            candles_per_day = 96  # 24 * 4
+        elif timeframe == "1H":
+            candles_per_day = 24
+        elif timeframe == "4H":
+            candles_per_day = 6
+        elif timeframe == "1D":
+            candles_per_day = 1
+        else:
+            candles_per_day = 24  # Default to 1H
+        
+        total_candles_needed = days * candles_per_day
+        requests_needed = (total_candles_needed + 199) // 200  # Round up
+        
+        print(f"  📊 Need {total_candles_needed} candles ({days} days), making {requests_needed} requests...")
+        
         try:
-            response = await self.rest_client.get_historical_candles(
-                symbol=symbol,
-                granularity=timeframe,
-                limit=200,  # Max available
-            )
-            
-            if response.get("code") == "00000" and "data" in response:
-                candles = response["data"]
-                if candles:
-                    all_candles = candles
-                    print(f"  ✅ Fetched {len(candles)} candles")
+            # Make multiple requests to get enough historical data
+            for i in range(requests_needed):
+                # Calculate end time for this request (most recent first)
+                # Each request gets 200 candles, going backwards in time
+                response = await self.rest_client.get_historical_candles(
+                    symbol=symbol,
+                    granularity=timeframe,
+                    limit=200,  # Max available per request
+                )
+                
+                if response.get("code") == "00000" and "data" in response:
+                    candles = response["data"]
+                    if candles:
+                        # Add new candles (avoid duplicates)
+                        existing_timestamps = {c[0] for c in all_candles}
+                        new_candles = [c for c in candles if c[0] not in existing_timestamps]
+                        all_candles.extend(new_candles)
+                        print(f"  ✅ Request {i+1}/{requests_needed}: Fetched {len(new_candles)} new candles (total: {len(all_candles)})")
+                        
+                        # If we got fewer than 200, we've reached the end of available data
+                        if len(candles) < 200:
+                            print(f"  ℹ️ Reached end of available historical data")
+                            break
+                    else:
+                        print(f"  ⚠️ No data in response {i+1}")
+                        break
                 else:
-                    print(f"  ⚠️ No data available")
-            else:
-                print(f"  ❌ API Error: {response.get('msg', 'Unknown error')}")
+                    print(f"  ❌ API Error in request {i+1}: {response.get('msg', 'Unknown error')}")
+                    break
+                
+                # Small delay between requests to avoid rate limiting
+                if i < requests_needed - 1:
+                    await asyncio.sleep(0.1)
                 
         except Exception as e:
             print(f"  ❌ Exception: {e}")
