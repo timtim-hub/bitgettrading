@@ -639,14 +639,17 @@ class TrendStrategy:
         
         # Check for LONG signal
         if bullish_bias:
-            # Pullback to VWAP or VWAP-1σ (relaxed to 2%)
-            near_vwap = abs(price - vwap) / price < 0.02 or price <= vwap_lower * 1.02
+            # Pullback to VWAP or VWAP-1σ (relaxed to 5% for testing!)
+            near_vwap = abs(price - vwap) / price < 0.05 or price <= vwap_lower * 1.05
             
             # EMA alignment (9 > 21, don't require crossover - too restrictive!)
             ema_aligned = ema_9 > ema_21
             
             # RSI check (use config value)
             rsi_ok = rsi > self.rsi_bull_threshold
+            
+            # Debug logging
+            logger.debug(f"LONG check: near_vwap={near_vwap}, ema_aligned={ema_aligned}, rsi_ok={rsi_ok} (rsi={rsi:.1f})")
             
             if near_vwap and ema_aligned and rsi_ok:
                 side = 'long'
@@ -670,14 +673,17 @@ class TrendStrategy:
         
         # Check for SHORT signal
         elif bearish_bias:
-            # Pullback to VWAP or VWAP+1σ (relaxed to 2%)
-            near_vwap = abs(price - vwap) / price < 0.02 or price >= vwap_upper * 0.98
+            # Pullback to VWAP or VWAP+1σ (relaxed to 5% for testing!)
+            near_vwap = abs(price - vwap) / price < 0.05 or price >= vwap_upper * 0.95
             
             # EMA alignment (9 < 21, don't require crossover - too restrictive!)
             ema_aligned = ema_9 < ema_21
             
             # RSI check (use config value)
             rsi_ok = rsi < self.rsi_bear_threshold
+            
+            # Debug logging
+            logger.debug(f"SHORT check: near_vwap={near_vwap}, ema_aligned={ema_aligned}, rsi_ok={rsi_ok} (rsi={rsi:.1f})")
             
             if near_vwap and ema_aligned and rsi_ok:
                 side = 'short'

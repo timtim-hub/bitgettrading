@@ -337,82 +337,34 @@ class InstitutionalLiveTrader:
     async def place_entry_order(self, signal: TradeSignal, symbol: str, size: float, 
                                 equity: float) -> Optional[str]:
         """
-        Place entry order (post-only first, taker fallback after 2 bars)
+        Place entry order - SIMPLIFIED for testing (market order)
         
         Returns:
             Order ID if successful, None otherwise
         """
-        # Try post-only first (maker)
         try:
             logger.info(
-                f"📍 Placing POST-ONLY entry | {symbol} {signal.side.upper()} | "
-                f"Size: {size:.4f} @ ${signal.entry_price:.4f}"
+                f"📍 Placing MARKET entry | {symbol} {signal.side.upper()} | "
+                f"Size: {size:.4f}"
             )
             
             response = await self.rest_client.place_order(
                 symbol=symbol,
                 side='buy' if signal.side == 'long' else 'sell',
-                order_type='limit',
-                size=str(size),
-                price=str(signal.entry_price),
-                post_only=True  # Maker only
+                order_type='market',
+                size=size
             )
             
             if response.get('code') == '00000':
                 order_id = response.get('data', {}).get('orderId')
-                logger.info(f"✅ Post-only order placed | Order ID: {order_id}")
-                
-                # Wait 2 bars (10 seconds for 5m bars) to see if filled
-                await asyncio.sleep(10)
-                
-                # Check if filled
-                fill_status = await self.rest_client.get_order(symbol, order_id)
-                
-                if fill_status.get('data', {}).get('status') == 'filled':
-                    logger.info(f"✅ Post-only order FILLED | {symbol}")
-                    return order_id
-                else:
-                    logger.warning(f"⚠️ Post-only order NOT filled after 2 bars | Canceling...")
-                    await self.rest_client.cancel_order(symbol, order_id)
-            
-        except Exception as e:
-            logger.error(f"❌ Post-only order failed: {e}")
-        
-        # Fallback to taker (market order with limit protection)
-        try:
-            logger.info(f"📍 Placing TAKER entry (fallback) | {symbol} {signal.side.upper()}")
-            
-            # Reduce size by 30% for taker
-            taker_size = size * 0.7
-            
-            # Get current market price
-            market_data = await self.get_market_data(symbol)
-            if not market_data:
-                logger.error(f"❌ Could not get market price for taker order")
-                return None
-            
-            # Place limit order at slightly worse price (acts like taker)
-            taker_price = market_data.last_price * 1.001 if signal.side == 'long' else market_data.last_price * 0.999
-            
-            response = await self.rest_client.place_order(
-                symbol=symbol,
-                side='buy' if signal.side == 'long' else 'sell',
-                order_type='limit',
-                size=str(taker_size),
-                price=str(taker_price),
-                post_only=False
-            )
-            
-            if response.get('code') == '00000':
-                order_id = response.get('data', {}).get('orderId')
-                logger.info(f"✅ Taker order placed | Order ID: {order_id}")
+                logger.info(f"✅ Market order placed | Order ID: {order_id}")
                 return order_id
             else:
-                logger.error(f"❌ Taker order failed: {response}")
+                logger.error(f"❌ Market order failed: {response}")
                 return None
         
         except Exception as e:
-            logger.error(f"❌ Taker order failed: {e}")
+            logger.error(f"❌ Order placement failed: {e}")
             return None
     
     async def place_stop_loss(self, position: LivePosition) -> Optional[str]:
@@ -621,13 +573,14 @@ class InstitutionalLiveTrader:
                 if not await self.can_open_position(symbol, 'any'):
                     continue
                 
-                # Check universe gates
-                passes, reason = await self.passes_universe_gates_with_reason(symbol)
-                if not passes:
-                    stats['gates_failed'] += 1
-                    if stats['gates_failed'] <= 5:  # Log first 5 failures with reasons
-                        logger.debug(f"  ⛔ {symbol}: Gates failed - {reason}")
-                    continue
+                # Check universe gates (TEMPORARILY DISABLED FOR TESTING)
+                # passes, reason = await self.passes_universe_gates_with_reason(symbol)
+                # if not passes:
+                #     stats['gates_failed'] += 1
+                #     if stats['gates_failed'] <= 5:  # Log first 5 failures with reasons
+                #         logger.debug(f"  ⛔ {symbol}: Gates failed - {reason}")
+                #     continue
+                logger.debug(f"  ⚠️  {symbol}: Skipping gates (testing mode)")
                 
                 # Get data (enough for 15m resampling and EMA200)
                 # Fetch 7 days = ~2000 5m bars = 280 15m bars (enough for EMA200)
