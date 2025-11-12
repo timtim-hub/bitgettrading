@@ -342,8 +342,8 @@ class InstitutionalIndicators:
             adx_data = self.calculate_adx(result)
             result = pd.concat([result, adx_data], axis=1)
         
-        # RSI (5m and short timeframes)
-        if timeframe in ['1m', '3m', '5m']:
+        # RSI (all timeframes - needed for Trend strategy on 15m)
+        if timeframe in ['1m', '3m', '5m', '15m']:
             result['rsi'] = self.calculate_rsi(result)
         
         # Stochastic RSI (1-3m)

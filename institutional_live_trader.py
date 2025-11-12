@@ -114,18 +114,24 @@ class InstitutionalLiveTrader:
             end_time = None  # Start with most recent
             
             for i in range(requests_needed):
-                # Build params
-                params = {
+                # Build params for Bitget API
+                api_params = {
                     'symbol': symbol,
+                    'productType': 'USDT-FUTURES',
                     'granularity': timeframe,
-                    'limit': 200
+                    'limit': '200'
                 }
                 
                 # Add endTime to get older data (pagination)
                 if end_time:
-                    params['endTime'] = str(end_time)
+                    api_params['endTime'] = str(end_time)
                 
-                response = await self.rest_client.get_historical_candles(**params)
+                # Call API directly with endTime support
+                response = await self.rest_client._request(
+                    'GET',
+                    '/api/v2/mix/market/candles',
+                    params=api_params
+                )
                 
                 if response.get('code') == '00000' and 'data' in response:
                     candles = response['data']
