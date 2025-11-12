@@ -21,6 +21,7 @@ from institutional_indicators import InstitutionalIndicators
 from institutional_universe import UniverseFilter, RegimeClassifier, MarketData
 from institutional_risk import RiskManager
 from institutional_strategies import LSVRStrategy, VWAPMRStrategy, TrendStrategy, TradeSignal
+from trade_tracker import TradeTracker
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,10 @@ class InstitutionalLiveTrader:
             with open(bucket_file, 'r') as f:
                 self.symbol_buckets = json.load(f)
             logger.info(f"✅ Loaded symbol buckets: {self.symbol_buckets.get('total_symbols', 0)} symbols")
+        
+        # Trade tracking
+        self.trade_tracker = TradeTracker()
+        self.trade_ids: Dict[str, str] = {}  # Map symbol to trade_id
         
         logger.info("✅ InstitutionalLiveTrader initialized")
         logger.info(f"  Mode: {'LIVE' if self.mode_config.get('live_enabled') else 'BACKTEST ONLY'}")
@@ -636,6 +641,53 @@ class InstitutionalLiveTrader:
             if response.get('code') == '00000':
                 logger.info(f"✅ Position closed | {position.symbol}")
                 
+                # Close trade tracking
+                if position.symbol in self.trade_ids:
+                    # Get exit price from response or use current market price
+                    exit_price = current_price if 'current_price' in locals() else position.entry_price
+                    try:
+                        market_data = await self.get_market_data(position.symbol)
+                        if market_data:
+                            exit_price = market_data.last_price
+                    except:
+                        pass
+                    
+                    # Get exit indicators
+                    exit_indicators = {}
+                    try:
+                        df_5m = await self.fetch_candles(position.symbol, timeframe='5m', days=1)
+                        df_15m = df_5m.resample('15min').agg({
+                            'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
+                        }).dropna() if df_5m is not None else pd.DataFrame()
+                        df_15m = self.indicators.calculate_all_indicators(df_15m, timeframe='15m') if not df_15m.empty else pd.DataFrame()
+                        
+                        if 'adx' in df_15m.columns and len(df_15m) > 0:
+                            exit_indicators['adx'] = float(df_15m['adx'].iloc[-1]) if not pd.isna(df_15m['adx'].iloc[-1]) else None
+                        if 'rsi' in df_15m.columns and len(df_15m) > 0:
+                            exit_indicators['rsi'] = float(df_15m['rsi'].iloc[-1]) if not pd.isna(df_15m['rsi'].iloc[-1]) else None
+                        if 'bb_width_pct' in df_5m.columns and len(df_5m) > 0:
+                            exit_indicators['bb_width_pct'] = float(df_5m['bb_width_pct'].iloc[-1]) if not pd.isna(df_5m['bb_width_pct'].iloc[-1]) else None
+                        if 'vwap_slope' in df_5m.columns and len(df_5m) > 0:
+                            exit_indicators['vwap_slope'] = float(df_5m['vwap_slope'].iloc[-1]) if not pd.isna(df_5m['vwap_slope'].iloc[-1]) else None
+                    except Exception as e:
+                        logger.debug(f"⚠️ Could not extract exit indicators: {e}")
+                    
+                    # Calculate fees (approximate: 0.06% maker, 0.06% taker)
+                    entry_fee = position.notional * 0.0006
+                    exit_fee = position.notional * 0.0006
+                    
+                    self.trade_tracker.close_trade(
+                        self.trade_ids[position.symbol],
+                        exit_time=datetime.now(),
+                        exit_price=exit_price,
+                        exit_reason=reason,
+                        exit_size=position.remaining_size,
+                        fees_entry=entry_fee,
+                        fees_exit=exit_fee,
+                        exit_indicators=exit_indicators,
+                    )
+                    del self.trade_ids[position.symbol]
+                
                 # Remove from tracking
                 del self.positions[position.symbol]
                 self.active_symbols.discard(position.symbol)
@@ -724,6 +776,14 @@ class InstitutionalLiveTrader:
                             logger.info(f"🎯 TP1 HIT (Exchange-side) | {symbol} | Size: {position.remaining_size:.4f} → {actual_size:.4f} ({size_decrease_pct:.1f}% decrease)")
                             position.tp_hit_count = 1
                             position.remaining_size = actual_size
+                            
+                            # Update trade tracking
+                            if symbol in self.trade_ids:
+                                self.trade_tracker.update_tp_hit(
+                                    self.trade_ids[symbol],
+                                    tp_level=1,
+                                    hit_time=datetime.now()
+                                )
                             
                             # Cancel old SL and place trailing stop using Bitget API
                             if position.stop_order_id:
@@ -819,6 +879,19 @@ class InstitutionalLiveTrader:
                                 logger.info(f"✅ Trailing stop placed (Bitget API) | {symbol} | Callback: {callback_ratio*100:.1f}% | Trigger: ${trigger_price:.4f} | Order ID: {trailing_order_id}")
                                 logger.warning(f"🔍 CHECK BITGET APP: Trailing order should appear in 'Trailing' tab for {symbol}")
                                 
+                                # Update trade tracking
+                                if symbol in self.trade_ids:
+                                    self.trade_tracker.update_trailing_stop(
+                                        self.trade_ids[symbol],
+                                        activated=True,
+                                        trigger_price=trigger_price
+                                    )
+                                    self.trade_tracker.update_breakeven(
+                                        self.trade_ids[symbol],
+                                        moved=True,
+                                        move_time=datetime.now()
+                                    )
+                                
                                 # Verify trailing stop is actually active (check after 2 seconds)
                                 await asyncio.sleep(2.0)
                                 try:
@@ -869,6 +942,45 @@ class InstitutionalLiveTrader:
                         # If position fully closed, remove from tracking
                         if actual_size <= 0.001:
                             logger.info(f"✅ Position fully closed (Exchange-side) | {symbol}")
+                            
+                            # Close trade tracking
+                            if symbol in self.trade_ids:
+                                # Get exit indicators
+                                exit_indicators = {}
+                                try:
+                                    df_5m = await self.fetch_candles(symbol, timeframe='5m', days=1)
+                                    df_15m = df_5m.resample('15min').agg({
+                                        'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
+                                    }).dropna() if df_5m is not None else pd.DataFrame()
+                                    df_15m = self.indicators.calculate_all_indicators(df_15m, timeframe='15m') if not df_15m.empty else pd.DataFrame()
+                                    
+                                    if 'adx' in df_15m.columns and len(df_15m) > 0:
+                                        exit_indicators['adx'] = float(df_15m['adx'].iloc[-1]) if not pd.isna(df_15m['adx'].iloc[-1]) else None
+                                    if 'rsi' in df_15m.columns and len(df_15m) > 0:
+                                        exit_indicators['rsi'] = float(df_15m['rsi'].iloc[-1]) if not pd.isna(df_15m['rsi'].iloc[-1]) else None
+                                    if 'bb_width_pct' in df_5m.columns and len(df_5m) > 0:
+                                        exit_indicators['bb_width_pct'] = float(df_5m['bb_width_pct'].iloc[-1]) if not pd.isna(df_5m['bb_width_pct'].iloc[-1]) else None
+                                    if 'vwap_slope' in df_5m.columns and len(df_5m) > 0:
+                                        exit_indicators['vwap_slope'] = float(df_5m['vwap_slope'].iloc[-1]) if not pd.isna(df_5m['vwap_slope'].iloc[-1]) else None
+                                except Exception as e:
+                                    logger.debug(f"⚠️ Could not extract exit indicators: {e}")
+                                
+                                # Calculate fees (approximate: 0.06% maker, 0.06% taker)
+                                entry_fee = position.notional * 0.0006
+                                exit_fee = position.notional * 0.0006
+                                
+                                self.trade_tracker.close_trade(
+                                    self.trade_ids[symbol],
+                                    exit_time=datetime.now(),
+                                    exit_price=current_price,
+                                    exit_reason="TP1",  # Exchange-side TP1 closed position
+                                    exit_size=actual_size,
+                                    fees_entry=entry_fee,
+                                    fees_exit=exit_fee,
+                                    exit_indicators=exit_indicators,
+                                )
+                                del self.trade_ids[symbol]
+                            
                             del self.positions[symbol]
                             self.active_symbols.discard(symbol)
                             sector = symbol[:3]
@@ -1090,10 +1202,57 @@ class InstitutionalLiveTrader:
                 sector = symbol[:3]
                 self.sector_counts[sector] = self.sector_counts.get(sector, 0) + 1
                 
+                # Start trade tracking
+                trade_id = f"{symbol}_{signal.side}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                self.trade_ids[symbol] = trade_id
+                
+                # Extract entry indicators from current data
+                entry_indicators = {}
+                try:
+                    if 'adx' in df_15m.columns:
+                        entry_indicators['adx'] = float(df_15m['adx'].iloc[-1]) if not pd.isna(df_15m['adx'].iloc[-1]) else None
+                    if 'rsi' in df_15m.columns:
+                        entry_indicators['rsi'] = float(df_15m['rsi'].iloc[-1]) if not pd.isna(df_15m['rsi'].iloc[-1]) else None
+                    if 'bb_width_pct' in df_5m.columns:
+                        entry_indicators['bb_width_pct'] = float(df_5m['bb_width_pct'].iloc[-1]) if not pd.isna(df_5m['bb_width_pct'].iloc[-1]) else None
+                    if 'vwap_slope' in df_5m.columns:
+                        entry_indicators['vwap_slope'] = float(df_5m['vwap_slope'].iloc[-1]) if not pd.isna(df_5m['vwap_slope'].iloc[-1]) else None
+                    if 'volume_ratio_20' in df_5m.columns:
+                        entry_indicators['volume_ratio'] = float(df_5m['volume_ratio_20'].iloc[-1]) if not pd.isna(df_5m['volume_ratio_20'].iloc[-1]) else None
+                    if 'atr' in df_5m.columns:
+                        entry_indicators['atr'] = float(df_5m['atr'].iloc[-1]) if not pd.isna(df_5m['atr'].iloc[-1]) else None
+                except Exception as e:
+                    logger.debug(f"⚠️ Could not extract entry indicators: {e}")
+                
+                # Get bucket
+                bucket = self.universe_filter.get_bucket(symbol)
+                
+                # Start tracking
+                self.trade_tracker.start_trade(
+                    trade_id=trade_id,
+                    symbol=symbol,
+                    side=signal.side,
+                    strategy=signal.strategy,
+                    regime=regime_data.regime,
+                    entry_time=position.entry_time,
+                    entry_price=position.entry_price,
+                    entry_size=position.size,
+                    entry_notional=position.notional,
+                    entry_equity=equity,
+                    stop_price=position.stop_price,
+                    tp_levels=position.tp_levels,
+                    leverage=25,
+                    margin_fraction=0.10,
+                    entry_indicators=entry_indicators,
+                    bucket=bucket,
+                    sweep_level=position.sweep_level,
+                    metadata=signal.metadata,
+                )
+                
                 logger.info(
                     f"✅ POSITION OPENED | {symbol} {signal.side.upper()} | "
                     f"Strategy: {signal.strategy} | Size: {position_size.contracts:.4f} | "
-                    f"TP/SL: Exchange-side (auto-execute)"
+                    f"TP/SL: Exchange-side (auto-execute) | Trade ID: {trade_id}"
                 )
             
             except Exception as e:
