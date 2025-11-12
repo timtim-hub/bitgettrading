@@ -627,10 +627,9 @@ class InstitutionalLiveTrader:
                         logger.debug(f"  ⛔ {symbol}: Failed universe gates")
                     continue
                 
-                # Get data (need way more for 15m resampling and EMA200)
-                # 200 5m bars = only 67 15m bars (not enough!)
-                # Need 5000+ 5m bars for good 15m data (333+ 15m bars for EMA200)
-                df_5m = await self.fetch_candles(symbol, timeframe='5m', days=30)  # ~8640 bars
+                # Get data (enough for 15m resampling and EMA200)
+                # Fetch 7 days = ~2000 5m bars = 280 15m bars (enough for EMA200)
+                df_5m = await self.fetch_candles(symbol, timeframe='5m', days=7)  # ~2000 bars
                 if df_5m is None or len(df_5m) < 500:
                     stats['data_failed'] += 1
                     if stats['data_failed'] <= 3:  # Log first 3 failures

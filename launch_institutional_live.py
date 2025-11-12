@@ -91,7 +91,7 @@ def check_config():
 
 def get_trading_symbols():
     """Get list of symbols to trade"""
-    # Load ALL symbols from bucket configuration
+    # Load symbols from bucket configuration
     bucket_file = Path('symbol_buckets.json')
     
     if not bucket_file.exists():
@@ -101,15 +101,15 @@ def get_trading_symbols():
     with open(bucket_file, 'r') as f:
         buckets = json.load(f)
     
-    # Combine all buckets
-    all_symbols = buckets.get('majors', []) + buckets.get('midcaps', []) + buckets.get('micros', [])
+    # START WITH MAJORS ONLY (53 symbols) for testing
+    # Once we confirm trades work, scale to all 601
+    majors = buckets.get('majors', [])
     
-    logger.info(f"📋 Trading symbols: {len(all_symbols)} total")
-    logger.info(f"  Majors: {len(buckets.get('majors', []))}")
-    logger.info(f"  Mid-caps: {len(buckets.get('midcaps', []))}")
-    logger.info(f"  Micros: {len(buckets.get('micros', []))}")
+    logger.info(f"📋 Trading symbols: {len(majors)} MAJORS (testing mode)")
+    logger.info(f"  Full universe: {buckets.get('total_symbols', 0)} symbols")
+    logger.info(f"  ⚠️  Using majors only until trades confirmed")
     
-    return all_symbols
+    return majors
 
 
 async def main():
