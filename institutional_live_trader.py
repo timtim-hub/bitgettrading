@@ -137,9 +137,22 @@ class InstitutionalLiveTrader:
                 try:
                     symbol = pos_data.get("symbol", "")
                     hold_side = pos_data.get("holdSide", "")  # "long" or "short"
-                    total_size = float(pos_data.get("total", 0))
-                    avg_price = float(pos_data.get("averageOpenPrice", 0))
-                    unrealized_pnl = float(pos_data.get("unrealizedPL", 0))
+                    total_size = float(pos_data.get("total", 0) or pos_data.get("available", 0))
+                    
+                    # Try multiple field names for average entry price
+                    avg_price = float(
+                        pos_data.get("averageOpenPrice", 0) or
+                        pos_data.get("avgPrice", 0) or
+                        pos_data.get("openPriceAvg", 0) or
+                        pos_data.get("openAvgPrice", 0) or
+                        0
+                    )
+                    
+                    unrealized_pnl = float(pos_data.get("unrealizedPL", 0) or pos_data.get("unrealizedPnl", 0) or 0)
+                    
+                    # Debug: log all fields if price is 0
+                    if avg_price == 0:
+                        logger.debug(f"⚠️ {symbol}: Entry price is 0, available fields: {list(pos_data.keys())}")
                     
                     if not symbol or total_size == 0:
                         continue
@@ -155,13 +168,17 @@ class InstitutionalLiveTrader:
                     
                     current_price = market_data.last_price
                     
+                    # If entry price is 0, use current price as fallback
+                    if avg_price == 0:
+                        logger.warning(f"⚠️ {symbol}: Entry price not available, using current price ${current_price:.4f} as fallback")
+                        avg_price = current_price
+                    
                     # Reconstruct position with estimated values
                     # We don't have original entry time, so use current time
                     # We don't have original strategy, so default to "Trend"
                     # We don't have original TP levels, so create default
                     
-                    # Estimate stop price (use 1.5 ATR from entry, typical for Trend)
-                    # For now, use 2% from entry as default stop
+                    # Estimate stop price (use 2% from entry as default stop)
                     estimated_stop = avg_price * 0.98 if side == "long" else avg_price * 1.02
                     
                     # Default TP level (1.2x ATR, typical for Trend)
