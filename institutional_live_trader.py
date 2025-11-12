@@ -952,17 +952,44 @@ class InstitutionalLiveTrader:
                     sweep_level=signal.metadata.get('swept_level')
                 )
                 
+                # Wait for position to be fully available on exchange (Bitget needs a moment)
+                await asyncio.sleep(2.0)  # 2 second delay to avoid "Insufficient position" error
+                
                 # Place exchange-side TP/SL orders (Bitget handles execution automatically!)
                 tp1_price = signal.tp_levels[0][0] if signal.tp_levels else None
                 
-                tpsl_response = await self.rest_client.place_tpsl_order(
-                    symbol=symbol,
-                    hold_side=signal.side,
-                    size=position_size.contracts,
-                    stop_loss_price=round(signal.stop_price, 2),
-                    take_profit_price=round(tp1_price, 2) if tp1_price else None,
-                    size_precision=3
-                )
+                # Retry TP/SL placement up to 3 times (Bitget sometimes needs more time)
+                tpsl_response = None
+                for attempt in range(3):
+                    try:
+                        tpsl_response = await self.rest_client.place_tpsl_order(
+                            symbol=symbol,
+                            hold_side=signal.side,
+                            size=position_size.contracts,
+                            stop_loss_price=round(signal.stop_price, 2),
+                            take_profit_price=round(tp1_price, 2) if tp1_price else None,
+                            size_precision=3
+                        )
+                        
+                        # Check if both orders succeeded
+                        sl_ok = tpsl_response.get('sl', {}).get('code') == '00000'
+                        tp_ok = tpsl_response.get('tp', {}).get('code') == '00000' if tp1_price else True
+                        
+                        if sl_ok and tp_ok:
+                            break  # Success!
+                        elif attempt < 2:
+                            logger.warning(f"⚠️ TP/SL placement attempt {attempt+1}/3 failed, retrying in 3s...")
+                            await asyncio.sleep(3.0)
+                    except Exception as e:
+                        if attempt < 2:
+                            logger.warning(f"⚠️ TP/SL placement exception: {e}, retrying in 3s...")
+                            await asyncio.sleep(3.0)
+                        else:
+                            logger.error(f"❌ TP/SL placement failed after 3 attempts: {e}")
+                
+                if not tpsl_response:
+                    logger.error(f"❌ Could not place TP/SL orders for {symbol}")
+                    continue  # Skip adding position if TP/SL failed
                 
                 # Store order IDs
                 if tpsl_response.get('sl', {}).get('code') == '00000':
