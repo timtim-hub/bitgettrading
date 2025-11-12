@@ -714,6 +714,12 @@ class InstitutionalLiveTrader:
         else:
             self._last_monitor_log = datetime.now()
         
+        # Periodic check: Verify TP/SL orders exist and re-place if missing (every 5 minutes)
+        if not hasattr(self, '_last_tpsl_check'):
+            self._last_tpsl_check = datetime.now()
+        
+        check_tpsl = (datetime.now() - self._last_tpsl_check).total_seconds() >= 300  # 5 minutes
+        
         for symbol, position in list(self.positions.items()):
             try:
                 # Get current price
@@ -1006,6 +1012,53 @@ class InstitutionalLiveTrader:
                 except Exception as e:
                     logger.debug(f"⚠️ Could not check position size for {symbol}: {e}")
                 
+                # Periodic TP/SL verification and re-placement (every 5 minutes)
+                if check_tpsl:
+                    try:
+                        verify_endpoint = "/api/v2/mix/order/orders-plan-pending"
+                        verify_params = {
+                            "symbol": symbol,
+                            "productType": "usdt-futures",
+                        }
+                        verify_response = await self.rest_client._request("GET", verify_endpoint, params=verify_params)
+                        if verify_response.get('code') == '00000':
+                            orders = verify_response.get('data', {}).get('entrustedList', [])
+                            sl_orders = [o for o in orders if o.get('planType') == 'pos_loss']
+                            tp_orders = [o for o in orders if o.get('planType') == 'profit_plan']
+                            
+                            # Re-place missing orders
+                            if len(sl_orders) == 0:
+                                logger.warning(f"⚠️ Missing SL order detected | {symbol} | Re-placing...")
+                                sl_response = await self.rest_client.place_tpsl_order(
+                                    symbol=symbol,
+                                    hold_side=position.side,
+                                    size=position.remaining_size,
+                                    stop_loss_price=position.stop_price,
+                                    take_profit_price=None,
+                                    size_precision=3
+                                )
+                                if sl_response.get('sl', {}).get('code') == '00000':
+                                    position.stop_order_id = sl_response.get('sl', {}).get('data', {}).get('orderId')
+                                    logger.info(f"✅ SL order re-placed | {symbol}")
+                            
+                            if len(tp_orders) == 0 and position.tp_levels:
+                                tp1_price = position.tp_levels[0][0]
+                                logger.warning(f"⚠️ Missing TP order detected | {symbol} | Re-placing...")
+                                tp_response = await self.rest_client.place_tpsl_order(
+                                    symbol=symbol,
+                                    hold_side=position.side,
+                                    size=position.remaining_size,
+                                    stop_loss_price=None,
+                                    take_profit_price=round(tp1_price, 2),
+                                    size_precision=3
+                                )
+                                if tp_response.get('tp', {}).get('code') == '00000':
+                                    tp_order_id = tp_response.get('tp', {}).get('data', {}).get('orderId')
+                                    position.tp_order_ids[0] = tp_order_id
+                                    logger.info(f"✅ TP order re-placed | {symbol} @ ${tp1_price:.4f}")
+                    except Exception as e:
+                        logger.debug(f"⚠️ Could not verify/re-place TP/SL for {symbol}: {e}")
+                
                 # Log TP/SL distances (for monitoring)
                 if position.tp_levels:
                     tp_price = position.tp_levels[0][0]
@@ -1031,6 +1084,10 @@ class InstitutionalLiveTrader:
                         f"TP1: ${tp_price:.4f} ({tp_dist:+.2f}%) | SL: ${position.stop_price:.4f} ({sl_dist:+.2f}%) | "
                         f"Trailing: {trailing_status}"
                     )
+        
+        # Update last TP/SL check time
+        if check_tpsl:
+            self._last_tpsl_check = datetime.now()
             
             except Exception as e:
                 logger.error(f"❌ Error monitoring position {symbol}: {e}")
