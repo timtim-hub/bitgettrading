@@ -111,21 +111,30 @@ class InstitutionalLiveTrader:
             # Bitget returns max 200 candles per request - need multiple requests
             all_candles = []
             requests_needed = min((total_candles + 199) // 200, 10)  # Max 10 requests (2000 candles)
+            end_time = None  # Start with most recent
             
             for i in range(requests_needed):
-                response = await self.rest_client.get_historical_candles(
-                    symbol=symbol,
-                    granularity=timeframe,
-                    limit=200
-                )
+                # Build params
+                params = {
+                    'symbol': symbol,
+                    'granularity': timeframe,
+                    'limit': 200
+                }
+                
+                # Add endTime to get older data (pagination)
+                if end_time:
+                    params['endTime'] = str(end_time)
+                
+                response = await self.rest_client.get_historical_candles(**params)
                 
                 if response.get('code') == '00000' and 'data' in response:
                     candles = response['data']
                     if candles:
-                        # Deduplicate by timestamp
-                        existing_timestamps = {c[0] for c in all_candles}
-                        new_candles = [c for c in candles if c[0] not in existing_timestamps]
-                        all_candles.extend(new_candles)
+                        all_candles.extend(candles)
+                        
+                        # Set endTime to oldest timestamp from this batch for next request
+                        oldest_timestamp = min(int(c[0]) for c in candles)
+                        end_time = oldest_timestamp - 1  # -1ms to avoid overlap
                         
                         if len(candles) < 200:  # No more historical data
                             break
@@ -659,9 +668,8 @@ class InstitutionalLiveTrader:
                         logger.debug(f"  ⚪ {symbol}: No signal ({regime_data.regime} regime)")
                     continue
                 
-                # Found a signal!
-                stats['signals_found'] += 1
-                logger.info(f"🎯 SIGNAL FOUND: {symbol} {signal.side.upper()} | {signal.strategy} | {regime_data.regime} regime")
+                # Found a potential signal - log it
+                logger.info(f"🎯 SIGNAL CANDIDATE: {symbol} {signal.side.upper()} | {signal.strategy} | {regime_data.regime} regime")
                 
                 # Get account equity
                 equity = await self.get_account_equity()
@@ -681,14 +689,19 @@ class InstitutionalLiveTrader:
                 )
                 
                 if not position_size.passed_liq_guards:
-                    logger.warning(f"⚠️ Signal rejected - liq guards: {position_size.reason}")
+                    logger.warning(f"⚠️ {symbol}: Signal rejected - liq guards: {position_size.reason}")
                     continue
                 
                 # Place entry order
                 order_id = await self.place_entry_order(signal, symbol, position_size.contracts, equity)
                 
                 if not order_id:
+                    logger.warning(f"⚠️ {symbol}: Failed to place entry order")
                     continue
+                
+                # Successfully placed order - count it now!
+                stats['signals_found'] += 1
+                logger.info(f"✅ SIGNAL EXECUTED: {symbol} {signal.side.upper()} | Order ID: {order_id}")
                 
                 # Create position tracking
                 time_stop_range = signal.metadata.get('time_stop_range', [20, 30])
