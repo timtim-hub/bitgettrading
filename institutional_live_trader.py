@@ -770,19 +770,23 @@ class InstitutionalLiveTrader:
                                     # For LONG: Trigger at TP1 price (where profit starts)
                                     # Bitget trailing activates when price reaches trigger, then trails up
                                     if tp1_price:
-                                        trigger_price = tp1_price  # Use TP1 as trigger (simplest and most reliable)
+                                        # If current price is already at/above TP1, use current price (trailing activates immediately)
+                                        # Otherwise use TP1 (trailing activates when price reaches TP1)
+                                        trigger_price = max(tp1_price, current_price * 1.001)
                                     else:
                                         trigger_price = max(current_price * 1.001, min_profit_price * 1.001)
-                                    logger.info(f"🔒 Trailing stop for LONG: Trigger @ ${trigger_price:.4f} (TP1: ${tp1_price:.4f if tp1_price else 0:.4f}, min profit: {min_profit_pct*100:.1f}%)")
+                                    logger.info(f"🔒 Trailing stop for LONG: Trigger @ ${trigger_price:.4f} (TP1: ${tp1_price:.4f if tp1_price else 0:.4f}, Current: ${current_price:.4f}, min profit: {min_profit_pct*100:.1f}%)")
                                 else:
                                     min_profit_price = position.entry_price * (1 - min_profit_pct)
                                     # For SHORT: Trigger at TP1 price (where profit starts)
                                     # Bitget trailing activates when price reaches trigger (drops to TP1), then trails down
                                     if tp1_price:
-                                        trigger_price = tp1_price  # Use TP1 as trigger (simplest and most reliable)
+                                        # If current price is already at/below TP1, use current price (trailing activates immediately)
+                                        # Otherwise use TP1 (trailing activates when price drops to TP1)
+                                        trigger_price = min(tp1_price, current_price * 0.999)
                                     else:
                                         trigger_price = min(current_price * 0.999, min_profit_price * 0.999)
-                                    logger.info(f"🔒 Trailing stop for SHORT: Trigger @ ${trigger_price:.4f} (TP1: ${tp1_price:.4f if tp1_price else 0:.4f}, min profit: {min_profit_pct*100:.1f}%)")
+                                    logger.info(f"🔒 Trailing stop for SHORT: Trigger @ ${trigger_price:.4f} (TP1: ${tp1_price:.4f if tp1_price else 0:.4f}, Current: ${current_price:.4f}, min profit: {min_profit_pct*100:.1f}%)")
                                 
                                 # Verify we're locking in at least 2.5% profit
                                 if position.side == 'long':
