@@ -112,8 +112,8 @@
       "sl_atr_x": 1.5,
       "tp1_atr_x": 1.2,
       "trail": "Supertrend(10,3)",
-      "rsi_bull_threshold": 50,
-      "rsi_bear_threshold": 50
+      "rsi_bull_threshold": 45,
+      "rsi_bear_threshold": 55
     }
   },
   "scheduling": {

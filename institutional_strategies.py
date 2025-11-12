@@ -645,8 +645,8 @@ class TrendStrategy:
             # EMA alignment (9 > 21, don't require crossover - too restrictive!)
             ema_aligned = ema_9 > ema_21
             
-            # RSI > 45 (relaxed from 50)
-            rsi_ok = rsi > 45
+            # RSI check (use config value)
+            rsi_ok = rsi > self.rsi_bull_threshold
             
             if near_vwap and ema_aligned and rsi_ok:
                 side = 'long'
@@ -676,8 +676,8 @@ class TrendStrategy:
             # EMA alignment (9 < 21, don't require crossover - too restrictive!)
             ema_aligned = ema_9 < ema_21
             
-            # RSI < 55 (relaxed from 50)
-            rsi_ok = rsi < 55
+            # RSI check (use config value)
+            rsi_ok = rsi < self.rsi_bear_threshold
             
             if near_vwap and ema_aligned and rsi_ok:
                 side = 'short'

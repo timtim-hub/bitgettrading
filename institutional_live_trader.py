@@ -7,7 +7,7 @@ import asyncio
 import json
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from pathlib import Path
 import logging
@@ -274,20 +274,24 @@ class InstitutionalLiveTrader:
     
     async def passes_universe_gates(self, symbol: str, force_check: bool = False) -> bool:
         """Check if symbol passes universe gates (with caching)"""
+        passes, _ = await self.passes_universe_gates_with_reason(symbol, force_check)
+        return passes
+    
+    async def passes_universe_gates_with_reason(self, symbol: str, force_check: bool = False) -> Tuple[bool, str]:
+        """Check if symbol passes universe gates with failure reason"""
         now = datetime.now()
         
         # Check cache
         if not force_check and symbol in self.last_gate_check:
             if now - self.last_gate_check[symbol] < self.gate_check_interval:
                 # Use cached result (assume passed if we checked recently)
-                return True
+                return True, "cached"
         
         # Get market data
         market_data = await self.get_market_data(symbol)
         
         if not market_data:
-            logger.warning(f"⚠️ Could not get market data for {symbol}")
-            return False
+            return False, "no market data"
         
         # Update bucket
         bucket = self.universe_filter.update_bucket_from_volume(symbol, market_data.quote_vol_24h)
@@ -295,13 +299,10 @@ class InstitutionalLiveTrader:
         # Check gates
         passes, reason = self.universe_filter.passes_gates(market_data, bucket)
         
-        if not passes:
-            logger.debug(f"❌ {symbol} failed gates: {reason}")
-        
         # Update cache
         self.last_gate_check[symbol] = now
         
-        return passes
+        return passes, reason
     
     async def can_open_position(self, symbol: str, strategy: str) -> bool:
         """Check if we can open a new position"""
@@ -621,10 +622,11 @@ class InstitutionalLiveTrader:
                     continue
                 
                 # Check universe gates
-                if not await self.passes_universe_gates(symbol):
+                passes, reason = await self.passes_universe_gates_with_reason(symbol)
+                if not passes:
                     stats['gates_failed'] += 1
-                    if stats['gates_failed'] <= 3:  # Log first 3 failures
-                        logger.debug(f"  ⛔ {symbol}: Failed universe gates")
+                    if stats['gates_failed'] <= 5:  # Log first 5 failures with reasons
+                        logger.debug(f"  ⛔ {symbol}: Gates failed - {reason}")
                     continue
                 
                 # Get data (enough for 15m resampling and EMA200)
