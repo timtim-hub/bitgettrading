@@ -1249,6 +1249,48 @@ class InstitutionalLiveTrader:
                 # Place exchange-side TP/SL orders (Bitget handles execution automatically!)
                 tp1_price = signal.tp_levels[0][0] if signal.tp_levels else None
                 
+                # CRITICAL: Validate TP price for SHORT positions (must be below current price)
+                if tp1_price and signal.side == 'short':
+                    # Get current market price
+                    try:
+                        market_data = await self.get_market_data(symbol)
+                        if market_data:
+                            current_price = market_data.last_price
+                            # For SHORT: TP must be BELOW current price
+                            if tp1_price >= current_price:
+                                # TP price is at or above current price - adjust it
+                                # Set TP to 0.1% below current price (minimum valid TP)
+                                tp1_price = current_price * 0.999
+                                logger.warning(
+                                    f"⚠️ TP1 price ({signal.tp_levels[0][0]:.4f}) >= current price ({current_price:.4f}) for SHORT | "
+                                    f"Adjusting TP1 to {tp1_price:.4f} (0.1% below current)"
+                                )
+                                # Update position's TP level
+                                position.tp_levels[0] = (tp1_price, position.tp_levels[0][1])
+                    except Exception as e:
+                        logger.debug(f"⚠️ Could not validate TP price: {e}")
+                
+                # CRITICAL: Validate TP price for LONG positions (must be above current price)
+                if tp1_price and signal.side == 'long':
+                    # Get current market price
+                    try:
+                        market_data = await self.get_market_data(symbol)
+                        if market_data:
+                            current_price = market_data.last_price
+                            # For LONG: TP must be ABOVE current price
+                            if tp1_price <= current_price:
+                                # TP price is at or below current price - adjust it
+                                # Set TP to 0.1% above current price (minimum valid TP)
+                                tp1_price = current_price * 1.001
+                                logger.warning(
+                                    f"⚠️ TP1 price ({signal.tp_levels[0][0]:.4f}) <= current price ({current_price:.4f}) for LONG | "
+                                    f"Adjusting TP1 to {tp1_price:.4f} (0.1% above current)"
+                                )
+                                # Update position's TP level
+                                position.tp_levels[0] = (tp1_price, position.tp_levels[0][1])
+                    except Exception as e:
+                        logger.debug(f"⚠️ Could not validate TP price: {e}")
+                
                 # Retry TP/SL placement up to 5 times with longer waits
                 tpsl_response = None
                 for attempt in range(5):
@@ -1452,6 +1494,38 @@ class InstitutionalLiveTrader:
                 
                 # Place exchange-side TP/SL orders if missing
                 tp1_price = position.tp_levels[0][0] if position.tp_levels else None
+                
+                # CRITICAL: Validate TP price for SHORT positions (must be below current price)
+                if tp1_price and position.side == 'short':
+                    try:
+                        market_data = await self.get_market_data(symbol)
+                        if market_data:
+                            current_price = market_data.last_price
+                            if tp1_price >= current_price:
+                                tp1_price = current_price * 0.999
+                                logger.warning(
+                                    f"⚠️ TP1 price ({position.tp_levels[0][0]:.4f}) >= current price ({current_price:.4f}) for SHORT | "
+                                    f"Adjusting TP1 to {tp1_price:.4f}"
+                                )
+                                position.tp_levels[0] = (tp1_price, position.tp_levels[0][1])
+                    except Exception as e:
+                        logger.debug(f"⚠️ Could not validate TP price: {e}")
+                
+                # CRITICAL: Validate TP price for LONG positions (must be above current price)
+                if tp1_price and position.side == 'long':
+                    try:
+                        market_data = await self.get_market_data(symbol)
+                        if market_data:
+                            current_price = market_data.last_price
+                            if tp1_price <= current_price:
+                                tp1_price = current_price * 1.001
+                                logger.warning(
+                                    f"⚠️ TP1 price ({position.tp_levels[0][0]:.4f}) <= current price ({current_price:.4f}) for LONG | "
+                                    f"Adjusting TP1 to {tp1_price:.4f}"
+                                )
+                                position.tp_levels[0] = (tp1_price, position.tp_levels[0][1])
+                    except Exception as e:
+                        logger.debug(f"⚠️ Could not validate TP price: {e}")
                 
                 tpsl_response = await self.rest_client.place_tpsl_order(
                     symbol=symbol,
