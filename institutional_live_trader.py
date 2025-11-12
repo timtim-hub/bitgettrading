@@ -728,8 +728,22 @@ class InstitutionalLiveTrader:
                 # Update MAE/MFE tracking
                 if position.side == 'long':
                     position.highest_price = max(position.highest_price, current_price)
+                    peak_pnl_pct = ((position.highest_price - position.entry_price) / position.entry_price) * 100
+                    peak_pnl_usd = (position.highest_price - position.entry_price) * position.size * position.entry_price
                 else:
                     position.lowest_price = min(position.lowest_price, current_price) if position.lowest_price > 0 else current_price
+                    peak_pnl_pct = ((position.entry_price - position.lowest_price) / position.entry_price) * 100
+                    peak_pnl_usd = (position.entry_price - position.lowest_price) * position.size * position.entry_price
+                
+                # Update peak performance in trade tracker
+                if symbol in self.trade_ids:
+                    peak_price = position.highest_price if position.side == 'long' else position.lowest_price
+                    self.trade_tracker.update_peak(
+                        self.trade_ids[symbol],
+                        peak_pnl_usd=peak_pnl_usd,
+                        peak_pnl_pct=peak_pnl_pct,
+                        peak_price=peak_price
+                    )
                 
                 # Get latest bar for tripwire checks
                 df = await self.fetch_candles(symbol, timeframe='5m', days=1)
