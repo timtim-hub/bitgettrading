@@ -639,22 +639,16 @@ class TrendStrategy:
         
         # Check for LONG signal
         if bullish_bias:
-            # Pullback to VWAP or VWAP-1σ
-            near_vwap = abs(price - vwap) / price < 0.01 or price <= vwap_lower * 1.01
+            # Pullback to VWAP or VWAP-1σ (relaxed to 2%)
+            near_vwap = abs(price - vwap) / price < 0.02 or price <= vwap_lower * 1.02
             
-            # EMA 9/21 recross (9 crosses above 21)
-            if current_idx > -len(df):
-                prev_bar = df.iloc[current_idx - 1]
-                ema_9_prev = prev_bar.get('ema_9', 0)
-                ema_21_prev = prev_bar.get('ema_21', 0)
-                ema_recross = (ema_9_prev <= ema_21_prev) and (ema_9 > ema_21)
-            else:
-                ema_recross = False
+            # EMA alignment (9 > 21, don't require crossover - too restrictive!)
+            ema_aligned = ema_9 > ema_21
             
-            # RSI > 50
-            rsi_ok = rsi > self.rsi_bull_threshold
+            # RSI > 45 (relaxed from 50)
+            rsi_ok = rsi > 45
             
-            if near_vwap and ema_recross and rsi_ok:
+            if near_vwap and ema_aligned and rsi_ok:
                 side = 'long'
                 entry_price = vwap_lower
                 stop_price = self._find_last_swing_low(df, current_idx) - (self.sl_atr_x * atr)
@@ -676,22 +670,16 @@ class TrendStrategy:
         
         # Check for SHORT signal
         elif bearish_bias:
-            # Pullback to VWAP or VWAP+1σ
-            near_vwap = abs(price - vwap) / price < 0.01 or price >= vwap_upper * 0.99
+            # Pullback to VWAP or VWAP+1σ (relaxed to 2%)
+            near_vwap = abs(price - vwap) / price < 0.02 or price >= vwap_upper * 0.98
             
-            # EMA 9/21 recross (9 crosses below 21)
-            if current_idx > -len(df):
-                prev_bar = df.iloc[current_idx - 1]
-                ema_9_prev = prev_bar.get('ema_9', 0)
-                ema_21_prev = prev_bar.get('ema_21', 0)
-                ema_recross = (ema_9_prev >= ema_21_prev) and (ema_9 < ema_21)
-            else:
-                ema_recross = False
+            # EMA alignment (9 < 21, don't require crossover - too restrictive!)
+            ema_aligned = ema_9 < ema_21
             
-            # RSI < 50
-            rsi_ok = rsi < self.rsi_bear_threshold
+            # RSI < 55 (relaxed from 50)
+            rsi_ok = rsi < 55
             
-            if near_vwap and ema_recross and rsi_ok:
+            if near_vwap and ema_aligned and rsi_ok:
                 side = 'short'
                 entry_price = vwap_upper
                 stop_price = self._find_last_swing_high(df, current_idx) + (self.sl_atr_x * atr)
