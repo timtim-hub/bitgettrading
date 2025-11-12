@@ -1160,15 +1160,41 @@ class InstitutionalLiveTrader:
                     sweep_level=signal.metadata.get('swept_level')
                 )
                 
-                # Wait for position to be fully available on exchange (Bitget needs a moment)
-                await asyncio.sleep(2.0)  # 2 second delay to avoid "Insufficient position" error
+                # Wait for position to be fully available on exchange (Bitget needs time!)
+                # CRITICAL: Wait longer and verify position exists before placing TP/SL
+                await asyncio.sleep(5.0)  # Increased from 2s to 5s
+                
+                # Verify position actually exists on exchange before placing TP/SL
+                position_verified = False
+                for verify_attempt in range(5):
+                    try:
+                        positions_list = await self.rest_client.get_positions(symbol)
+                        if positions_list:
+                            for pos in positions_list:
+                                if pos.get('symbol') == symbol:
+                                    pos_size = float(pos.get('total', 0) or pos.get('available', 0))
+                                    if pos_size > 0:
+                                        position_verified = True
+                                        logger.info(f"✅ Position verified on exchange | {symbol} | Size: {pos_size:.4f}")
+                                        break
+                        if position_verified:
+                            break
+                    except Exception as e:
+                        logger.debug(f"⚠️ Position verification attempt {verify_attempt+1}/5 failed: {e}")
+                    
+                    if not position_verified and verify_attempt < 4:
+                        await asyncio.sleep(2.0)  # Wait 2s between verification attempts
+                
+                if not position_verified:
+                    logger.error(f"❌ Position {symbol} not found on exchange after 5 attempts - skipping TP/SL placement")
+                    continue  # Skip this position
                 
                 # Place exchange-side TP/SL orders (Bitget handles execution automatically!)
                 tp1_price = signal.tp_levels[0][0] if signal.tp_levels else None
                 
-                # Retry TP/SL placement up to 3 times (Bitget sometimes needs more time)
+                # Retry TP/SL placement up to 5 times with longer waits
                 tpsl_response = None
-                for attempt in range(3):
+                for attempt in range(5):
                     try:
                         tpsl_response = await self.rest_client.place_tpsl_order(
                             symbol=symbol,
@@ -1184,16 +1210,51 @@ class InstitutionalLiveTrader:
                         tp_ok = tpsl_response.get('tp', {}).get('code') == '00000' if tp1_price else True
                         
                         if sl_ok and tp_ok:
+                            logger.info(f"✅ TP/SL orders placed successfully | {symbol} | Attempt {attempt+1}/5")
                             break  # Success!
-                        elif attempt < 2:
-                            logger.warning(f"⚠️ TP/SL placement attempt {attempt+1}/3 failed, retrying in 3s...")
-                            await asyncio.sleep(3.0)
+                        elif attempt < 4:
+                            wait_time = 5.0 * (attempt + 1)  # 5s, 10s, 15s, 20s
+                            logger.warning(f"⚠️ TP/SL placement attempt {attempt+1}/5 failed, retrying in {wait_time:.0f}s...")
+                            logger.warning(f"   SL: {tpsl_response.get('sl', {}).get('code', 'N/A')} | TP: {tpsl_response.get('tp', {}).get('code', 'N/A')}")
+                            await asyncio.sleep(wait_time)
                     except Exception as e:
-                        if attempt < 2:
-                            logger.warning(f"⚠️ TP/SL placement exception: {e}, retrying in 3s...")
-                            await asyncio.sleep(3.0)
+                        if attempt < 4:
+                            wait_time = 5.0 * (attempt + 1)
+                            logger.warning(f"⚠️ TP/SL placement exception: {e}, retrying in {wait_time:.0f}s...")
+                            await asyncio.sleep(wait_time)
                         else:
-                            logger.error(f"❌ TP/SL placement failed after 3 attempts: {e}")
+                            logger.error(f"❌ TP/SL placement failed after 5 attempts: {e}")
+                
+                # Verify TP/SL orders were actually placed
+                if tpsl_response:
+                    sl_code = tpsl_response.get('sl', {}).get('code', 'N/A')
+                    tp_code = tpsl_response.get('tp', {}).get('code', 'N/A') if tp1_price else 'N/A'
+                    
+                    if sl_code != '00000':
+                        logger.error(f"❌ SL order FAILED | {symbol} | Code: {sl_code} | Msg: {tpsl_response.get('sl', {}).get('msg', 'N/A')}")
+                    if tp_code != '00000' and tp1_price:
+                        logger.error(f"❌ TP order FAILED | {symbol} | Code: {tp_code} | Msg: {tpsl_response.get('tp', {}).get('msg', 'N/A')}")
+                    
+                    # Try to verify orders exist on exchange
+                    await asyncio.sleep(2.0)  # Wait for orders to appear
+                    try:
+                        verify_endpoint = "/api/v2/mix/order/orders-plan-pending"
+                        verify_params = {
+                            "symbol": symbol,
+                            "productType": "usdt-futures",
+                        }
+                        verify_response = await self.rest_client._request("GET", verify_endpoint, params=verify_params)
+                        if verify_response.get('code') == '00000':
+                            orders = verify_response.get('data', {}).get('entrustedList', [])
+                            sl_orders = [o for o in orders if o.get('planType') == 'pos_loss']
+                            tp_orders = [o for o in orders if o.get('planType') == 'profit_plan']
+                            logger.info(f"🔍 Verification: {symbol} | SL orders: {len(sl_orders)} | TP orders: {len(tp_orders)}")
+                            if len(sl_orders) == 0 and sl_code == '00000':
+                                logger.warning(f"⚠️ WARNING: SL order code was 00000 but order NOT found on exchange! | {symbol}")
+                            if len(tp_orders) == 0 and tp_code == '00000' and tp1_price:
+                                logger.warning(f"⚠️ WARNING: TP order code was 00000 but order NOT found on exchange! | {symbol}")
+                    except Exception as e:
+                        logger.debug(f"⚠️ Could not verify TP/SL orders: {e}")
                 
                 if not tpsl_response:
                     logger.error(f"❌ Could not place TP/SL orders for {symbol}")
