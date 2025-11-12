@@ -746,8 +746,10 @@ class InstitutionalLiveTrader:
                                         logger.debug(f"⚠️ Could not cancel old order: {e}")
                                         pass
                                 
-                                # Place Bitget trailing stop (track_plan) - 5% callback
-                                callback_ratio = 0.05  # 5% trailing callback
+                                # Place Bitget trailing stop (track_plan) - adaptive callback
+                                # Use 3% callback for tighter trailing (allows more profit capture)
+                                # This gives room for price to move beyond TP1 while protecting gains
+                                callback_ratio = 0.03  # 3% trailing callback (tighter = more profit potential)
                                 
                                 # Trigger price: Activate immediately (at current price)
                                 # For LONG: Trigger at current (trails up as price rises)

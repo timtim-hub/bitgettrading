@@ -602,11 +602,12 @@ class TrendStrategy:
         self.config = config.get('strategies', {}).get('Trend', {})
         self.ema_periods = self.config.get('ema', [9, 21, 50, 200])
         self.sl_atr_x = self.config.get('sl_atr_x', 1.5)
-        self.tp1_atr_x = self.config.get('tp1_atr_x', 1.2)
+        self.tp1_atr_x = self.config.get('tp1_atr_x', 2.5)  # Increased from 1.2 to 2.5 for higher profits
+        self.tp1_min_pct = self.config.get('tp1_min_pct', 0.025)  # Minimum 2.5% profit
         self.rsi_bull_threshold = self.config.get('rsi_bull_threshold', 50)
         self.rsi_bear_threshold = self.config.get('rsi_bear_threshold', 50)
         
-        logger.info(f"✅ Trend Strategy initialized | sl_atr={self.sl_atr_x}x | tp1_atr={self.tp1_atr_x}x")
+        logger.info(f"✅ Trend Strategy initialized | sl_atr={self.sl_atr_x}x | tp1_atr={self.tp1_atr_x}x | tp1_min={self.tp1_min_pct*100:.1f}%")
     
     def generate_signal(self, df: pd.DataFrame, current_idx: int = -1) -> Optional[TradeSignal]:
         """
@@ -656,9 +657,15 @@ class TrendStrategy:
                 entry_price = vwap_lower
                 stop_price = self._find_last_swing_low(df, current_idx) - (self.sl_atr_x * atr)
                 
-                tp_levels = [(entry_price + (self.tp1_atr_x * atr), 1.0)]
+                # Calculate TP1: Use ATR-based OR minimum percentage, whichever is LARGER
+                tp1_atr = entry_price + (self.tp1_atr_x * atr)
+                tp1_min = entry_price * (1 + self.tp1_min_pct)  # Minimum 2.5% profit
+                tp1_price = max(tp1_atr, tp1_min)  # Use the larger value
                 
-                logger.info(f"🚀 TREND SIGNAL | LONG @ ${entry_price:.4f} | SL @ ${stop_price:.4f}")
+                tp_levels = [(tp1_price, 1.0)]
+                
+                tp_pct = ((tp1_price - entry_price) / entry_price) * 100
+                logger.info(f"🚀 TREND SIGNAL | LONG @ ${entry_price:.4f} | SL @ ${stop_price:.4f} | TP1 @ ${tp1_price:.4f} ({tp_pct:.2f}%)")
                 
                 return TradeSignal(
                     strategy='Trend',
@@ -690,9 +697,15 @@ class TrendStrategy:
                 entry_price = vwap_upper
                 stop_price = self._find_last_swing_high(df, current_idx) + (self.sl_atr_x * atr)
                 
-                tp_levels = [(entry_price - (self.tp1_atr_x * atr), 1.0)]
+                # Calculate TP1: Use ATR-based OR minimum percentage, whichever is LARGER (for SHORT, larger = more distance down)
+                tp1_atr = entry_price - (self.tp1_atr_x * atr)
+                tp1_min = entry_price * (1 - self.tp1_min_pct)  # Minimum 2.5% profit (price goes down)
+                tp1_price = min(tp1_atr, tp1_min)  # Use the smaller value (further down = more profit)
                 
-                logger.info(f"🚀 TREND SIGNAL | SHORT @ ${entry_price:.4f} | SL @ ${stop_price:.4f}")
+                tp_levels = [(tp1_price, 1.0)]
+                
+                tp_pct = ((entry_price - tp1_price) / entry_price) * 100
+                logger.info(f"🚀 TREND SIGNAL | SHORT @ ${entry_price:.4f} | SL @ ${stop_price:.4f} | TP1 @ ${tp1_price:.4f} ({tp_pct:.2f}%)")
                 
                 return TradeSignal(
                     strategy='Trend',

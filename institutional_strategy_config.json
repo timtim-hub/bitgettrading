@@ -110,7 +110,8 @@
       "regime": "Trend",
       "ema": [9, 21, 50, 200],
       "sl_atr_x": 1.5,
-      "tp1_atr_x": 1.2,
+      "tp1_atr_x": 2.5,
+      "tp1_min_pct": 0.025,
       "trail": "Supertrend(10,3)",
       "rsi_bull_threshold": 45,
       "rsi_bear_threshold": 55
