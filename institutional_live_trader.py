@@ -682,6 +682,16 @@ class InstitutionalLiveTrader:
                 
                 current_price = market_data.last_price
                 
+                # Log monitoring (every 30 seconds to avoid spam)
+                time_since_entry = (datetime.now() - position.entry_time).total_seconds()
+                if int(time_since_entry) % 30 < 5:  # Log roughly every 30 seconds
+                    pnl_pct = ((current_price - position.entry_price) / position.entry_price * 100) if position.side == 'long' else ((position.entry_price - current_price) / position.entry_price * 100)
+                    logger.info(
+                        f"📊 Monitoring {symbol} {position.side.upper()} | "
+                        f"Price: ${current_price:.4f} | Entry: ${position.entry_price:.4f} | "
+                        f"P&L: {pnl_pct:+.2f}% | Stop: ${position.stop_price:.4f}"
+                    )
+                
                 # Update MAE/MFE tracking
                 if position.side == 'long':
                     position.highest_price = max(position.highest_price, current_price)
@@ -713,24 +723,76 @@ class InstitutionalLiveTrader:
                         hit = False
                         if position.side == 'long':
                             hit = current_price >= tp_price
+                            distance_to_tp = ((current_price - tp_price) / tp_price) * 100
                         else:
                             hit = current_price <= tp_price
+                            distance_to_tp = ((tp_price - current_price) / tp_price) * 100
+                        
+                        # Log TP check (every 30 seconds)
+                        if int(time_since_entry) % 30 < 5:
+                            logger.debug(
+                                f"  TP{tp_idx + 1} check: {symbol} | "
+                                f"Current: ${current_price:.4f} | TP: ${tp_price:.4f} | "
+                                f"Distance: {distance_to_tp:+.2f}% | Hit: {hit}"
+                            )
                         
                         if hit:
-                            logger.info(f"🎯 TP{tp_idx + 1} HIT | {symbol} @ ${tp_price:.4f}")
+                            logger.info(f"🎯 TP{tp_idx + 1} HIT | {symbol} @ ${tp_price:.4f} | Current: ${current_price:.4f}")
                             
                             position.tp_hit_count += 1
                             exit_size = position.size * tp_size_frac
-                            position.remaining_size -= exit_size
+                            
+                            logger.info(f"  Exiting {exit_size:.4f} contracts ({tp_size_frac*100:.0f}%)")
+                            
+                            # ACTUALLY EXECUTE THE EXIT TRADE
+                            try:
+                                response = await self.rest_client.place_order(
+                                    symbol=symbol,
+                                    side='sell' if position.side == 'long' else 'buy',
+                                    order_type='market',
+                                    size=exit_size,
+                                    reduce_only=True
+                                )
+                                
+                                if response.get('code') == '00000':
+                                    order_id = response.get('data', {}).get('orderId')
+                                    logger.info(f"✅ TP{tp_idx + 1} EXIT EXECUTED | Order ID: {order_id}")
+                                    
+                                    # Update remaining size
+                                    position.remaining_size -= exit_size
+                                    logger.info(f"  Remaining size: {position.remaining_size:.4f}")
+                                else:
+                                    logger.error(f"❌ TP{tp_idx + 1} exit failed: {response}")
+                                    continue  # Don't update tracking if trade failed
+                            except Exception as e:
+                                logger.error(f"❌ Error executing TP{tp_idx + 1} exit: {e}")
+                                continue
                             
                             # Move SL to BE after TP1
                             if tp_idx == 0 and not position.moved_to_be:
                                 await self.update_stop_to_breakeven(position)
                             
-                            # If all size exited, close position
+                            # If all size exited, close position tracking
                             if position.remaining_size <= 0.001:
-                                await self.close_position(position, f'tp{tp_idx + 1}')
+                                logger.info(f"✅ Position fully exited via TP{tp_idx + 1}")
+                                del self.positions[symbol]
+                                self.active_symbols.discard(symbol)
+                                sector = symbol[:3]
+                                self.sector_counts[sector] = max(0, self.sector_counts.get(sector, 0) - 1)
                                 break
+                
+                # Check stop-loss (exchange-side should handle, but verify)
+                if position.side == 'long':
+                    sl_hit = current_price <= position.stop_price
+                    distance_to_sl = ((current_price - position.stop_price) / position.entry_price) * 100
+                else:
+                    sl_hit = current_price >= position.stop_price
+                    distance_to_sl = ((position.stop_price - current_price) / position.entry_price) * 100
+                
+                if sl_hit:
+                    logger.warning(f"🚨 STOP-LOSS HIT | {symbol} | Current: ${current_price:.4f} | Stop: ${position.stop_price:.4f}")
+                    await self.close_position(position, 'stop_loss')
+                    continue
                 
                 # Trailing stop (enabled after TP1 hit)
                 if position.tp_hit_count > 0 and position.moved_to_be:
@@ -949,16 +1011,23 @@ class InstitutionalLiveTrader:
         
         logger.info(f"\n📊 Starting with {len(self.positions)} tracked positions\n")
         
+        # Separate monitoring frequency (faster for 1-10 min trades)
+        monitor_interval = 5  # Check positions every 5 seconds
+        last_scan_time = datetime.now()
+        
         while True:
             try:
-                # Monitor existing positions
+                # Monitor existing positions (FAST - every 5 seconds)
                 await self.monitor_positions()
                 
-                # Scan for new signals
-                await self.scan_for_signals(symbols)
+                # Scan for new signals (SLOWER - every scan_interval_seconds)
+                now = datetime.now()
+                if (now - last_scan_time).total_seconds() >= scan_interval_seconds:
+                    await self.scan_for_signals(symbols)
+                    last_scan_time = now
                 
-                # Wait before next scan
-                await asyncio.sleep(scan_interval_seconds)
+                # Wait before next monitoring cycle
+                await asyncio.sleep(monitor_interval)
             
             except KeyboardInterrupt:
                 logger.info("\n⚠️ Shutting down...")
