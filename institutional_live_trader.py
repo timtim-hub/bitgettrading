@@ -813,8 +813,9 @@ class InstitutionalLiveTrader:
                                             hit_time=datetime.now()
                                         )
                                     
-                                    # Move SL to breakeven and place trailing stop
-                                    # (Continue with trailing stop logic below)
+                                    # Cancel old SL and place trailing stop (same logic as exchange-side TP1)
+                                    # Trigger trailing stop placement immediately after manual TP1
+                                    await self._place_trailing_stop_after_tp1(position, symbol, current_price)
                                 else:
                                     logger.error(f"❌ Failed to execute TP1 manually | {symbol} | Code: {exit_response.get('code', 'N/A')}")
                             except Exception as e:
