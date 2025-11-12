@@ -770,6 +770,68 @@ class InstitutionalLiveTrader:
                     await self.close_position(position, tripwire_reason)
                     continue
                 
+                # 🚨 CRITICAL: Check if price hit TP/SL levels (BOT-SIDE BACKUP)
+                # Exchange-side TP/SL may not execute, so we MUST check price and execute manually!
+                if position.tp_levels and len(position.tp_levels) > 0:
+                    tp1_price = position.tp_levels[0][0]
+                    tp1_size_frac = position.tp_levels[0][1]
+                    
+                    # Check if TP1 was hit by price
+                    tp1_hit = False
+                    if position.side == 'long':
+                        tp1_hit = current_price >= tp1_price
+                    else:
+                        tp1_hit = current_price <= tp1_price
+                    
+                    if tp1_hit and position.tp_hit_count == 0:
+                        logger.warning(f"🎯 TP1 HIT (Price-based detection) | {symbol} | Price: ${current_price:.4f} >= TP1: ${tp1_price:.4f}")
+                        
+                        # Execute TP1 manually (exchange-side may not have executed)
+                        exit_size = position.remaining_size * tp1_size_frac
+                        if exit_size > 0.001:
+                            try:
+                                # Place market order to close partial position
+                                exit_side = "sell" if position.side == "long" else "buy"
+                                exit_response = await self.rest_client.place_order(
+                                    symbol=symbol,
+                                    side=exit_side,
+                                    order_type="market",
+                                    size=exit_size,
+                                    reduce_only=True
+                                )
+                                
+                                if exit_response.get('code') == '00000':
+                                    logger.info(f"✅ TP1 executed manually | {symbol} | Exited {exit_size:.4f} @ ${current_price:.4f}")
+                                    position.tp_hit_count = 1
+                                    position.remaining_size -= exit_size
+                                    
+                                    # Update trade tracking
+                                    if symbol in self.trade_ids:
+                                        self.trade_tracker.update_tp_hit(
+                                            self.trade_ids[symbol],
+                                            tp_level=1,
+                                            hit_time=datetime.now()
+                                        )
+                                    
+                                    # Move SL to breakeven and place trailing stop
+                                    # (Continue with trailing stop logic below)
+                                else:
+                                    logger.error(f"❌ Failed to execute TP1 manually | {symbol} | Code: {exit_response.get('code', 'N/A')}")
+                            except Exception as e:
+                                logger.error(f"❌ Error executing TP1 manually | {symbol} | {e}")
+                
+                # Check if SL was hit by price
+                sl_hit = False
+                if position.side == 'long':
+                    sl_hit = current_price <= position.stop_price
+                else:
+                    sl_hit = current_price >= position.stop_price
+                
+                if sl_hit:
+                    logger.warning(f"🛑 SL HIT (Price-based detection) | {symbol} | Price: ${current_price:.4f} {'<=' if position.side == 'long' else '>='} SL: ${position.stop_price:.4f}")
+                    await self.close_position(position, "SL")
+                    continue
+                
                 # Check if TP1 was hit (by checking if position size decreased or TP order filled)
                 # Bitget exchange-side TP will execute automatically, so we check position size
                 try:
