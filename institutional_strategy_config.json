@@ -1,0 +1,158 @@
+{
+  "mode": {
+    "live_enabled": true,
+    "paper_enabled": false,
+    "backtest_enabled": true
+  },
+  "leverage": 25,
+  "margin_fraction_per_trade": 0.10,
+  "liq_guards": {
+    "max_stop_pct": 0.028,
+    "min_abs_buffer_pct": 0.012,
+    "min_fraction_of_liq_distance": 0.30
+  },
+  "concurrency": {
+    "max_symbols": 3,
+    "max_per_sector": 2
+  },
+  "buckets": {
+    "majors": {
+      "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"],
+      "spread_bps_cap": 6,
+      "min_depth_usd": 100000,
+      "min_quote_vol_24h": 80000000
+    },
+    "midcaps": {
+      "spread_bps_cap": 8,
+      "min_depth_usd": 50000,
+      "min_quote_vol_24h": 80000000
+    },
+    "micros": {
+      "spread_bps_cap": 12,
+      "min_depth_usd": 20000,
+      "min_quote_vol_24h": 120000000
+    }
+  },
+  "regime": {
+    "majors": {
+      "adx15m_lt": 20,
+      "bb_width_pct_5m_le": 40,
+      "vwap_slope_sigma_range": [-0.05, 0.05]
+    },
+    "midcaps": {
+      "adx15m_lt": 22,
+      "bb_width_pct_5m_le": 50,
+      "vwap_slope_sigma_range": [-0.05, 0.05]
+    },
+    "micros": {
+      "adx15m_lt": 25,
+      "bb_width_pct_5m_le": 60,
+      "vwap_slope_sigma_range": [-0.05, 0.05]
+    }
+  },
+  "strategies": {
+    "LSVR": {
+      "enabled": true,
+      "regime": "Range",
+      "sweep_atr_x": {
+        "majors": 0.5,
+        "midcaps": 0.6,
+        "micros": 0.75
+      },
+      "sl_atr_x": {
+        "majors": 1.2,
+        "midcaps": 1.35,
+        "micros": 1.5
+      },
+      "tp": {
+        "tp1": {"type": "VWAP", "size": 0.75},
+        "tp2": {"type": "VWAP_plus_sigma", "k": 1, "size": 0.20},
+        "tp3": {"type": "pivot_or_R", "R": 1.8, "size": 0.05}
+      },
+      "time_stop_min": [15, 25],
+      "volume_skip_x": 2.2,
+      "of_required": false,
+      "tail_body_min_ratio": 0.6,
+      "structure_break_timeframe": "1m",
+      "sweep_close_back_bars": 3,
+      "retest_wait_bars": 2
+    },
+    "VWAP_MR": {
+      "enabled": true,
+      "regime": "Range",
+      "entry": {
+        "bb_touch_or_sigma": -1,
+        "stoch_rsi_level": 20,
+        "stoch_within_bars": 3,
+        "rsi5m_min": 42,
+        "vol_spike_max_x": 1.8
+      },
+      "sl_atr_x": {
+        "majors": 1.2,
+        "midcaps": 1.35,
+        "micros": 1.55
+      },
+      "tp": {
+        "tp1": {"type": "VWAP", "size": 0.65},
+        "tp2": {"type": "OppSigma_or_R", "k": 1, "R": 1.2, "size": 0.30},
+        "tp3": {"type": "OppBB_or_R", "R": 1.8, "size": 0.05}
+      },
+      "be_buffer_atr": 0.0,
+      "time_stop_min": [20, 30],
+      "adverse_spike_exit_x": 1.7,
+      "chase_atr_x": {
+        "majors": 0.25,
+        "midcaps": 0.20,
+        "micros": 0.0
+      }
+    },
+    "Trend": {
+      "enabled": true,
+      "regime": "Trend",
+      "ema": [9, 21, 50, 200],
+      "sl_atr_x": 1.5,
+      "tp1_atr_x": 1.2,
+      "trail": "Supertrend(10,3)",
+      "rsi_bull_threshold": 50,
+      "rsi_bear_threshold": 50
+    }
+  },
+  "scheduling": {
+    "funding_blackout_min": 2,
+    "gate_check_interval_min": 60
+  },
+  "features": {
+    "use_orderflow": false,
+    "enable_trend_fallback": true
+  },
+  "indicators": {
+    "vwap_reset_utc": "00:00",
+    "bb_period": 20,
+    "bb_std": 2.0,
+    "bb_width_lookback": 120,
+    "adx_period": 14,
+    "rsi_period": 14,
+    "stoch_rsi_params": [3, 3, 14, 14],
+    "atr_period": 14,
+    "volume_ma_period": 20,
+    "asia_session_hours": [0, 8]
+  },
+  "backtesting": {
+    "walk_forward": {
+      "optimize_days": 60,
+      "test_days": 30,
+      "roll_days": 30
+    },
+    "fees": {
+      "maker_bps": 2,
+      "taker_bps": 6
+    },
+    "slippage": {
+      "spread_based": true,
+      "min_bps": 1,
+      "max_bps": 10
+    },
+    "initial_capital_usdt": 1000
+  }
+}
+
