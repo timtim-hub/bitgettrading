@@ -179,10 +179,10 @@ class InstitutionalLiveTrader:
                     # We don't have original TP levels, so create default
                     
                     # Estimate stop price (use 2% from entry as default stop)
-                    estimated_stop = avg_price * 0.98 if side == "long" else avg_price * 1.02
+                    estimated_stop = round((avg_price * 0.98 if side == "long" else avg_price * 1.02), 2)
                     
-                    # Default TP level (1.2x ATR, typical for Trend)
-                    tp_price = avg_price * 1.012 if side == "long" else avg_price * 0.988
+                    # Default TP level (1.2% from entry, typical for Trend)
+                    tp_price = round((avg_price * 1.012 if side == "long" else avg_price * 0.988), 2)
                     tp_levels = [(tp_price, 1.0)]  # Single TP, exit all
                     
                     # Calculate notional
@@ -493,12 +493,17 @@ class InstitutionalLiveTrader:
     async def place_stop_loss(self, position: LivePosition) -> Optional[str]:
         """Place stop-loss order using TP/SL API"""
         try:
+            # Round stop price to appropriate precision (Bitget requires 2-3 decimals)
+            # Most symbols need 2 decimals, some need 3
+            # Try 2 first, then 3 if it fails
+            stop_price_rounded = round(position.stop_price, 2)
+            
             # Use place_tpsl_order for stop-loss
             response = await self.rest_client.place_tpsl_order(
                 symbol=position.symbol,
                 hold_side=position.side,  # 'long' or 'short'
                 size=position.remaining_size,
-                stop_loss_price=position.stop_price,
+                stop_loss_price=stop_price_rounded,
                 take_profit_price=None,  # Only SL for now
                 size_precision=3  # 3 decimal places
             )
@@ -524,8 +529,8 @@ class InstitutionalLiveTrader:
             if position.stop_order_id:
                 await self.rest_client.cancel_order(position.symbol, position.stop_order_id)
             
-            # Place new stop at BE
-            position.stop_price = position.entry_price
+            # Place new stop at BE (rounded)
+            position.stop_price = round(position.entry_price, 2)
             position.stop_order_id = await self.place_stop_loss(position)
             position.moved_to_be = True
             
@@ -562,9 +567,11 @@ class InstitutionalLiveTrader:
                     if position.stop_order_id:
                         await self.rest_client.cancel_order(position.symbol, position.stop_order_id)
                     
-                    position.stop_price = new_stop
+                    # Round to 2 decimals for Bitget
+                    new_stop_rounded = round(new_stop, 2)
+                    position.stop_price = new_stop_rounded
                     position.stop_order_id = await self.place_stop_loss(position)
-                    logger.info(f"📈 Trailing stop updated | {position.symbol} @ ${new_stop:.4f}")
+                    logger.info(f"📈 Trailing stop updated | {position.symbol} @ ${new_stop_rounded:.2f}")
             else:  # short
                 # Use last 5 bars swing high
                 recent_highs = df['high'].iloc[-5:].max()
@@ -576,9 +583,11 @@ class InstitutionalLiveTrader:
                     if position.stop_order_id:
                         await self.rest_client.cancel_order(position.symbol, position.stop_order_id)
                     
-                    position.stop_price = new_stop
+                    # Round to 2 decimals for Bitget
+                    new_stop_rounded = round(new_stop, 2)
+                    position.stop_price = new_stop_rounded
                     position.stop_order_id = await self.place_stop_loss(position)
-                    logger.info(f"📉 Trailing stop updated | {position.symbol} @ ${new_stop:.4f}")
+                    logger.info(f"📉 Trailing stop updated | {position.symbol} @ ${new_stop_rounded:.2f}")
         
         except Exception as e:
             logger.error(f"❌ Error updating trailing stop: {e}")
@@ -673,6 +682,14 @@ class InstitutionalLiveTrader:
         if not self.positions:
             return
         
+        # Log monitoring cycle (every 30 seconds to avoid spam)
+        if hasattr(self, '_last_monitor_log'):
+            if (datetime.now() - self._last_monitor_log).total_seconds() >= 30:
+                logger.debug(f"🔄 Monitoring {len(self.positions)} positions...")
+                self._last_monitor_log = datetime.now()
+        else:
+            self._last_monitor_log = datetime.now()
+        
         for symbol, position in list(self.positions.items()):
             try:
                 # Get current price
@@ -682,14 +699,31 @@ class InstitutionalLiveTrader:
                 
                 current_price = market_data.last_price
                 
-                # Log monitoring (every 30 seconds to avoid spam)
+                # Log monitoring (every 10 seconds to see activity)
                 time_since_entry = (datetime.now() - position.entry_time).total_seconds()
-                if int(time_since_entry) % 30 < 5:  # Log roughly every 30 seconds
+                if int(time_since_entry) % 10 < 5:  # Log roughly every 10 seconds
                     pnl_pct = ((current_price - position.entry_price) / position.entry_price * 100) if position.side == 'long' else ((position.entry_price - current_price) / position.entry_price * 100)
+                    
+                    # Calculate distance to TP/SL
+                    if position.tp_levels:
+                        tp_price = position.tp_levels[0][0]
+                        if position.side == 'long':
+                            tp_dist = ((current_price - tp_price) / tp_price) * 100
+                        else:
+                            tp_dist = ((tp_price - current_price) / tp_price) * 100
+                    else:
+                        tp_dist = 0
+                        tp_price = 0
+                    
+                    if position.side == 'long':
+                        sl_dist = ((current_price - position.stop_price) / position.entry_price) * 100
+                    else:
+                        sl_dist = ((position.stop_price - current_price) / position.entry_price) * 100
+                    
                     logger.info(
-                        f"📊 Monitoring {symbol} {position.side.upper()} | "
-                        f"Price: ${current_price:.4f} | Entry: ${position.entry_price:.4f} | "
-                        f"P&L: {pnl_pct:+.2f}% | Stop: ${position.stop_price:.4f}"
+                        f"📊 {symbol} {position.side.upper()} | "
+                        f"Price: ${current_price:.4f} | P&L: {pnl_pct:+.2f}% | "
+                        f"TP1: ${tp_price:.4f} ({tp_dist:+.2f}%) | SL: ${position.stop_price:.4f} ({sl_dist:+.2f}%)"
                     )
                 
                 # Update MAE/MFE tracking
@@ -917,7 +951,7 @@ class InstitutionalLiveTrader:
                     entry_price=signal.entry_price,
                     size=position_size.contracts,
                     notional=position_size.notional_usd,
-                    stop_price=signal.stop_price,
+                    stop_price=round(signal.stop_price, 2),  # Round for Bitget API
                     tp_levels=signal.tp_levels,
                     remaining_size=position_size.contracts,
                     highest_price=signal.entry_price if signal.side == 'long' else 0,
