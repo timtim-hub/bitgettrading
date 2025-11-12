@@ -772,14 +772,16 @@ class InstitutionalLiveTrader:
                         
                         if hit:
                             logger.info(f"🎯 TP{tp_idx + 1} HIT | {symbol} @ ${tp_price:.4f} | Current: ${current_price:.4f}")
+                            logger.info(f"  📊 Position details: Entry=${position.entry_price:.4f}, Size={position.size:.4f}, Remaining={position.remaining_size:.4f}")
                             
                             position.tp_hit_count += 1
                             exit_size = position.size * tp_size_frac
                             
-                            logger.info(f"  Exiting {exit_size:.4f} contracts ({tp_size_frac*100:.0f}%)")
+                            logger.info(f"  💰 Exiting {exit_size:.4f} contracts ({tp_size_frac*100:.0f}%) | Notional: ${exit_size * current_price:.2f}")
                             
                             # ACTUALLY EXECUTE THE EXIT TRADE
                             try:
+                                logger.info(f"  📤 Placing market order to exit TP{tp_idx + 1}...")
                                 response = await self.rest_client.place_order(
                                     symbol=symbol,
                                     side='sell' if position.side == 'long' else 'buy',
@@ -788,18 +790,24 @@ class InstitutionalLiveTrader:
                                     reduce_only=True
                                 )
                                 
+                                logger.info(f"  📥 API Response: {response.get('code')} - {response.get('msg', 'N/A')}")
+                                
                                 if response.get('code') == '00000':
-                                    order_id = response.get('data', {}).get('orderId')
+                                    order_id = response.get('data', {}).get('orderId') or response.get('data', {}).get('order_id')
                                     logger.info(f"✅ TP{tp_idx + 1} EXIT EXECUTED | Order ID: {order_id}")
                                     
                                     # Update remaining size
                                     position.remaining_size -= exit_size
-                                    logger.info(f"  Remaining size: {position.remaining_size:.4f}")
+                                    logger.info(f"  ✅ Remaining size: {position.remaining_size:.4f}")
                                 else:
                                     logger.error(f"❌ TP{tp_idx + 1} exit failed: {response}")
+                                    # Revert tp_hit_count if trade failed
+                                    position.tp_hit_count -= 1
                                     continue  # Don't update tracking if trade failed
                             except Exception as e:
-                                logger.error(f"❌ Error executing TP{tp_idx + 1} exit: {e}")
+                                logger.error(f"❌ Error executing TP{tp_idx + 1} exit: {e}", exc_info=True)
+                                # Revert tp_hit_count if trade failed
+                                position.tp_hit_count -= 1
                                 continue
                             
                             # Move SL to BE after TP1
@@ -830,7 +838,14 @@ class InstitutionalLiveTrader:
                 
                 # Trailing stop (enabled after TP1 hit)
                 if position.tp_hit_count > 0 and position.moved_to_be:
+                    # Log trailing stop activity (every 30 seconds)
+                    if int(time_since_entry) % 30 < 5:
+                        logger.debug(f"  🔄 Trailing stop active for {symbol} | Current stop: ${position.stop_price:.2f}")
                     await self.update_trailing_stop(position, current_price, current_bar)
+                elif position.tp_hit_count == 0:
+                    # Log when trailing is waiting for TP1 (every 30 seconds)
+                    if int(time_since_entry) % 30 < 5:
+                        logger.debug(f"  ⏳ Trailing stop waiting for TP1 | {symbol} | tp_hit_count={position.tp_hit_count}, moved_to_be={position.moved_to_be}")
             
             except Exception as e:
                 logger.error(f"❌ Error monitoring position {symbol}: {e}")
