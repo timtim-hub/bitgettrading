@@ -724,147 +724,147 @@ class InstitutionalLiveTrader:
                             logger.info(f"🎯 TP1 HIT (Exchange-side) | {symbol} | Size: {position.remaining_size:.4f} → {actual_size:.4f} ({size_decrease_pct:.1f}% decrease)")
                             position.tp_hit_count = 1
                             position.remaining_size = actual_size
-                                
-                                # Cancel old SL and place trailing stop using Bitget API
-                                if position.stop_order_id:
-                                    try:
-                                        # Cancel plan order (TP/SL) - try both plan types
-                                        endpoint = "/api/v2/mix/order/cancel-plan-order"
-                                        
-                                        # Try pos_loss first (stop-loss)
-                                        try:
-                                            cancel_data = {
-                                                "symbol": position.symbol,
-                                                "productType": "usdt-futures",
-                                                "marginCoin": "USDT",
-                                                "orderId": position.stop_order_id,
-                                                "planType": "pos_loss",
-                                            }
-                                            await self.rest_client._request("POST", endpoint, data=cancel_data)
-                                            logger.info(f"✅ Cancelled old SL order | {position.symbol} | Order ID: {position.stop_order_id}")
-                                        except:
-                                            # Try track_plan (trailing stop)
-                                            try:
-                                                cancel_data["planType"] = "track_plan"
-                                                await self.rest_client._request("POST", endpoint, data=cancel_data)
-                                                logger.info(f"✅ Cancelled old trailing order | {position.symbol} | Order ID: {position.stop_order_id}")
-                                            except:
-                                                pass
-                                    except Exception as e:
-                                        logger.debug(f"⚠️ Could not cancel old order: {e}")
-                                        pass
-                                
-                                # Place Bitget trailing stop (track_plan) - adaptive callback
-                                # Use 3% callback for tighter trailing (allows more profit capture)
-                                # CRITICAL: Ensure minimum 2.5% profit is locked in
-                                callback_ratio = 0.03  # 3% trailing callback (tighter = more profit potential)
-                                
-                                # Calculate minimum profit price (2.5% above/below entry)
-                                min_profit_pct = 0.025  # 2.5% minimum profit
-                                
-                                # Get TP1 price (where we want trailing to activate)
-                                tp1_price = position.tp_levels[0][0] if position.tp_levels else None
-                                
-                                if position.side == 'long':
-                                    min_profit_price = position.entry_price * (1 + min_profit_pct)
-                                    # For LONG: Trigger at TP1 price (where profit starts)
-                                    # Bitget trailing activates when price reaches trigger, then trails up
-                                    if tp1_price:
-                                        # If current price is already at/above TP1, use current price (trailing activates immediately)
-                                        # Otherwise use TP1 (trailing activates when price reaches TP1)
-                                        trigger_price = max(tp1_price, current_price * 1.001)
-                                    else:
-                                        trigger_price = max(current_price * 1.001, min_profit_price * 1.001)
-                                    logger.info(f"🔒 Trailing stop for LONG: Trigger @ ${trigger_price:.4f} (TP1: ${tp1_price:.4f if tp1_price else 0:.4f}, Current: ${current_price:.4f}, min profit: {min_profit_pct*100:.1f}%)")
-                                else:
-                                    min_profit_price = position.entry_price * (1 - min_profit_pct)
-                                    # For SHORT: Trigger at TP1 price (where profit starts)
-                                    # Bitget trailing activates when price reaches trigger (drops to TP1), then trails down
-                                    if tp1_price:
-                                        # If current price is already at/below TP1, use current price (trailing activates immediately)
-                                        # Otherwise use TP1 (trailing activates when price drops to TP1)
-                                        trigger_price = min(tp1_price, current_price * 0.999)
-                                    else:
-                                        trigger_price = min(current_price * 0.999, min_profit_price * 0.999)
-                                    logger.info(f"🔒 Trailing stop for SHORT: Trigger @ ${trigger_price:.4f} (TP1: ${tp1_price:.4f if tp1_price else 0:.4f}, Current: ${current_price:.4f}, min profit: {min_profit_pct*100:.1f}%)")
-                                
-                                # Verify we're locking in at least 2.5% profit
-                                if position.side == 'long':
-                                    profit_at_trigger = ((trigger_price - position.entry_price) / position.entry_price) * 100
-                                else:
-                                    profit_at_trigger = ((position.entry_price - trigger_price) / position.entry_price) * 100
-                                
-                                if profit_at_trigger < min_profit_pct * 100:
-                                    logger.warning(f"⚠️ Trailing trigger only locks {profit_at_trigger:.2f}% profit (need {min_profit_pct*100:.1f}%) - adjusting...")
-                                    # Adjust trigger to ensure minimum profit
-                                    if position.side == 'long':
-                                        trigger_price = min_profit_price
-                                    else:
-                                        trigger_price = min_profit_price
-                                    logger.info(f"✅ Adjusted trigger to ${trigger_price:.4f} to lock {min_profit_pct*100:.1f}% minimum profit")
-                                
-                                trailing_response = await self.rest_client.place_trailing_stop_full_position(
-                                    symbol=symbol,
-                                    hold_side=position.side,
-                                    callback_ratio=callback_ratio,
-                                    trigger_price=trigger_price,
-                                    size=actual_size,
-                                    size_precision=3
-                                )
-                                
-                                if trailing_response.get('code') == '00000':
-                                    trailing_order_id = trailing_response.get('data', {}).get('orderId')
-                                    position.stop_order_id = trailing_order_id
-                                    position.moved_to_be = True
-                                    logger.info(f"✅ Trailing stop placed (Bitget API) | {symbol} | Callback: {callback_ratio*100:.1f}% | Trigger: ${trigger_price:.4f} | Order ID: {trailing_order_id}")
-                                    logger.warning(f"🔍 CHECK BITGET APP: Trailing order should appear in 'Trailing' tab for {symbol}")
+                            
+                            # Cancel old SL and place trailing stop using Bitget API
+                            if position.stop_order_id:
+                                try:
+                                    # Cancel plan order (TP/SL) - try both plan types
+                                    endpoint = "/api/v2/mix/order/cancel-plan-order"
                                     
-                                    # Verify trailing stop is actually active (check after 2 seconds)
-                                    await asyncio.sleep(2.0)
+                                    # Try pos_loss first (stop-loss)
                                     try:
-                                        verify_endpoint = "/api/v2/mix/order/orders-plan-pending"
-                                        verify_params = {
-                                            "symbol": symbol,
+                                        cancel_data = {
+                                            "symbol": position.symbol,
                                             "productType": "usdt-futures",
-                                            "planType": "track_plan",
+                                            "marginCoin": "USDT",
+                                            "orderId": position.stop_order_id,
+                                            "planType": "pos_loss",
                                         }
-                                        verify_response = await self.rest_client._request("GET", verify_endpoint, params=verify_params)
-                                        if verify_response.get('code') == '00000':
-                                            orders = verify_response.get('data', {}).get('entrustedList', [])
-                                            trailing_orders = [o for o in orders if o.get('orderId') == trailing_order_id]
-                                            if trailing_orders:
-                                                logger.info(f"✅ Verified: Trailing stop is active on exchange | {symbol} | Order ID: {trailing_order_id}")
-                                            else:
-                                                logger.warning(f"⚠️ WARNING: Trailing stop order {trailing_order_id} NOT found on exchange! | {symbol}")
-                                                logger.warning(f"   This means the trailing stop may not be working. Using fallback fixed stop.")
-                                                # Use fallback
-                                                if position.side == 'long':
-                                                    fixed_stop = position.entry_price * (1 + min_profit_pct)
-                                                else:
-                                                    fixed_stop = position.entry_price * (1 - min_profit_pct)
-                                                position.stop_price = round(fixed_stop, 2)
-                                                position.stop_order_id = await self.place_stop_loss(position)
-                                    except Exception as e:
-                                        logger.debug(f"⚠️ Could not verify trailing stop: {e}")
+                                        await self.rest_client._request("POST", endpoint, data=cancel_data)
+                                        logger.info(f"✅ Cancelled old SL order | {position.symbol} | Order ID: {position.stop_order_id}")
+                                    except:
+                                        # Try track_plan (trailing stop)
+                                        try:
+                                            cancel_data["planType"] = "track_plan"
+                                            await self.rest_client._request("POST", endpoint, data=cancel_data)
+                                            logger.info(f"✅ Cancelled old trailing order | {position.symbol} | Order ID: {position.stop_order_id}")
+                                        except:
+                                            pass
+                                except Exception as e:
+                                    logger.debug(f"⚠️ Could not cancel old order: {e}")
+                                    pass
+                            
+                            # Place Bitget trailing stop (track_plan) - adaptive callback
+                            # Use 3% callback for tighter trailing (allows more profit capture)
+                            # CRITICAL: Ensure minimum 2.5% profit is locked in
+                            callback_ratio = 0.03  # 3% trailing callback (tighter = more profit potential)
+                            
+                            # Calculate minimum profit price (2.5% above/below entry)
+                            min_profit_pct = 0.025  # 2.5% minimum profit
+                            
+                            # Get TP1 price (where we want trailing to activate)
+                            tp1_price = position.tp_levels[0][0] if position.tp_levels else None
+                            
+                            if position.side == 'long':
+                                min_profit_price = position.entry_price * (1 + min_profit_pct)
+                                # For LONG: Trigger at TP1 price (where profit starts)
+                                # Bitget trailing activates when price reaches trigger, then trails up
+                                if tp1_price:
+                                    # If current price is already at/above TP1, use current price (trailing activates immediately)
+                                    # Otherwise use TP1 (trailing activates when price reaches TP1)
+                                    trigger_price = max(tp1_price, current_price * 1.001)
                                 else:
-                                    error_code = trailing_response.get('code', 'N/A')
-                                    error_msg = trailing_response.get('msg', 'N/A')
-                                    logger.error(f"❌ Failed to place trailing stop: Code={error_code}, Msg={error_msg}")
-                                    logger.error(f"   Full response: {trailing_response}")
-                                    
-                                    # Fallback: Use fixed stop at 2.5% profit (more reliable than trailing)
-                                    if position.side == 'long':
-                                        fixed_stop = position.entry_price * (1 + min_profit_pct)  # 2.5% above entry
-                                    else:
-                                        fixed_stop = position.entry_price * (1 - min_profit_pct)  # 2.5% below entry
-                                    
-                                    position.stop_price = round(fixed_stop, 2)
-                                    position.stop_order_id = await self.place_stop_loss(position)
-                                    position.moved_to_be = True
-                                    logger.info(f"✅ Fallback: Fixed stop at 2.5% profit | {symbol} @ ${fixed_stop:.4f}")
+                                    trigger_price = max(current_price * 1.001, min_profit_price * 1.001)
+                                logger.info(f"🔒 Trailing stop for LONG: Trigger @ ${trigger_price:.4f} (TP1: ${tp1_price:.4f if tp1_price else 0:.4f}, Current: ${current_price:.4f}, min profit: {min_profit_pct*100:.1f}%)")
+                            else:
+                                min_profit_price = position.entry_price * (1 - min_profit_pct)
+                                # For SHORT: Trigger at TP1 price (where profit starts)
+                                # Bitget trailing activates when price reaches trigger (drops to TP1), then trails down
+                                if tp1_price:
+                                    # If current price is already at/below TP1, use current price (trailing activates immediately)
+                                    # Otherwise use TP1 (trailing activates when price drops to TP1)
+                                    trigger_price = min(tp1_price, current_price * 0.999)
+                                else:
+                                    trigger_price = min(current_price * 0.999, min_profit_price * 0.999)
+                                logger.info(f"🔒 Trailing stop for SHORT: Trigger @ ${trigger_price:.4f} (TP1: ${tp1_price:.4f if tp1_price else 0:.4f}, Current: ${current_price:.4f}, min profit: {min_profit_pct*100:.1f}%)")
+                            
+                            # Verify we're locking in at least 2.5% profit
+                            if position.side == 'long':
+                                profit_at_trigger = ((trigger_price - position.entry_price) / position.entry_price) * 100
+                            else:
+                                profit_at_trigger = ((position.entry_price - trigger_price) / position.entry_price) * 100
+                            
+                            if profit_at_trigger < min_profit_pct * 100:
+                                logger.warning(f"⚠️ Trailing trigger only locks {profit_at_trigger:.2f}% profit (need {min_profit_pct*100:.1f}%) - adjusting...")
+                                # Adjust trigger to ensure minimum profit
+                                if position.side == 'long':
+                                    trigger_price = min_profit_price
+                                else:
+                                    trigger_price = min_profit_price
+                                logger.info(f"✅ Adjusted trigger to ${trigger_price:.4f} to lock {min_profit_pct*100:.1f}% minimum profit")
+                            
+                            trailing_response = await self.rest_client.place_trailing_stop_full_position(
+                                symbol=symbol,
+                                hold_side=position.side,
+                                callback_ratio=callback_ratio,
+                                trigger_price=trigger_price,
+                                size=actual_size,
+                                size_precision=3
+                            )
+                            
+                            if trailing_response.get('code') == '00000':
+                                trailing_order_id = trailing_response.get('data', {}).get('orderId')
+                                position.stop_order_id = trailing_order_id
+                                position.moved_to_be = True
+                                logger.info(f"✅ Trailing stop placed (Bitget API) | {symbol} | Callback: {callback_ratio*100:.1f}% | Trigger: ${trigger_price:.4f} | Order ID: {trailing_order_id}")
+                                logger.warning(f"🔍 CHECK BITGET APP: Trailing order should appear in 'Trailing' tab for {symbol}")
                                 
-                                # Update remaining size
-                                position.remaining_size = actual_size
+                                # Verify trailing stop is actually active (check after 2 seconds)
+                                await asyncio.sleep(2.0)
+                                try:
+                                    verify_endpoint = "/api/v2/mix/order/orders-plan-pending"
+                                    verify_params = {
+                                        "symbol": symbol,
+                                        "productType": "usdt-futures",
+                                        "planType": "track_plan",
+                                    }
+                                    verify_response = await self.rest_client._request("GET", verify_endpoint, params=verify_params)
+                                    if verify_response.get('code') == '00000':
+                                        orders = verify_response.get('data', {}).get('entrustedList', [])
+                                        trailing_orders = [o for o in orders if o.get('orderId') == trailing_order_id]
+                                        if trailing_orders:
+                                            logger.info(f"✅ Verified: Trailing stop is active on exchange | {symbol} | Order ID: {trailing_order_id}")
+                                        else:
+                                            logger.warning(f"⚠️ WARNING: Trailing stop order {trailing_order_id} NOT found on exchange! | {symbol}")
+                                            logger.warning(f"   This means the trailing stop may not be working. Using fallback fixed stop.")
+                                            # Use fallback
+                                            if position.side == 'long':
+                                                fixed_stop = position.entry_price * (1 + min_profit_pct)
+                                            else:
+                                                fixed_stop = position.entry_price * (1 - min_profit_pct)
+                                            position.stop_price = round(fixed_stop, 2)
+                                            position.stop_order_id = await self.place_stop_loss(position)
+                                except Exception as e:
+                                    logger.debug(f"⚠️ Could not verify trailing stop: {e}")
+                            else:
+                                error_code = trailing_response.get('code', 'N/A')
+                                error_msg = trailing_response.get('msg', 'N/A')
+                                logger.error(f"❌ Failed to place trailing stop: Code={error_code}, Msg={error_msg}")
+                                logger.error(f"   Full response: {trailing_response}")
+                                
+                                # Fallback: Use fixed stop at 2.5% profit (more reliable than trailing)
+                                if position.side == 'long':
+                                    fixed_stop = position.entry_price * (1 + min_profit_pct)  # 2.5% above entry
+                                else:
+                                    fixed_stop = position.entry_price * (1 - min_profit_pct)  # 2.5% below entry
+                                
+                                position.stop_price = round(fixed_stop, 2)
+                                position.stop_order_id = await self.place_stop_loss(position)
+                                position.moved_to_be = True
+                                logger.info(f"✅ Fallback: Fixed stop at 2.5% profit | {symbol} @ ${fixed_stop:.4f}")
+                            
+                            # Update remaining size
+                            position.remaining_size = actual_size
                         
                         # If position fully closed, remove from tracking
                         if actual_size <= 0.001:
