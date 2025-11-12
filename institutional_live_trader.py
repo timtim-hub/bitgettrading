@@ -368,19 +368,23 @@ class InstitutionalLiveTrader:
             return None
     
     async def place_stop_loss(self, position: LivePosition) -> Optional[str]:
-        """Place stop-loss order"""
+        """Place stop-loss order using TP/SL API"""
         try:
-            response = await self.rest_client.place_stop_order(
+            # Use place_tpsl_order for stop-loss
+            response = await self.rest_client.place_tpsl_order(
                 symbol=position.symbol,
-                side='sell' if position.side == 'long' else 'buy',  # Opposite of entry
-                trigger_price=str(position.stop_price),
-                size=str(position.remaining_size),
-                order_type='market'
+                hold_side=position.side,  # 'long' or 'short'
+                size=position.remaining_size,
+                stop_loss_price=position.stop_price,
+                take_profit_price=None,  # Only SL for now
+                size_precision=3  # 3 decimal places
             )
             
-            if response.get('code') == '00000':
-                order_id = response.get('data', {}).get('orderId')
-                logger.info(f"✅ Stop-loss placed | {position.symbol} @ ${position.stop_price:.4f}")
+            # Response has 'sl' key with order info
+            if response.get('sl', {}).get('code') == '00000':
+                sl_data = response.get('sl', {}).get('data', {})
+                order_id = sl_data.get('orderId')
+                logger.info(f"✅ Stop-loss placed | {position.symbol} @ ${position.stop_price:.4f} | Order ID: {order_id}")
                 return order_id
             else:
                 logger.error(f"❌ Stop-loss placement failed: {response}")
@@ -406,6 +410,55 @@ class InstitutionalLiveTrader:
         
         except Exception as e:
             logger.error(f"❌ Error moving stop to BE: {e}")
+    
+    async def update_trailing_stop(self, position: LivePosition, current_price: float, current_bar: Dict):
+        """
+        Update trailing stop after TP1 hit
+        
+        Uses last swing low/high (simpler than Parabolic SAR for now)
+        """
+        try:
+            atr = current_bar.get('atr', 0)
+            if atr == 0:
+                return
+            
+            # Get recent candles for swing detection
+            df = await self.fetch_candles(position.symbol, timeframe='5m', days=1)
+            if df is None or len(df) < 20:
+                return
+            
+            # Calculate trailing stop price
+            if position.side == 'long':
+                # Use last 5 bars swing low
+                recent_lows = df['low'].iloc[-5:].min()
+                new_stop = recent_lows - (0.5 * atr)  # 0.5 ATR buffer
+                
+                # Only move stop up, never down
+                if new_stop > position.stop_price:
+                    # Cancel old stop
+                    if position.stop_order_id:
+                        await self.rest_client.cancel_order(position.symbol, position.stop_order_id)
+                    
+                    position.stop_price = new_stop
+                    position.stop_order_id = await self.place_stop_loss(position)
+                    logger.info(f"📈 Trailing stop updated | {position.symbol} @ ${new_stop:.4f}")
+            else:  # short
+                # Use last 5 bars swing high
+                recent_highs = df['high'].iloc[-5:].max()
+                new_stop = recent_highs + (0.5 * atr)  # 0.5 ATR buffer
+                
+                # Only move stop down, never up
+                if new_stop < position.stop_price or position.stop_price == 0:
+                    # Cancel old stop
+                    if position.stop_order_id:
+                        await self.rest_client.cancel_order(position.symbol, position.stop_order_id)
+                    
+                    position.stop_price = new_stop
+                    position.stop_order_id = await self.place_stop_loss(position)
+                    logger.info(f"📉 Trailing stop updated | {position.symbol} @ ${new_stop:.4f}")
+        
+        except Exception as e:
+            logger.error(f"❌ Error updating trailing stop: {e}")
     
     async def check_tripwires(self, position: LivePosition, current_price: float, 
                               current_bar: Dict) -> Optional[str]:
@@ -555,6 +608,10 @@ class InstitutionalLiveTrader:
                             if position.remaining_size <= 0.001:
                                 await self.close_position(position, f'tp{tp_idx + 1}')
                                 break
+                
+                # Trailing stop (enabled after TP1 hit)
+                if position.tp_hit_count > 0 and position.moved_to_be:
+                    await self.update_trailing_stop(position, current_price, current_bar)
             
             except Exception as e:
                 logger.error(f"❌ Error monitoring position {symbol}: {e}")
