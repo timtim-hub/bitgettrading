@@ -1073,7 +1073,9 @@ class InstitutionalLiveTrader:
                     await self.close_position(position, "stop_loss")
                     continue
                 
-                # Check if position was closed externally (exchange-side TP/SL or manual close)
+                # 🚨 CRITICAL: Check if position was closed externally (exchange-side TP/SL executed)
+                # ALL exits must go through our TP/SL logic - if exchange-side TP/SL executed,
+                # we need to detect it and route it through close_position() with proper reason
                 try:
                     positions_list = await self.rest_client.get_positions(symbol)
                     actual_size = 0
@@ -1083,32 +1085,36 @@ class InstitutionalLiveTrader:
                                 actual_size = float(pos.get('total', 0) or pos.get('available', 0))
                                 break
                         
-                        # If position fully closed externally, clean up tracking
+                        # If position fully closed externally, determine WHY (TP/SL execution)
                         if actual_size <= 0.001:
-                            logger.info(f"✅ Position closed externally | {symbol}")
+                            # Check if it was due to TP/SL execution by comparing price to TP/SL levels
+                            exit_reason = "external_close"
                             
-                            # Close trade tracking
-                            if symbol in self.trade_ids:
-                                exit_indicators = {}
-                                entry_fee = position.notional * 0.0006
-                                exit_fee = position.notional * 0.0006
-                                
-                                self.trade_tracker.close_trade(
-                                    self.trade_ids[symbol],
-                                    exit_time=datetime.now(),
-                                    exit_price=current_price,
-                                    exit_reason="external_close",
-                                    exit_size=actual_size,
-                                    fees_entry=entry_fee,
-                                    fees_exit=exit_fee,
-                                    exit_indicators=exit_indicators,
-                                )
-                                del self.trade_ids[symbol]
+                            # Determine if it was TP or SL based on price movement
+                            price_change_pct = ((current_price - position.entry_price) / position.entry_price * 100) if position.side == 'long' else ((position.entry_price - current_price) / position.entry_price * 100)
+                            leverage = position.notional / (position.notional / 25) if position.notional > 0 else 25
+                            roe_pct = price_change_pct * leverage
                             
-                            del self.positions[symbol]
-                            self.active_symbols.discard(symbol)
-                            sector = symbol[:3]
-                            self.sector_counts[sector] = max(0, self.sector_counts.get(sector, 0) - 1)
+                            # Check if price hit TP level (positive ROE)
+                            if roe_pct >= 2.0:  # TP should be around 2.5% ROE
+                                exit_reason = "exchange_take_profit"
+                                logger.info(f"✅ Exchange TP executed | {symbol} | ROE: {roe_pct:.2f}%")
+                            # Check if price hit SL level (negative ROE)
+                            elif roe_pct <= -1.5:  # SL should be around -2% ROE
+                                exit_reason = "exchange_stop_loss"
+                                logger.warning(f"🛑 Exchange SL executed | {symbol} | ROE: {roe_pct:.2f}%")
+                            else:
+                                # Small profit/loss - could be trailing TP or other mechanism
+                                if roe_pct > 0:
+                                    exit_reason = "exchange_trailing_take_profit"
+                                else:
+                                    exit_reason = "exchange_stop_loss"  # Assume SL if negative
+                                logger.warning(f"⚠️ Exchange close detected | {symbol} | ROE: {roe_pct:.2f}% | Reason: {exit_reason}")
+                            
+                            # Route through close_position() to ensure proper cleanup and logging
+                            # But first, mark position as closed to avoid double-processing
+                            position.remaining_size = 0
+                            await self.close_position(position, exit_reason)
                             continue
                 except Exception as e:
                     logger.debug(f"⚠️ Could not check position for {symbol}: {e}")
@@ -2056,7 +2062,8 @@ class InstitutionalLiveTrader:
         logger.info(f"\n📊 Starting with {len(self.positions)} tracked positions\n")
         
         # Separate monitoring frequency (faster for 1-10 min trades)
-        monitor_interval = 5  # Check positions every 5 seconds
+        # 🚨 CRITICAL: Check every 2 seconds to catch TP/SL hits BEFORE exchange executes
+        monitor_interval = 2  # Check positions every 2 seconds (was 5s)
         last_scan_time = datetime.now()
         
         while True:
