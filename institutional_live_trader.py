@@ -980,102 +980,26 @@ class InstitutionalLiveTrader:
                     await self.close_position(position, tripwire_reason)
                     continue
                 
-                # 🚨 SIMPLE TRAILING TP LOGIC (MUCH SIMPLER THAN TP1/TP2/TP3!)
-                # Track peak prices and move TP continuously to lock in profits
-                # No complex partial closes - just one simple trailing TP!
+                # 🚨 EXCHANGE-SIDE ONLY: All trailing TP is handled by Bitget exchange (moving_plan)
+                # Bot only tracks peak prices for logging/analysis, but does NOT move TP levels
+                # Exchange-side trailing TP automatically trails from the activation price
                 
-                # Update peak prices for trailing
+                # Update peak prices for logging only (not for TP adjustment)
                 if position.side == 'long':
                     if current_price > position.highest_price:
-                        old_high = position.highest_price
                         position.highest_price = current_price
-                        
-                        # Calculate new trailing TP to maintain 2.5% ROI target
-                        # Using actual leverage for the position
-                        leverage = position.notional / (position.notional / 25) if position.notional > 0 else 25  # Estimate leverage
-                        profit_target_pct = 0.025  # 2.5% ROI on equity
-                        price_move_needed = profit_target_pct / leverage  # Convert to price move
-                        new_tp = position.highest_price * (1 + price_move_needed)
-                        
-                        # Only move TP UP (never down), and only if it's better than current TP
-                        if position.tp_levels:
-                            old_tp = position.tp_levels[0][0]
-                            if new_tp > old_tp:
-                                position.tp_levels[0] = (new_tp, 1.0)
-                                tp_move = ((new_tp - old_tp) / old_tp) * 100
-                                logger.info(f"🔄 TRAILING TP UP | {symbol} | ${old_tp:.4f} → ${new_tp:.4f} (+{tp_move:.2f}%) | Peak: ${position.highest_price:.4f}")
-                
                 else:  # SHORT
-                    if current_price < position.lowest_price:
-                        old_low = position.lowest_price
+                    if current_price < position.lowest_price or position.lowest_price == 0:
                         position.lowest_price = current_price
-                        
-                        # Calculate new trailing TP
-                        leverage = position.notional / (position.notional / 25) if position.notional > 0 else 25
-                        profit_target_pct = 0.025  # 2.5% ROI
-                        price_move_needed = profit_target_pct / leverage
-                        new_tp = position.lowest_price * (1 - price_move_needed)
-                        
-                        # Only move TP DOWN (never up), and only if it's better than current TP
-                        if position.tp_levels:
-                            old_tp = position.tp_levels[0][0]
-                            if new_tp < old_tp:
-                                position.tp_levels[0] = (new_tp, 1.0)
-                                tp_move = ((old_tp - new_tp) / old_tp) * 100
-                                logger.info(f"🔄 TRAILING TP DOWN | {symbol} | ${old_tp:.4f} → ${new_tp:.4f} (-{tp_move:.2f}%) | Peak: ${position.lowest_price:.4f}")
                 
-                # 🚨 BOT-SIDE TP MONITORING - Check if trailing TP hit (MUST catch before exchange executes!)
-                # This is PRIMARY protection - we want to close via market order, not wait for exchange TP
-                if position.tp_levels:
-                    tp_price = position.tp_levels[0][0]
-                    tp_hit = False
-                    
-                    # Use a small buffer (0.01%) to catch TP hits slightly early
-                    if position.side == 'long':
-                        if current_price >= tp_price * 0.9999:  # 0.01% buffer
-                            tp_hit = True
-                            logger.info(f"🎯 TRAILING TP HIT | {symbol} LONG | Price ${current_price:.4f} >= TP ${tp_price:.4f}")
-                    else:  # SHORT
-                        if current_price <= tp_price * 1.0001:  # 0.01% buffer
-                            tp_hit = True
-                            logger.info(f"🎯 TRAILING TP HIT | {symbol} SHORT | Price ${current_price:.4f} <= TP ${tp_price:.4f}")
-                    
-                    if tp_hit:
-                        logger.info(f"💰 TRAILING TP HIT! Closing FULL position (100%) via MARKET ORDER | {symbol}")
-                        await self.close_position(position, "trailing_take_profit")
-                        continue
-                
-                # BOT-SIDE SL MONITORING (FIXED SL - never moves!)
-                # Calculate ROE (Return on Equity) for more accurate loss detection
-                leverage = position.notional / (position.notional / 25) if position.notional > 0 else 25
-                roe_pct = pnl_pct * leverage
-                
-                sl_hit = False
-                sl_reason = ""
-                
-                if position.side == 'long':
-                    if current_price <= position.stop_price:
-                        sl_hit = True
-                        sl_reason = f"Price ${current_price:.4f} <= SL ${position.stop_price:.4f}"
-                        logger.warning(f"🛑 STOP LOSS HIT | {symbol} LONG | {sl_reason}")
-                else:  # SHORT
-                    if current_price >= position.stop_price:
-                        sl_hit = True
-                        sl_reason = f"Price ${current_price:.4f} >= SL ${position.stop_price:.4f}"
-                        logger.warning(f"🛑 STOP LOSS HIT | {symbol} SHORT | {sl_reason}")
-                
-                # 🚨 CRITICAL: Prevent small losses that bypass TP/SL logic
-                # If ROE is negative and approaching -0.10%, close immediately to prevent fees from eating into position
-                # This ensures we never close with small losses that should have been protected by SL
-                if not sl_hit and roe_pct < -0.05:  # -0.05% ROE threshold (before fees)
-                    sl_hit = True
-                    sl_reason = f"Small loss protection: ROE {roe_pct:.2f}% (preventing fees from causing -0.10% loss)"
-                    logger.warning(f"🛑 SMALL LOSS PROTECTION | {symbol} | {sl_reason} | Price: ${current_price:.4f} | Entry: ${position.entry_price:.4f}")
-                
-                if sl_hit:
-                    logger.error(f"🚨 STOP LOSS HIT! Closing position immediately | {symbol} | P&L: {pnl_pct:+.2f}% | ROE: {roe_pct:+.2f}% | Reason: {sl_reason}")
-                    await self.close_position(position, "stop_loss")
-                    continue
+                # 🚨 EXCHANGE-SIDE ONLY: All TP/SL execution is handled by Bitget exchange
+                # Bot only monitors for:
+                # 1. Tripwires (already checked above)
+                # 2. Time stops (checked below)
+                # 3. External closes (exchange-side TP/SL executed - detected below)
+                # 
+                # NO bot-side TP/SL monitoring - exchange handles all execution for security!
+                # This ensures positions are protected even if bot crashes or is shut off.
                 
                 # 🚨 CRITICAL: Check if position was closed externally (exchange-side TP/SL executed)
                 # ALL exits must go through our TP/SL logic - if exchange-side TP/SL executed,
