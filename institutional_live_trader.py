@@ -211,7 +211,7 @@ class InstitutionalLiveTrader:
                         remaining_size=total_size,
                         highest_price=current_price if side == "long" else 0,
                         lowest_price=current_price if side == "short" else 0,
-                        time_stop_time=datetime.now() + timedelta(minutes=25),  # Default 25 min
+                        time_stop_time=datetime.now() + timedelta(hours=24),  # 24 hours
                         moved_to_be=False  # Assume not moved yet
                     )
                     
@@ -783,19 +783,30 @@ class InstitutionalLiveTrader:
                         logger.warning(f"🚨 TRIPWIRE: Adverse spike | {position.symbol}")
                         return 'tripwire_adverse_spike'
         
-        # 3. Check time stop
+        # 3. Check time stop (24 hours - should rarely trigger)
         # 🚨 CRITICAL: Before closing by time_stop, check if position is at a loss
         # If ROE is negative, it should have been closed by SL, not time_stop!
+        # This indicates exchange-side SL orders are NOT executing - CRITICAL ISSUE!
         if position.time_stop_time and datetime.now() >= position.time_stop_time:
             # Calculate current ROE to prevent closing with small losses
             price_change_pct = ((current_price - position.entry_price) / position.entry_price * 100) if position.side == 'long' else ((position.entry_price - current_price) / position.entry_price * 100)
             leverage = position.notional / (position.notional / 25) if position.notional > 0 else 25
             roe_pct = price_change_pct * leverage
             
-            # If position is at a loss, log warning but still close (time_stop is safety mechanism)
+            # Check if price has hit SL level (exchange-side SL should have executed!)
+            sl_hit = False
+            if position.side == 'long' and current_price <= position.stop_price:
+                sl_hit = True
+                logger.error(f"🚨 CRITICAL: TIME STOP but price BELOW SL! | {position.symbol} | Price: ${current_price:.4f} <= SL: ${position.stop_price:.4f} | Exchange SL FAILED!")
+            elif position.side == 'short' and current_price >= position.stop_price:
+                sl_hit = True
+                logger.error(f"🚨 CRITICAL: TIME STOP but price ABOVE SL! | {position.symbol} | Price: ${current_price:.4f} >= SL: ${position.stop_price:.4f} | Exchange SL FAILED!")
+            
+            # If position is at a loss, this is a CRITICAL ERROR - exchange-side SL should have executed!
             if roe_pct < -0.05:
-                logger.error(f"⚠️ TIME STOP with LOSS | {position.symbol} | ROE: {roe_pct:.2f}% | This should have been caught by SL!")
-            logger.info(f"⏱️ Time stop reached | {position.symbol} | ROE: {roe_pct:+.2f}%")
+                logger.error(f"🚨 CRITICAL ERROR: TIME STOP with LOSS | {position.symbol} | ROE: {roe_pct:.2f}% | Exchange-side SL should have executed but didn't!")
+                logger.error(f"   Entry: ${position.entry_price:.4f} | Exit: ${current_price:.4f} | SL: ${position.stop_price:.4f} | SL Hit: {sl_hit}")
+            logger.info(f"⏱️ Time stop reached (24h) | {position.symbol} | ROE: {roe_pct:+.2f}%")
             return 'time_stop'
         
         return None
@@ -1294,8 +1305,8 @@ class InstitutionalLiveTrader:
                 logger.info(f"✅ SIGNAL EXECUTED: {symbol} {signal.side.upper()} | Order ID: {order_id}")
                 
                 # Create position tracking
-                time_stop_range = signal.metadata.get('time_stop_range', [20, 30])
-                time_stop_minutes = (time_stop_range[0] + time_stop_range[1]) / 2
+                # 🚨 TIME STOP: 24 hours - positions should only close via TP/SL, not time
+                time_stop_hours = 24
                 
                 # Create position tracking (will update with actual filled size later)
                 position = LivePosition(
@@ -1311,7 +1322,7 @@ class InstitutionalLiveTrader:
                     remaining_size=position_size.contracts,  # Will be updated with actual filled size
                     highest_price=signal.entry_price if signal.side == 'long' else 0,
                     lowest_price=signal.entry_price if signal.side == 'short' else 0,
-                    time_stop_time=datetime.now() + timedelta(minutes=time_stop_minutes),
+                    time_stop_time=datetime.now() + timedelta(hours=time_stop_hours),  # 24 hours
                     sweep_level=signal.metadata.get('swept_level')
                 )
                 
