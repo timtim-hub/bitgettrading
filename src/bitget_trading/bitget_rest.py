@@ -779,6 +779,13 @@ class BitgetRestClient:
         except Exception:
             return round(float(val), 4)
 
+    def _get_tick_size(self, price_end_step: float | None, price_places: int | None) -> float:
+        """Calculate tick size for price adjustments."""
+        if price_end_step and price_end_step > 0:
+            return float(price_end_step)
+        places = int(price_places) if price_places is not None else 4
+        return 10 ** (-places)
+
     def _validate_trigger_price(
         self, trigger: float, current_price: float, hold_side: str, price_places: int | None
     ) -> float:
@@ -948,34 +955,22 @@ class BitgetRestClient:
                 # If take profit validation error, nudge trigger to valid side vs current price
                 if any(code in error_msg for code in ("45135", "40832", "40915")):
                     try:
-                        cur_px = _extract_ref_price(error_msg) or await _get_current_price()
+                        cur_px = _extract_ref_price(error_msg) or await self._get_current_market_price(symbol)
                         if cur_px:
-                            hold = data.get("holdSide")  # 'buy' for long, 'sell' for short
+                            hold = data.get("holdSide")
                             trig = float(data.get("triggerPrice", "0"))
-                            tick = _tick_size()
-                            if hold == "buy":
-                                # LONG: TP must be ABOVE current price
-                                if trig <= cur_px:
-                                    trig = cur_px + tick
-                            else:
-                                # SHORT: TP must be BELOW current price
-                                if trig >= cur_px:
-                                    trig = cur_px - tick
-                            # Round to exchange precision
-                            trig = _round_price(trig) or trig
+                            if hold == "buy" and trig <= cur_px:
+                                trig = cur_px * 1.001
+                            elif hold == "sell" and trig >= cur_px:
+                                trig = cur_px * 0.999
+                            trig = self._round_to_precision(trig, price_places) or trig
                             data["triggerPrice"] = str(trig)
-                            logger.info(
-                                f"🔧 [TP VALIDATION ADJUST] {symbol} | New TP trigger={trig} (tick={tick}, cur={cur_px})"
-                            )
-                            # Retry once immediately after adjustment
+                            logger.info(f"🔧 [TP ADJUST] {symbol} | {order_type} | trigger={trig} (cur={cur_px})")
                             response = await self._request("POST", endpoint, data=data)
-                            logger.info(
-                                f"✅ [TP/SL RESPONSE] {symbol} | {order_type} | "
-                                f"Retry after validation adjust: {response}"
-                            )
-                            return response
-                    except Exception as _adj_err:
-                        logger.debug(f"TP adjust failed: {_adj_err}")
+                            if response.get("code") == "00000":
+                                return response
+                    except Exception:
+                        pass
                 # Check if it's a checkScale error - try different precision
                 if "checkBDScale" in error_msg or "checkScale" in error_msg:
                     logger.warning(
@@ -1097,23 +1092,16 @@ class BitgetRestClient:
 
             # Pre-send validation: ensure SL trigger is on correct side of current price
             try:
-                cur_px = await _get_current_price()
+                cur_px = await self._get_current_market_price(symbol)
                 if cur_px:
                     trig_sl = float(sl_data["triggerPrice"])
-                    tick = _tick_size()
-                    if api_hold_side == "buy":
-                        # LONG SL must be BELOW current price
-                        if trig_sl >= cur_px:
-                            trig_sl = cur_px - tick
-                    else:
-                        # SHORT SL must be ABOVE current price
-                        if trig_sl <= cur_px:
-                            trig_sl = cur_px + tick
-                    trig_sl = _round_price(trig_sl) or trig_sl
+                    if api_hold_side == "buy" and trig_sl >= cur_px:
+                        trig_sl = cur_px * 0.999
+                    elif api_hold_side == "sell" and trig_sl <= cur_px:
+                        trig_sl = cur_px * 1.001
+                    trig_sl = self._round_to_precision(trig_sl, price_places) or trig_sl
                     sl_data["triggerPrice"] = str(trig_sl)
-                    logger.info(
-                        f"🔧 [SL VALIDATION ADJUST] {symbol} | planType={sl_data['planType']} | New SL trigger={trig_sl}"
-                    )
+                    logger.info(f"🔧 [SL ADJUST] {symbol} | trigger={trig_sl}")
             except Exception:
                 pass
             logger.info(
@@ -1193,7 +1181,7 @@ class BitgetRestClient:
             # For RECOVERED positions, Bitget API requires size parameter (error 40019 if missing)
             # Sending size = full position size makes it apply to entire position
             # Round TP price to correct price precision
-            take_profit_price = _round_price(take_profit_price)
+            take_profit_price = self._round_to_precision(take_profit_price, price_places)
             tp_data: dict[str, str] = {
                 "symbol": symbol,
                 "productType": product_type,  # "usdt-futures" (lowercase)
@@ -1208,46 +1196,22 @@ class BitgetRestClient:
             }
             # Pre-send validation: ensure TP trigger is on correct side of current price
             try:
-                logger.debug(f"🔍 [TP VALIDATION START] {symbol} | Fetching current price...")
-                cur_px = await _get_current_price()
-                logger.debug(f"🔍 [TP VALIDATION] {symbol} | Current price: {cur_px}")
+                cur_px = await self._get_current_market_price(symbol)
                 if cur_px:
                     trig_tp = float(tp_data["triggerPrice"])
-                    tick = _tick_size()
                     adjusted = False
-                    if api_hold_side == "buy":
-                        # LONG TP must be ABOVE current price
-                        if trig_tp <= cur_px:
-                            # Use 0.1% buffer above current price for safety
-                            trig_tp = cur_px * 1.001
-                            adjusted = True
-                            logger.warning(
-                                f"🔧 [TP VALIDATION ADJUST] {symbol} | LONG | "
-                                f"Original={take_profit_price} <= cur={cur_px} → Adjusted={trig_tp}"
-                            )
-                    else:
-                        # SHORT TP must be BELOW current price
-                        if trig_tp >= cur_px:
-                            # Use 0.1% buffer below current price for safety
-                            trig_tp = cur_px * 0.999
-                            adjusted = True
-                            logger.warning(
-                                f"🔧 [TP VALIDATION ADJUST] {symbol} | SHORT | "
-                                f"Original={take_profit_price} >= cur={cur_px} → Adjusted={trig_tp}"
-                            )
+                    if api_hold_side == "buy" and trig_tp <= cur_px:
+                        trig_tp = cur_px * 1.001
+                        adjusted = True
+                    elif api_hold_side == "sell" and trig_tp >= cur_px:
+                        trig_tp = cur_px * 0.999
+                        adjusted = True
                     if adjusted:
-                        trig_tp = _round_price(trig_tp) or trig_tp
+                        trig_tp = self._round_to_precision(trig_tp, price_places) or trig_tp
                         tp_data["triggerPrice"] = str(trig_tp)
-                        logger.warning(
-                            f"✅ [TP VALIDATION ADJUST] {symbol} | planType=profit_plan | "
-                            f"Final trigger={trig_tp} (cur_px={cur_px}, holdSide={api_hold_side})"
-                        )
-                    else:
-                        logger.debug(f"✅ [TP VALIDATION OK] {symbol} | trigger={trig_tp} is valid vs cur={cur_px}")
-                else:
-                    logger.error(f"❌ Could not fetch current price for TP validation: {symbol} - validation skipped!")
-            except Exception as e:
-                logger.error(f"❌ TP validation error for {symbol}: {e}", exc_info=True)
+                        logger.warning(f"🔧 [TP ADJUST] {symbol} | {take_profit_price} → {trig_tp} (cur={cur_px})")
+            except Exception:
+                pass
             logger.info(
                 f"📋 [TAKE-PROFIT ORDER] {symbol} | "
                 f"planType=profit_plan | size={rounded_size} | "
@@ -1373,27 +1337,6 @@ class BitgetRestClient:
         # Convert decimal to percentage: 0.015 → "1.50", 0.02 → "2.00", 0.001 → "0.10"
         formatted_range_rate = f"{range_rate * 100:.2f}"  # Convert to percentage and format to 2 decimal places
 
-        # Pre-send validation: ensure trigger is valid vs current price and tick
-        async def _get_current_price() -> float | None:
-            try:
-                t = await self.get_ticker(symbol, product_type="USDT-FUTURES")
-                if t.get("code") == "00000":
-                    data = t.get("data") or {}
-                    for k in ("markPr", "markPrice", "lastPr", "last", "close", "bestAsk", "bestBid", "price"):
-                        v = data.get(k)
-                        if v is None:
-                            continue
-                        try:
-                            return float(v)
-                        except Exception:
-                            try:
-                                return float(str(v))
-                            except Exception:
-                                continue
-            except Exception:
-                return None
-            return None
-
         # Try to fetch contract for tick/precision
         price_places = None
         price_end_step = None
@@ -1413,48 +1356,19 @@ class BitgetRestClient:
         except Exception:
             pass
 
-        def _round_price_local(val: float) -> float:
-            try:
-                places = int(price_places) if price_places is not None else 4
-                return round(float(val), places)
-            except Exception:
-                return round(float(val), 4)
-
-        def _tick_size() -> float:
-            if price_end_step and price_end_step > 0:
-                return float(price_end_step)
-            places = int(price_places) if price_places is not None else 4
-            return 10 ** (-places)
-
         try:
-            cur_px = await _get_current_price()
+            cur_px = await self._get_current_market_price(symbol)
             if cur_px:
-                tick = _tick_size()
                 original_trigger = trigger_price
-                adjusted = False
-                # For trailing activation:
-                # - LONG ('buy'): activation must be >= current price (nudge above)
-                # - SHORT ('sell'): activation must be <= current price (nudge below)
-                if api_hold_side == "buy":
-                    if trigger_price <= cur_px:
-                        # Use 0.1% buffer above current price
-                        trigger_price = cur_px * 1.001
-                        adjusted = True
-                else:
-                    if trigger_price >= cur_px:
-                        # Use 0.1% buffer below current price
-                        trigger_price = cur_px * 0.999
-                        adjusted = True
-                if adjusted:
-                    trigger_price = _round_price_local(trigger_price)
-                    logger.warning(
-                        f"🔧 [TRAILING TRIGGER ADJUST] {symbol} | side={api_hold_side} | "
-                        f"Original={original_trigger} → Adjusted={trigger_price} (cur={cur_px})"
-                    )
-            else:
-                logger.warning(f"⚠️ Could not fetch current price for trailing TP validation: {symbol}")
-        except Exception as e:
-            logger.warning(f"⚠️ Trailing TP validation error for {symbol}: {e}")
+                if api_hold_side == "buy" and trigger_price <= cur_px:
+                    trigger_price = cur_px * 1.001
+                elif api_hold_side == "sell" and trigger_price >= cur_px:
+                    trigger_price = cur_px * 0.999
+                if trigger_price != original_trigger:
+                    trigger_price = self._round_to_precision(trigger_price, price_places) or trigger_price
+                    logger.warning(f"🔧 [TRAILING ADJUST] {symbol} | {original_trigger} → {trigger_price} (cur={cur_px})")
+        except Exception:
+            pass
 
         # 🚨 CRITICAL: Size parameter IS REQUIRED by Bitget API (error 40019 if omitted)!
         # "Gesamter TP/SL" vs "Teilweise TP/SL" display in app is determined by:
