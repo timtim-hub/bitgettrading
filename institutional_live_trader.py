@@ -784,8 +784,18 @@ class InstitutionalLiveTrader:
                         return 'tripwire_adverse_spike'
         
         # 3. Check time stop
+        # 🚨 CRITICAL: Before closing by time_stop, check if position is at a loss
+        # If ROE is negative, it should have been closed by SL, not time_stop!
         if position.time_stop_time and datetime.now() >= position.time_stop_time:
-            logger.info(f"⏱️ Time stop reached | {position.symbol}")
+            # Calculate current ROE to prevent closing with small losses
+            price_change_pct = ((current_price - position.entry_price) / position.entry_price * 100) if position.side == 'long' else ((position.entry_price - current_price) / position.entry_price * 100)
+            leverage = position.notional / (position.notional / 25) if position.notional > 0 else 25
+            roe_pct = price_change_pct * leverage
+            
+            # If position is at a loss, log warning but still close (time_stop is safety mechanism)
+            if roe_pct < -0.05:
+                logger.error(f"⚠️ TIME STOP with LOSS | {position.symbol} | ROE: {roe_pct:.2f}% | This should have been caught by SL!")
+            logger.info(f"⏱️ Time stop reached | {position.symbol} | ROE: {roe_pct:+.2f}%")
             return 'time_stop'
         
         return None
@@ -1032,18 +1042,34 @@ class InstitutionalLiveTrader:
                         continue
                 
                 # BOT-SIDE SL MONITORING (FIXED SL - never moves!)
+                # Calculate ROE (Return on Equity) for more accurate loss detection
+                leverage = position.notional / (position.notional / 25) if position.notional > 0 else 25
+                roe_pct = pnl_pct * leverage
+                
                 sl_hit = False
+                sl_reason = ""
+                
                 if position.side == 'long':
                     if current_price <= position.stop_price:
                         sl_hit = True
-                        logger.warning(f"🛑 STOP LOSS HIT | {symbol} LONG | Price ${current_price:.4f} <= SL ${position.stop_price:.4f}")
+                        sl_reason = f"Price ${current_price:.4f} <= SL ${position.stop_price:.4f}"
+                        logger.warning(f"🛑 STOP LOSS HIT | {symbol} LONG | {sl_reason}")
                 else:  # SHORT
                     if current_price >= position.stop_price:
                         sl_hit = True
-                        logger.warning(f"🛑 STOP LOSS HIT | {symbol} SHORT | Price ${current_price:.4f} >= SL ${position.stop_price:.4f}")
+                        sl_reason = f"Price ${current_price:.4f} >= SL ${position.stop_price:.4f}"
+                        logger.warning(f"🛑 STOP LOSS HIT | {symbol} SHORT | {sl_reason}")
+                
+                # 🚨 CRITICAL: Prevent small losses that bypass TP/SL logic
+                # If ROE is negative and approaching -0.10%, close immediately to prevent fees from eating into position
+                # This ensures we never close with small losses that should have been protected by SL
+                if not sl_hit and roe_pct < -0.05:  # -0.05% ROE threshold (before fees)
+                    sl_hit = True
+                    sl_reason = f"Small loss protection: ROE {roe_pct:.2f}% (preventing fees from causing -0.10% loss)"
+                    logger.warning(f"🛑 SMALL LOSS PROTECTION | {symbol} | {sl_reason} | Price: ${current_price:.4f} | Entry: ${position.entry_price:.4f}")
                 
                 if sl_hit:
-                    logger.error(f"🚨 STOP LOSS HIT! Closing position immediately | {symbol} | P&L: {pnl_pct:+.2f}%")
+                    logger.error(f"🚨 STOP LOSS HIT! Closing position immediately | {symbol} | P&L: {pnl_pct:+.2f}% | ROE: {roe_pct:+.2f}% | Reason: {sl_reason}")
                     await self.close_position(position, "stop_loss")
                     continue
                 
