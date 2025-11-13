@@ -843,22 +843,29 @@ class BitgetRestClient:
         async def _get_current_price() -> float | None:
             try:
                 t = await self.get_ticker(symbol, product_type="USDT-FUTURES")
-                logger.debug(f"🔍 [PRICE FETCH] {symbol} | Ticker response: {t}")
+                logger.debug(f"🔍 [PRICE FETCH] {symbol} | Ticker response code: {t.get('code')}")
                 if t.get("code") == "00000":
-                    data = t.get("data") or {}
-                    logger.debug(f"🔍 [PRICE FETCH] {symbol} | Data keys: {list(data.keys()) if data else 'empty'}")
-                    # Try common keys in order of preference
+                    # 🚨 CRITICAL: data is a LIST, not a dict!
+                    data_list = t.get("data") or []
+                    if not data_list or not isinstance(data_list, list):
+                        logger.warning(f"⚠️ [PRICE FETCH] {symbol} | Data is not a list: {type(data_list)}")
+                        return None
+                    
+                    ticker = data_list[0] if data_list else {}
+                    logger.debug(f"🔍 [PRICE FETCH] {symbol} | Ticker keys: {list(ticker.keys()) if ticker else 'empty'}")
+                    
+                    # Try common keys in order of preference (mark price first, then last price)
                     for k in (
-                        "markPr",
-                        "markPrice",
-                        "lastPr",
-                        "last",
-                        "close",
-                        "bestAsk",
-                        "bestBid",
-                        "price",
+                        "markPrice",  # Mark price (preferred for futures)
+                        "markPr",     # Alternative mark price key
+                        "lastPr",     # Last traded price
+                        "last",       # Alternative last price key
+                        "bestAsk",    # Best ask price
+                        "bestBid",    # Best bid price
+                        "close",      # Close price
+                        "price",      # Generic price key
                     ):
-                        v = data.get(k)
+                        v = ticker.get(k)
                         if v is None:
                             continue
                         try:
@@ -873,6 +880,7 @@ class BitgetRestClient:
                                 return price
                             except Exception:
                                 continue
+                    logger.warning(f"⚠️ [PRICE FETCH] {symbol} | No valid price field found in ticker: {ticker}")
                 else:
                     logger.warning(f"⚠️ [PRICE FETCH] {symbol} | Ticker API error: {t.get('code')} - {t.get('msg')}")
             except Exception as e:
