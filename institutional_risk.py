@@ -159,7 +159,8 @@ class RiskManager:
     
     def calculate_position_size(self, symbol: str, side: str, entry_price: float, 
                                  stop_price: float, equity_usdt: float,
-                                 lot_size: float = 0.001, min_qty: float = 0.001) -> PositionSize:
+                                 lot_size: float = 0.001, min_qty: float = 0.001,
+                                 actual_leverage: Optional[int] = None) -> PositionSize:
         """
         Calculate position size with liquidation guards
         
@@ -179,13 +180,18 @@ class RiskManager:
             equity_usdt: Total wallet equity in USDT
             lot_size: Lot size for symbol
             min_qty: Minimum order quantity
+            actual_leverage: Actual leverage available for this symbol (overrides config)
         
         Returns:
             PositionSize object
         """
+        # 🚨 CRITICAL: Use actual leverage for the symbol (10x or 25x), not config default!
+        # Some tokens only support 10x, using 25x causes wrong margin calculations
+        leverage_to_use = actual_leverage if actual_leverage is not None else self.leverage
+        
         # Calculate target margin and notional
         margin_target = self.margin_fraction * equity_usdt
-        notional_target = margin_target * self.leverage
+        notional_target = margin_target * leverage_to_use
         
         # Calculate raw quantity
         q_raw = notional_target / entry_price
@@ -206,11 +212,11 @@ class RiskManager:
         
         # Calculate notional with floored quantity
         notional = q_floored * entry_price
-        margin = notional / self.leverage
+        margin = notional / leverage_to_use
         
         # Get maintenance margin rate and calculate liquidation price
         mmr = self.get_maintenance_margin_rate(symbol, notional)
-        liq_price = self.calculate_liquidation_price(side, entry_price, self.leverage, mmr)
+        liq_price = self.calculate_liquidation_price(side, entry_price, leverage_to_use, mmr)
         
         # Check liquidation guards
         passes, reason = self.check_liq_guards(side, entry_price, stop_price, liq_price)
@@ -230,7 +236,7 @@ class RiskManager:
                 contracts=q_floored,
                 notional_usd=notional,
                 margin_usd=margin,
-                leverage=self.leverage,
+                leverage=leverage_to_use,
                 liq_price=liq_price,
                 stop_price=stop_price,
                 passed_liq_guards=True,
@@ -255,10 +261,10 @@ class RiskManager:
                 continue
             
             notional_reduced = q_reduced_floored * entry_price
-            margin_reduced = notional_reduced / self.leverage
+            margin_reduced = notional_reduced / leverage_to_use
             
             mmr_reduced = self.get_maintenance_margin_rate(symbol, notional_reduced)
-            liq_price_reduced = self.calculate_liquidation_price(side, entry_price, self.leverage, mmr_reduced)
+            liq_price_reduced = self.calculate_liquidation_price(side, entry_price, leverage_to_use, mmr_reduced)
             
             passes_reduced, reason_reduced = self.check_liq_guards(side, entry_price, stop_price, liq_price_reduced)
             
@@ -275,7 +281,7 @@ class RiskManager:
                     contracts=q_reduced_floored,
                     notional_usd=notional_reduced,
                     margin_usd=margin_reduced,
-                    leverage=self.leverage,
+                    leverage=leverage_to_use,
                     liq_price=liq_price_reduced,
                     stop_price=stop_price,
                     passed_liq_guards=True,

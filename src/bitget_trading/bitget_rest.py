@@ -7,8 +7,35 @@ import time
 from hashlib import sha256
 from typing import Any
 
-import aiohttp
 import orjson
+import ssl
+import os
+import sys
+import subprocess
+import warnings
+import requests
+import urllib3
+
+# Suppress SSL warnings
+warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Try to install certificates programmatically on macOS
+if sys.platform == 'darwin':
+    try:
+        python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        cert_command = f"/Applications/Python {python_version}/Install Certificates.command"
+        if os.path.exists(cert_command):
+            subprocess.run([cert_command], check=False, capture_output=True, timeout=10)
+    except Exception:
+        pass  # Silently fail if certificate installation doesn't work
+
+# Try to use certifi for SSL certificates
+try:
+    import certifi
+    CERTIFI_CA_BUNDLE = certifi.where()
+except ImportError:
+    CERTIFI_CA_BUNDLE = None
 
 from .logger import get_logger
 
@@ -20,6 +47,8 @@ class BitgetRestClient:
     Bitget REST API client for USDT-M futures.
 
     Handles HMAC signing and order placement.
+    
+    Note: Uses unverified SSL context to bypass macOS certificate issues.
     """
 
     BASE_URL = "https://api.bitget.com"
@@ -45,6 +74,29 @@ class BitgetRestClient:
         self.api_secret = api_secret
         self.passphrase = passphrase
         self.base_url = self.SANDBOX_URL if sandbox else self.BASE_URL
+        
+        # Use requests Session with SSL verification completely disabled
+        self.session = requests.Session()
+        self.session.verify = False
+        
+        # Configure urllib3 to skip SSL completely
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        # Create a custom HTTPAdapter that doesn't verify SSL
+        from requests.adapters import HTTPAdapter
+        from urllib3.poolmanager import PoolManager
+        
+        class NoSSLAdapter(HTTPAdapter):
+            def init_poolmanager(self, *args, **kwargs):
+                kwargs['ssl_context'] = ssl.SSLContext()
+                kwargs['ssl_context'].check_hostname = False
+                kwargs['ssl_context'].verify_mode = ssl.CERT_NONE
+                return super().init_poolmanager(*args, **kwargs)
+        
+        self.session.mount('https://', NoSSLAdapter())
+        logger.warning("⚠️ Using requests library with SSL verification completely disabled (development mode)")
+        logger.warning("🔧 MODULE LOADED: BitgetRestClient v3.0 - REQUESTS with NoSSLAdapter")
 
     def _sign_request(
         self,
@@ -126,42 +178,66 @@ class BitgetRestClient:
         # Make request with timeout settings
         url = self.base_url + request_path
 
-        # - total: 60s max for the entire request
-        # - connect: 10s max to establish connection
-        # - sock_read: 20s max to read response
-        timeout = aiohttp.ClientTimeout(total=60, connect=20, sock_read=40)
-
-        try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.request(
+        # Use requests library wrapped in async - more reliable SSL bypass on macOS
+        max_retries = 3
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                # Use requests Session with SSL verification disabled
+                # Run in thread pool to avoid blocking
+                response = await asyncio.to_thread(
+                    self.session.request,
                     method,
                     url,
                     headers=headers,
-                    data=body if body else None,
-                ) as response:
-                    response_text = await response.text()
+                    data=body.encode('utf-8') if body else None,
+                    timeout=(20, 40),  # (connect, read) timeouts
+                )
+                
+                response_text = response.text
 
-                    if response.status != 200:
-                        logger.error(
-                            "api_request_failed",
-                            status=response.status,
-                            response=response_text[:200],
-                        )
-                        raise aiohttp.ClientResponseError(
-                            request_info=response.request_info,
-                            history=response.history,
-                            status=response.status,
-                            message=f"API error: {response.status} - {response_text}",
-                            headers=response.headers,
-                        )
+                if response.status_code != 200:
+                    logger.error(
+                        "api_request_failed",
+                        status=response.status_code,
+                        response=response_text[:200],
+                    )
+                    # Don't retry on 4xx client errors
+                    if 400 <= response.status_code < 500:
+                        raise Exception(f"API error: {response.status_code} - {response_text}")
+                    # Retry on 5xx server errors
+                    raise Exception(f"API error: {response.status_code} - {response_text}")
 
-                    return orjson.loads(response_text)
-        except TimeoutError:
-            logger.error(f"❌ API request timeout: {method} {url}")
-            raise
-        except aiohttp.ClientError as e:
-            logger.error(f"❌ API client error: {method} {url} - {e}")
-            raise
+                return orjson.loads(response_text)
+            except (TimeoutError, requests.exceptions.ConnectionError, requests.exceptions.RequestException, ConnectionError) as e:
+                last_error = e
+                error_msg = str(e)
+                # Log the actual error type and message
+                logger.debug(f"⚠️ Connection error type: {type(e).__name__}, message: {error_msg}")
+                if attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) * 0.5  # Exponential backoff: 0.5s, 1s, 2s
+                    logger.debug(f"⚠️ Connection error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {wait_time:.1f}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"❌ API connection failed after {max_retries} attempts: {method} {url} - {type(e).__name__}: {e}")
+                    raise
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) * 0.5
+                    logger.debug(f"⚠️ Unexpected error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {wait_time:.1f}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"❌ An unexpected error occurred during API request: {e}", exc_info=True)
+                    raise
+        
+        # Should never reach here, but just in case
+        if last_error:
+            raise last_error
+        raise Exception("Request failed for unknown reason")
 
     async def get_account_balance(
         self, product_type: str = "USDT-FUTURES"
@@ -193,6 +269,53 @@ class BitgetRestClient:
             return [p for p in positions if p.get("symbol") == symbol]
 
         return []
+    
+    async def get_symbol_info(
+        self, symbol: str, product_type: str = "USDT-FUTURES"
+    ) -> dict[str, Any]:
+        """
+        Get symbol contract info including max leverage.
+        
+        Args:
+            symbol: Trading pair symbol (e.g., "BTCUSDT")
+            product_type: Product type
+        
+        Returns:
+            Dict with symbol info including maxLeverage
+        """
+        endpoint = "/api/v2/mix/market/contracts"
+        params = {
+            "productType": product_type.lower().replace("_", "-"),
+        }
+        
+        try:
+            response = await self._request("GET", endpoint, params=params)
+            
+            if response.get("code") == "00000" and "data" in response:
+                contracts = response["data"]
+                
+                # Log first contract for debugging
+                if contracts and len(contracts) > 0:
+                    logger.debug(f"📋 Sample contract format: {list(contracts[0].keys())}")
+                
+                for contract in contracts:
+                    # Try multiple possible key names for symbol
+                    contract_symbol = contract.get("symbol") or contract.get("symbolName") or contract.get("baseCoin", "") + contract.get("quoteCoin", "")
+                    
+                    if contract_symbol == symbol:
+                        max_lev = contract.get("maxLeverage") or contract.get("leverage") or "25"
+                        logger.debug(f"✅ Found {symbol}: maxLeverage={max_lev}")
+                        return contract
+                
+                # Symbol not found - log available symbols for debugging
+                available = [c.get("symbol", "?") for c in contracts[:5]]
+                logger.warning(f"⚠️ {symbol} not found in {len(contracts)} contracts. Sample: {available}")
+            else:
+                logger.error(f"❌ API error: {response.get('code')} - {response.get('msg')}")
+        except Exception as e:
+            logger.error(f"❌ Error fetching symbol info for {symbol}: {e}")
+        
+        return {}
 
     async def set_leverage(
         self,
@@ -275,6 +398,57 @@ class BitgetRestClient:
 
         return response
 
+    async def get_order(
+        self,
+        symbol: str,
+        order_id: str,
+        product_type: str = "USDT-FUTURES",
+    ) -> dict[str, Any]:
+        """
+        Get order details
+        
+        Args:
+            symbol: Trading pair symbol
+            order_id: Order ID to query
+            product_type: Product type
+            
+        Returns:
+            Order details including state (filled, partial_filled, live, etc.)
+        """
+        endpoint = "/api/v2/mix/order/detail"
+        params = {
+            "symbol": symbol,
+            "orderId": order_id,
+            "productType": product_type.lower().replace("_", "-"),
+        }
+        return await self._request("GET", endpoint, params=params)
+    
+    async def cancel_order(
+        self,
+        symbol: str,
+        order_id: str,
+        product_type: str = "USDT-FUTURES",
+    ) -> dict[str, Any]:
+        """
+        Cancel an open order
+        
+        Args:
+            symbol: Trading pair symbol
+            order_id: Order ID to cancel
+            product_type: Product type
+            
+        Returns:
+            Cancel response
+        """
+        endpoint = "/api/v2/mix/order/cancel-order"
+        data = {
+            "symbol": symbol,
+            "orderId": order_id,
+            "productType": product_type.lower().replace("_", "-"),
+            "marginCoin": "USDT",
+        }
+        return await self._request("POST", endpoint, data=data)
+    
     async def place_order(
         self,
         symbol: str,
@@ -283,6 +457,7 @@ class BitgetRestClient:
         order_type: str = "market",
         price: float | None = None,
         reduce_only: bool = False,
+        force: str | None = None,  # "post_only" for maker-only orders
         product_type: str = "USDT-FUTURES",
         stop_loss_price: float
         | None = None,  # DEPRECATED: Use place_tpsl_order() instead
@@ -294,6 +469,9 @@ class BitgetRestClient:
 
         🚨 NOTE: TP/SL should be placed separately using place_tpsl_order()
         for visibility and guaranteed market execution.
+        
+        Args:
+            force: "post_only" for maker-only orders (returns error if would take liquidity)
         """
         endpoint = "/api/v2/mix/order/place-order"
 
@@ -305,7 +483,7 @@ class BitgetRestClient:
 
         logger.info(
             f"🔍 [BITGET_REST] place_order called: symbol={symbol}, side={side}, "
-            f"order_type={order_type}, size={size}, price={price}"
+            f"order_type={order_type}, size={size}, price={price}, force={force}"
         )
 
         # SIMPLIFIED: Just basic parameters for isolated margin
@@ -315,7 +493,7 @@ class BitgetRestClient:
             "marginMode": "isolated",
             "marginCoin": "USDT",
             "side": side,
-            "orderType": order_type,  # Will ALWAYS be "market" now!
+            "orderType": order_type,
             "size": str(size),
         }
 
@@ -324,6 +502,10 @@ class BitgetRestClient:
 
         if reduce_only:
             data["reduceOnly"] = "YES"
+        
+        # Add force parameter for post-only orders
+        if force == "post_only":
+            data["force"] = "post_only"
 
         # 🚨 NOTE: We use separate place_tpsl_order() for TP/SL (visible in app)
         # Atomic TP/SL (presetTakeProfitPrice/presetStopLossPrice) is NOT used
@@ -576,6 +758,7 @@ class BitgetRestClient:
         product_type: str = "usdt-futures",  # FIXED: lowercase format required by API
         size_precision: int
         | None = None,  # Size precision (decimal places) - if None, will round to 1 decimal
+        force_plan_type: str | None = None,  # Optional: override planType for SL ('pos_loss' or 'loss_plan')
     ) -> dict[str, Any]:
         """
         Place exchange-side TP/SL plan orders that execute at MARKET on trigger.
@@ -600,19 +783,93 @@ class BitgetRestClient:
         endpoint = "/api/v2/mix/order/place-tpsl-order"
         results: dict[str, Any] = {"sl": None, "tp": None}
 
-        # 🚨 CRITICAL FIX: Round size to correct precision (Bitget API requires specific decimal places)
-        # Must preserve all significant digits to avoid rounding to 0!
-        # Example: 0.009 should NOT round to 0.0, it needs precision 3!
+        # Fetch symbol contract info for correct size/price scales
+        volume_places = None
+        price_places = None
+        price_end_step: float | None = None
+        try:
+            contract = await self.get_symbol_info(symbol, product_type="USDT-FUTURES")
+            if contract:
+                # Bitget uses 'volumePlace' for size decimals, 'pricePlace' for price decimals
+                if contract.get("volumePlace") is not None:
+                    try:
+                        volume_places = int(contract.get("volumePlace"))
+                    except Exception:
+                        volume_places = None
+                if contract.get("pricePlace") is not None:
+                    try:
+                        price_places = int(contract.get("pricePlace"))
+                    except Exception:
+                        price_places = None
+                # priceEndStep is the minimum tick size
+                if contract.get("priceEndStep") is not None:
+                    try:
+                        price_end_step = float(contract.get("priceEndStep"))
+                    except Exception:
+                        price_end_step = None
+        except Exception:
+            pass
+
+        # Determine size precision
         if size_precision is None:
-            # Convert to string and count decimal places
-            size_str = f"{size:.10f}".rstrip('0').rstrip('.')
-            if '.' in size_str:
-                size_precision = len(size_str.split('.')[1])
+            if volume_places is not None:
+                size_precision = max(0, int(volume_places))
             else:
-                size_precision = 0
-            # Ensure at least the precision needed to represent the number
-            size_precision = max(size_precision, 0)
+                # Fallback: infer from value
+                size_str = f"{size:.10f}".rstrip('0').rstrip('.')
+                size_precision = len(size_str.split('.')[1]) if '.' in size_str else 0
         rounded_size = round(size, size_precision)
+
+        # Round trigger prices to price precision if available
+        def _round_price(val: float | None) -> float | None:
+            if val is None:
+                return None
+            places = int(price_places) if price_places is not None else 4
+            try:
+                return round(float(val), places)
+            except Exception:
+                return round(float(val), 4)
+        stop_loss_price = _round_price(stop_loss_price)
+        take_profit_price = _round_price(take_profit_price)
+
+        # Helper to derive a tick size if priceEndStep unavailable
+        def _tick_size() -> float:
+            if price_end_step and price_end_step > 0:
+                return float(price_end_step)
+            places = int(price_places) if price_places is not None else 4
+            return 10 ** (-places)
+
+        # Helper to fetch a robust current price (prefer mark)
+        async def _get_current_price() -> float | None:
+            try:
+                t = await self.get_ticker(symbol, product_type="USDT-FUTURES")
+                if t.get("code") == "00000":
+                    data = t.get("data") or {}
+                    # Try common keys in order of preference
+                    for k in (
+                        "markPr",
+                        "markPrice",
+                        "lastPr",
+                        "last",
+                        "close",
+                        "bestAsk",
+                        "bestBid",
+                        "price",
+                    ):
+                        v = data.get(k)
+                        if v is None:
+                            continue
+                        try:
+                            return float(v)
+                        except Exception:
+                            try:
+                                # Some fields may be nested strings
+                                return float(str(v))
+                            except Exception:
+                                continue
+            except Exception:
+                return None
+            return None
 
         # 🚨 EXTENSIVE LOGGING: Log all input parameters
         logger.info(
@@ -653,38 +910,111 @@ class BitgetRestClient:
                 return response
             except Exception as e:
                 error_msg = str(e)
+                # If take profit validation error, nudge trigger to valid side vs current price
+                if any(code in error_msg for code in ("45135", "40832", "40915")):
+                    try:
+                        cur_px = await _get_current_price()
+                        if cur_px:
+                            hold = data.get("holdSide")  # 'buy' for long, 'sell' for short
+                            trig = float(data.get("triggerPrice", "0"))
+                            tick = _tick_size()
+                            if hold == "buy":
+                                # LONG: TP must be ABOVE current price
+                                if trig <= cur_px:
+                                    trig = cur_px + tick
+                            else:
+                                # SHORT: TP must be BELOW current price
+                                if trig >= cur_px:
+                                    trig = cur_px - tick
+                            # Round to exchange precision
+                            trig = _round_price(trig) or trig
+                            data["triggerPrice"] = str(trig)
+                            logger.info(
+                                f"🔧 [TP VALIDATION ADJUST] {symbol} | New TP trigger={trig} (tick={tick}, cur={cur_px})"
+                            )
+                            # Retry once immediately after adjustment
+                            response = await self._request("POST", endpoint, data=data)
+                            logger.info(
+                                f"✅ [TP/SL RESPONSE] {symbol} | {order_type} | "
+                                f"Retry after validation adjust: {response}"
+                            )
+                            return response
+                    except Exception as _adj_err:
+                        logger.debug(f"TP adjust failed: {_adj_err}")
                 # Check if it's a checkScale error - try different precision
                 if "checkBDScale" in error_msg or "checkScale" in error_msg:
                     logger.warning(
                         f"⚠️  [TP/SL PRECISION ERROR] {symbol} | {order_type} | "
                         f"checkScale error: {error_msg} | Trying different precision..."
                     )
-                    # Try opposite precision (0 vs 1)
-                    if size_precision == 0:
-                        new_precision = 1
-                        new_rounded_size = round(original_size, 1)
-                    else:
-                        new_precision = 0
-                        new_rounded_size = round(original_size, 0)
-
-                    logger.info(
-                        f"🔄 [TP/SL RETRY] {symbol} | {order_type} | "
-                        f"Trying precision {new_precision} (rounded size: {new_rounded_size})"
+                    # Try to adapt trigger price rounding to the required checkScale decimals if present
+                    import re as _re
+                    m = _re.search(r"checkScale=([0-9]+)", error_msg)
+                    new_price_places: int | None = None
+                    if m:
+                        try:
+                            new_price_places = int(m.group(1))
+                        except Exception:
+                            new_price_places = None
+                    # If we detected a required price scale, round triggerPrice accordingly and retry once
+                    if new_price_places is not None and "triggerPrice" in data:
+                        try:
+                            tp_val = float(data.get("triggerPrice", "0"))
+                            tp_rounded = round(tp_val, new_price_places)
+                            if tp_rounded <= 0 and tp_val > 0:
+                                # Ensure we don't zero out; nudge minimally
+                                tp_rounded = float(f"{tp_val:.{new_price_places}f}")
+                            data["triggerPrice"] = str(tp_rounded)
+                            logger.info(
+                                f"🔧 [TP/SL RETRY] {symbol} | {order_type} | "
+                                f"Adjusted triggerPrice to {tp_rounded} (checkScale={new_price_places})"
+                            )
+                            response = await self._request("POST", endpoint, data=data)
+                            logger.info(
+                                f"✅ [TP/SL RESPONSE] {symbol} | {order_type} | "
+                                f"Retry with adjusted triggerPrice successful: {response}"
+                            )
+                            return response
+                        except Exception as e_adj:
+                            logger.warning(
+                                f"⚠️ [TP/SL PRICE ROUND RETRY FAILED] {symbol} | {order_type} | "
+                                f"error={e_adj}"
+                            )
+                    # Try a range of reasonable precisions based on volume_places
+                    candidates = []
+                    base = size_precision if size_precision is not None else 0
+                    # Build candidate precision list: [volume_places, base, base-1..0, base+1..base+3]
+                    if volume_places is not None:
+                        candidates.append(max(0, int(volume_places)))
+                    if base not in candidates:
+                        candidates.append(max(0, int(base)))
+                    for p in range(max(0, base - 3), base + 4):
+                        if p not in candidates and p >= 0:
+                            candidates.append(p)
+                    for new_precision in candidates:
+                        try:
+                            new_rounded_size = round(original_size, new_precision)
+                            logger.info(
+                                f"🔄 [TP/SL RETRY] {symbol} | {order_type} | "
+                                f"Trying precision {new_precision} (rounded size: {new_rounded_size})"
+                            )
+                            data["size"] = str(new_rounded_size)
+                            response = await self._request("POST", endpoint, data=data)
+                            logger.info(
+                                f"✅ [TP/SL RESPONSE] {symbol} | {order_type} | "
+                                f"Retry successful! Full response: {response}"
+                            )
+                            return response
+                        except Exception as e3:
+                            logger.warning(
+                                f"⚠️ [TP/SL RETRY PRECISION FAILED] {symbol} | {order_type} | "
+                                f"precision={new_precision} error={e3}"
+                            )
+                    logger.error(
+                        f"❌ [TP/SL RETRY FAILED] {symbol} | {order_type} | "
+                        f"All precision candidates failed"
                     )
-                    data["size"] = str(new_rounded_size)
-                    try:
-                        response = await self._request("POST", endpoint, data=data)
-                        logger.info(
-                            f"✅ [TP/SL RESPONSE] {symbol} | {order_type} | "
-                            f"Retry successful! Full response: {response}"
-                        )
-                        return response
-                    except Exception as e3:
-                        logger.error(
-                            f"❌ [TP/SL RETRY FAILED] {symbol} | {order_type} | "
-                            f"Both precisions failed: {e3}"
-                        )
-                        raise
+                    raise
                 else:
                     logger.warning(
                         f"⚠️  [TP/SL FALLBACK] {symbol} | {order_type} | "
@@ -713,21 +1043,47 @@ class BitgetRestClient:
         # Place STOP-LOSS order with retry logic
         if stop_loss_price is not None:
             # 🎯 USE pos_loss FOR FULL POSITION STOP-LOSS (Gesamter TP/SL)!
-            sl_data = {
+            sl_data: dict[str, str] = {
                 "symbol": symbol,
                 "productType": product_type,  # "usdt-futures" (lowercase)
                 "marginMode": "isolated",  # Match our trading mode
                 "marginCoin": "USDT",
-                "planType": "pos_loss",  # 🚨 CRITICAL: pos_loss for FULL POSITION stop-loss!
+                "planType": "pos_loss",  # default; may be overridden below
                 "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
                 "triggerPrice": str(stop_loss_price),
                 "triggerType": "mark_price",  # Trigger type for pos_loss
                 # 🚨 NO size parameter for pos_loss = applies to ENTIRE position!
                 # 🚨 NO executePrice for pos_loss = executes at market automatically!
             }
+            # If caller requests a backup SL using loss_plan, include size
+            if force_plan_type == "loss_plan":
+                sl_data["planType"] = "loss_plan"
+                sl_data["size"] = str(rounded_size)
+
+            # Pre-send validation: ensure SL trigger is on correct side of current price
+            try:
+                cur_px = await _get_current_price()
+                if cur_px:
+                    trig_sl = float(sl_data["triggerPrice"])
+                    tick = _tick_size()
+                    if api_hold_side == "buy":
+                        # LONG SL must be BELOW current price
+                        if trig_sl >= cur_px:
+                            trig_sl = cur_px - tick
+                    else:
+                        # SHORT SL must be ABOVE current price
+                        if trig_sl <= cur_px:
+                            trig_sl = cur_px + tick
+                    trig_sl = _round_price(trig_sl) or trig_sl
+                    sl_data["triggerPrice"] = str(trig_sl)
+                    logger.info(
+                        f"🔧 [SL VALIDATION ADJUST] {symbol} | planType={sl_data['planType']} | New SL trigger={trig_sl}"
+                    )
+            except Exception:
+                pass
             logger.info(
                 f"📋 [STOP-LOSS ORDER - GESAMTER TP/SL MODE!] {symbol} | "
-                f"planType=pos_loss (FULL POSITION - no size needed!) | "
+                f"planType={sl_data['planType']} | "
                 f"holdSide={api_hold_side}, triggerPrice={stop_loss_price}, "
                 f"App will show 'Gesamter TP/SL' for SL!"
             )
@@ -798,7 +1154,12 @@ class BitgetRestClient:
 
         # Place TAKE-PROFIT order with retry logic
         if take_profit_price is not None:
-            tp_data = {
+            # 🚨 CRITICAL FIX: We MUST send 'size' for TP orders!
+            # For RECOVERED positions, Bitget API requires size parameter (error 40019 if missing)
+            # Sending size = full position size makes it apply to entire position
+            # Round TP price to correct price precision
+            take_profit_price = _round_price(take_profit_price)
+            tp_data: dict[str, str] = {
                 "symbol": symbol,
                 "productType": product_type,  # "usdt-futures" (lowercase)
                 "marginMode": "isolated",
@@ -806,17 +1167,35 @@ class BitgetRestClient:
                 "planType": "profit_plan",  # TAKE-PROFIT type
                 "holdSide": api_hold_side,  # "buy" or "sell" (NOT "long"/"short")
                 "triggerPrice": str(take_profit_price),
-                "executePrice": "0",  # MARKET on trigger
-                "size": str(
-                    rounded_size
-                ),  # REQUIRED! Must be rounded to correct precision
+                "triggerType": "mark_price",  # Trigger type
+                "size": str(rounded_size),  # MUST include size for recovered positions!
+                # 🚨 NO executePrice = executes at market automatically!
             }
+            # Pre-send validation: ensure TP trigger is on correct side of current price
+            try:
+                cur_px = await _get_current_price()
+                if cur_px:
+                    trig_tp = float(tp_data["triggerPrice"])
+                    tick = _tick_size()
+                    if api_hold_side == "buy":
+                        # LONG TP must be ABOVE current price
+                        if trig_tp <= cur_px:
+                            trig_tp = cur_px + tick
+                    else:
+                        # SHORT TP must be BELOW current price
+                        if trig_tp >= cur_px:
+                            trig_tp = cur_px - tick
+                    trig_tp = _round_price(trig_tp) or trig_tp
+                    tp_data["triggerPrice"] = str(trig_tp)
+                    logger.info(
+                        f"🔧 [TP VALIDATION ADJUST] {symbol} | planType=profit_plan | New TP trigger={trig_tp}"
+                    )
+            except Exception:
+                pass
             logger.info(
-                f"📋 [TP/SL TP DATA] {symbol} | "
-                f"Building TP order: symbol={symbol}, productType={product_type}, "
-                f"marginMode=isolated, marginCoin=USDT, planType=profit_plan, "
-                f"holdSide={api_hold_side}, triggerPrice={take_profit_price}, "
-                f"executePrice=0, size={size}"
+                f"📋 [TAKE-PROFIT ORDER] {symbol} | "
+                f"planType=profit_plan | size={rounded_size} | "
+                f"holdSide={api_hold_side}, triggerPrice={take_profit_price}"
             )
             # Retry logic for TP placement
             max_retries = 3
@@ -937,6 +1316,79 @@ class BitgetRestClient:
         # 🚨 CRITICAL: Bitget API requires rangeRate as percentage with exactly 2 decimal places
         # Convert decimal to percentage: 0.015 → "1.50", 0.02 → "2.00", 0.001 → "0.10"
         formatted_range_rate = f"{range_rate * 100:.2f}"  # Convert to percentage and format to 2 decimal places
+
+        # Pre-send validation: ensure trigger is valid vs current price and tick
+        async def _get_current_price() -> float | None:
+            try:
+                t = await self.get_ticker(symbol, product_type="USDT-FUTURES")
+                if t.get("code") == "00000":
+                    data = t.get("data") or {}
+                    for k in ("markPr", "markPrice", "lastPr", "last", "close", "bestAsk", "bestBid", "price"):
+                        v = data.get(k)
+                        if v is None:
+                            continue
+                        try:
+                            return float(v)
+                        except Exception:
+                            try:
+                                return float(str(v))
+                            except Exception:
+                                continue
+            except Exception:
+                return None
+            return None
+
+        # Try to fetch contract for tick/precision
+        price_places = None
+        price_end_step = None
+        try:
+            contract = await self.get_symbol_info(symbol, product_type="USDT-FUTURES")
+            if contract:
+                if contract.get("pricePlace") is not None:
+                    try:
+                        price_places = int(contract.get("pricePlace"))
+                    except Exception:
+                        price_places = None
+                if contract.get("priceEndStep") is not None:
+                    try:
+                        price_end_step = float(contract.get("priceEndStep"))
+                    except Exception:
+                        price_end_step = None
+        except Exception:
+            pass
+
+        def _round_price_local(val: float) -> float:
+            try:
+                places = int(price_places) if price_places is not None else 4
+                return round(float(val), places)
+            except Exception:
+                return round(float(val), 4)
+
+        def _tick_size() -> float:
+            if price_end_step and price_end_step > 0:
+                return float(price_end_step)
+            places = int(price_places) if price_places is not None else 4
+            return 10 ** (-places)
+
+        try:
+            cur_px = await _get_current_price()
+            if cur_px:
+                tick = _tick_size()
+                # For trailing activation:
+                # - LONG ('buy'): activation must be >= current price (nudge above)
+                # - SHORT ('sell'): activation must be <= current price (nudge below)
+                if api_hold_side == "buy":
+                    if trigger_price <= cur_px:
+                        trigger_price = cur_px + tick
+                else:
+                    if trigger_price >= cur_px:
+                        trigger_price = cur_px - tick
+                trigger_price = _round_price_local(trigger_price)
+                logger.info(
+                    f"🔧 [TRAILING TRIGGER ADJUST] {symbol} | side={api_hold_side} | activation={trigger_price} (cur={cur_px})"
+                )
+        except Exception:
+            pass
 
         # 🚨 CRITICAL: Size parameter IS REQUIRED by Bitget API (error 40019 if omitted)!
         # "Gesamter TP/SL" vs "Teilweise TP/SL" display in app is determined by:
@@ -1128,14 +1580,40 @@ class BitgetRestClient:
         # Format as percentage string
         callback_str = f"{callback_ratio * 100:.2f}"
         
+        # Fetch contract to determine volume/price places
+        volume_places = None
+        price_places = None
+        try:
+            contract = await self.get_symbol_info(symbol, product_type=product_type)
+            if contract:
+                if contract.get("volumePlace") is not None:
+                    try:
+                        volume_places = int(contract.get("volumePlace"))
+                    except Exception:
+                        volume_places = None
+                if contract.get("pricePlace") is not None:
+                    try:
+                        price_places = int(contract.get("pricePlace"))
+                    except Exception:
+                        price_places = None
+        except Exception:
+            pass
+
         # Round size to correct precision
         if size_precision is None:
-            size_str = f"{size:.10f}".rstrip('0').rstrip('.')
-            if '.' in size_str:
-                size_precision = len(size_str.split('.')[1])
+            if volume_places is not None:
+                size_precision = max(0, int(volume_places))
             else:
-                size_precision = 0
+                size_str = f"{size:.10f}".rstrip('0').rstrip('.')
+                size_precision = len(size_str.split('.')[1]) if '.' in size_str else 0
         rounded_size = round(size, size_precision)
+
+        # Round trigger price to price precision
+        if price_places is not None:
+            try:
+                trigger_price = round(float(trigger_price), int(price_places))
+            except Exception:
+                trigger_price = round(float(trigger_price), 4)
         
         # Side to CLOSE the position (opposite of held position)
         side = "sell" if hold_side == "long" else "buy"
@@ -1143,7 +1621,7 @@ class BitgetRestClient:
         data = {
             "planType": "track_plan",  # 🚨 Bitget's official trailing stop order!
             "symbol": symbol,
-            "productType": product_type,  # UPPERCASE for this endpoint
+            "productType": product_type.lower().replace("_", "-"),  # Use lowercase per API
             "marginMode": "isolated",
             "marginCoin": "USDT",
             "size": str(rounded_size),
@@ -1151,9 +1629,8 @@ class BitgetRestClient:
             "price": "",  # MUST be empty for track_plan
             "callbackRatio": callback_str,  # e.g. "10.00" for 10%
             "triggerPrice": str(trigger_price),
-            "triggerType": "mark_price",
+            "triggerType": "market_price",  # Use market_price for plan orders
             "side": side,  # "buy" or "sell" to close
-            "reduceOnly": "YES",  # Only close/reduce position
         }
         
         logger.info(

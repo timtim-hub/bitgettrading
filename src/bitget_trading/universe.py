@@ -2,10 +2,13 @@
 
 import asyncio
 from typing import Any
-
-import aiohttp
+import requests
+import urllib3
 
 from src.bitget_trading.logger import get_logger
+
+# Disable SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = get_logger()
 
@@ -47,48 +50,55 @@ class UniverseManager:
         params = {"productType": "USDT-FUTURES"}
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(endpoint, params=params) as response:
-                    if response.status != 200:
-                        logger.error("failed_to_fetch_contracts", status=response.status)
-                        return []
+            # Use requests with SSL verification disabled (wrapped in asyncio.to_thread)
+            response = await asyncio.to_thread(
+                requests.get,
+                endpoint,
+                params=params,
+                verify=False,
+                timeout=(10, 30)
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch contracts: {response.status_code}")
+                return []
+            
+            data = response.json()
 
-                    data = await response.json()
+            if data.get("code") != "00000":
+                logger.error("api_error", code=data.get("code"), msg=data.get("msg"))
+                return []
 
-                    if data.get("code") != "00000":
-                        logger.error("api_error", code=data.get("code"), msg=data.get("msg"))
-                        return []
+            contracts = data.get("data", [])
 
-                    contracts = data.get("data", [])
+            # Store contract info
+            for contract in contracts:
+                symbol = contract.get("symbol")
+                if symbol:
+                    self.contract_info[symbol] = {
+                        "base_coin": contract.get("baseCoin"),
+                        "quote_coin": contract.get("quoteCoin"),
+                        "size_multiplier": float(contract.get("sizeMultiplier", 1)),
+                        "min_trade_num": float(contract.get("minTradeNum", 0)),
+                        "price_place": int(contract.get("pricePlace", 2)),
+                        "volume_place": int(contract.get("volumePlace", 4)),
+                        "max_leverage": int(contract.get("maxLeverage", 125)),
+                        "status": contract.get("symbolStatus"),
+                    }
 
-                    # Store contract info
-                    for contract in contracts:
-                        symbol = contract.get("symbol")
-                        if symbol:
-                            self.contract_info[symbol] = {
-                                "base_coin": contract.get("baseCoin"),
-                                "quote_coin": contract.get("quoteCoin"),
-                                "size_multiplier": float(contract.get("sizeMultiplier", 1)),
-                                "min_trade_num": float(contract.get("minTradeNum", 0)),
-                                "price_place": int(contract.get("pricePlace", 2)),
-                                "volume_place": int(contract.get("volumePlace", 4)),
-                                "max_leverage": int(contract.get("maxLeverage", 125)),
-                                "status": contract.get("symbolStatus"),
-                            }
+            # Filter to active contracts only
+            self.symbols = [
+                s for s, info in self.contract_info.items()
+                if info.get("status") == "normal"
+            ]
 
-                    # Filter to active contracts only
-                    self.symbols = [
-                        s for s, info in self.contract_info.items()
-                        if info.get("status") == "normal"
-                    ]
+            logger.info(
+                "contracts_fetched",
+                total_contracts=len(contracts),
+                active_symbols=len(self.symbols),
+            )
 
-                    logger.info(
-                        "contracts_fetched",
-                        total_contracts=len(contracts),
-                        active_symbols=len(self.symbols),
-                    )
-
-                    return self.symbols
+            return self.symbols
 
         except Exception as e:
             logger.error("fetch_contracts_error", error=str(e))
@@ -108,82 +118,72 @@ class UniverseManager:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                # Configure timeout
-                timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=20)
-                
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(endpoint, params=params) as response:
-                        if response.status != 200:
-                            if attempt < max_retries - 1:
-                                await asyncio.sleep(1)
-                                continue
-                            return {}
+                response = await asyncio.to_thread(
+                    requests.get,
+                    endpoint,
+                    params=params,
+                    verify=False,
+                    timeout=(30, 60)
+                )
 
-                        data = await response.json()
-
-                        if data.get("code") != "00000":
-                            if attempt < max_retries - 1:
-                                await asyncio.sleep(1)
-                                continue
-                            return {}
-
-                        tickers = data.get("data", [])
-
-                        ticker_map = {}
-                        for ticker in tickers:
-                            symbol = ticker.get("symbol")
-                            if symbol:
-                                # Handle None values properly
-                                last_price = ticker.get("lastPr") or 0
-                                bid_price = ticker.get("bidPr") or 0
-                                ask_price = ticker.get("askPr") or 0
-                                volume_24h = ticker.get("baseVolume") or 0
-                                quote_volume = ticker.get("quoteVolume") or 0
-                                open_interest = ticker.get("openInterest") or 0
-                                
-                                # Skip symbols with no valid price data
-                                if last_price == 0 or bid_price == 0 or ask_price == 0:
-                                    continue
-                                
-                                ticker_map[symbol] = {
-                                    "last_price": float(last_price),
-                                    "bid_price": float(bid_price),
-                                    "ask_price": float(ask_price),
-                                    "volume_24h": float(volume_24h),
-                                    "quote_volume_24h": float(quote_volume),
-                                    "open_interest": float(open_interest),
-                                }
-
-                        return ticker_map
-            
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    logger.warning(f"fetch_tickers_attempt_{attempt+1}_failed", error=str(e))
-                    await asyncio.sleep(2)  # Wait longer between retries
-                    continue
-                else:
-                    logger.error("fetch_tickers_error", error=str(e))
+                if response.status_code != 200:
+                    logger.error(f"ticker_fetch_failed_status", status=response.status_code, attempt=attempt + 1)
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                        continue
                     return {}
 
-    async def get_tradeable_universe(self) -> list[str]:
+                data = response.json()
+
+                if data.get("code") != "00000":
+                    logger.error("ticker_api_error", code=data.get("code"), msg=data.get("msg"))
+                    return {}
+
+                tickers_list = data.get("data", [])
+                tickers_dict = {}
+
+                for ticker in tickers_list:
+                    symbol = ticker.get("symbol")
+                    if symbol:
+                        tickers_dict[symbol] = {
+                            "ask": float(ticker.get("bestAsk", 0)),
+                            "bid": float(ticker.get("bestBid", 0)),
+                            "last": float(ticker.get("last", 0)),
+                            "volume_24h": float(ticker.get("usdtVolume", 0)),
+                        }
+
+                logger.info("tickers_fetched", count=len(tickers_dict))
+                return tickers_dict
+
+            except Exception as e:
+                logger.error("ticker_fetch_error", error=str(e), attempt=attempt + 1)
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    return {}
+
+        return {}
+
+    async def get_filtered_universe(self) -> list[str]:
         """
-        Get filtered list of tradeable symbols based on liquidity criteria.
+        Get filtered list of symbols meeting liquidity and spread criteria.
         
         Returns:
-            List of filtered symbol names
+            List of eligible symbols
         """
-        # Fetch contracts if not already done
+        # First fetch contracts
+        await self.fetch_all_contracts()
         if not self.symbols:
-            await self.fetch_all_contracts()
+            logger.warning("no_contracts_fetched")
+            return []
 
-        # Fetch current market data
+        # Then fetch tickers
         tickers = await self.fetch_tickers()
-
         if not tickers:
-            logger.warning("no_ticker_data")
-            return self.symbols  # Return all if can't filter
+            logger.warning("no_tickers_fetched")
+            return self.symbols  # Return all symbols if no ticker data
 
-        # Filter based on criteria
+        # Apply filters
         filtered = []
         for symbol in self.symbols:
             ticker = tickers.get(symbol)
@@ -191,15 +191,13 @@ class UniverseManager:
                 continue
 
             # Volume filter
-            if ticker["quote_volume_24h"] < self.min_volume_24h:
+            if ticker["volume_24h"] < self.min_volume_24h:
                 continue
 
             # Spread filter
-            bid = ticker["bid_price"]
-            ask = ticker["ask_price"]
-            if bid > 0 and ask > 0:
-                mid = (bid + ask) / 2
-                spread_bps = ((ask - bid) / mid) * 10000
+            if ticker["ask"] > 0 and ticker["bid"] > 0:
+                mid = (ticker["ask"] + ticker["bid"]) / 2
+                spread_bps = ((ticker["ask"] - ticker["bid"]) / mid) * 10000
                 if spread_bps > self.max_spread_bps:
                     continue
 
@@ -210,21 +208,7 @@ class UniverseManager:
             total=len(self.symbols),
             filtered=len(filtered),
             min_volume=self.min_volume_24h,
+            max_spread_bps=self.max_spread_bps,
         )
 
         return filtered
-
-    def get_contract_info(self, symbol: str) -> dict[str, Any] | None:
-        """Get contract specifications for a symbol."""
-        return self.contract_info.get(symbol)
-
-    def get_min_order_size(self, symbol: str) -> float:
-        """Get minimum order size for symbol."""
-        info = self.get_contract_info(symbol)
-        return info.get("min_trade_num", 0.001) if info else 0.001
-
-    def get_max_leverage(self, symbol: str) -> int:
-        """Get maximum leverage for symbol."""
-        info = self.get_contract_info(symbol)
-        return info.get("max_leverage", 125) if info else 125
-

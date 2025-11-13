@@ -381,7 +381,8 @@ class VWAPMRStrategy:
         self.bb_touch_sigma = entry_config.get('bb_touch_or_sigma', -1)
         self.stoch_level = entry_config.get('stoch_rsi_level', 20)
         self.stoch_within_bars = entry_config.get('stoch_within_bars', 3)
-        self.rsi_min = entry_config.get('rsi5m_min', 42)
+        self.rsi_min = entry_config.get('rsi5m_min', 40)
+        self.rsi_max = entry_config.get('rsi5m_max', 60)
         self.vol_spike_max = entry_config.get('vol_spike_max_x', 1.8)
         
         self.sl_atr_x = self.config.get('sl_atr_x', {}).get(bucket, 1.35)
@@ -433,17 +434,17 @@ class VWAPMRStrategy:
         touch_upper = (current_bar['high'] >= bb_upper or current_bar['high'] >= vwap_upper)
         
         if touch_upper:
-            # RSI ≤ 58 (mirror of 42)
-            if rsi > (100 - self.rsi_min):
-                logger.debug(f"⚠️ VWAP-MR SHORT: RSI {rsi:.1f} > {100 - self.rsi_min}")
+            # Check RSI <= rsi_max (symmetric with LONG)
+            if rsi > self.rsi_max:
+                logger.debug(f"⚠️ VWAP-MR SHORT: RSI {rsi:.1f} > {self.rsi_max}")
                 return None
             
-            # Volume check
+            # Check volume not too high
             if volume_ratio >= self.vol_spike_max:
                 logger.debug(f"⚠️ VWAP-MR SHORT: Volume ratio {volume_ratio:.1f}x >= {self.vol_spike_max}x")
                 return None
             
-            # Stoch RSI down-cross 80
+            # Check Stoch RSI down-cross 80 within last 3 bars
             if self._check_stoch_rsi_cross(df, current_idx, direction='down'):
                 logger.info(f"✅ VWAP-MR: SHORT conditions met @ ${current_bar['close']:.4f}")
                 return 'short'
@@ -606,8 +607,9 @@ class TrendStrategy:
         self.tp1_min_pct = self.config.get('tp1_min_pct', 0.025)  # Minimum 2.5% profit
         self.rsi_bull_threshold = self.config.get('rsi_bull_threshold', 50)
         self.rsi_bear_threshold = self.config.get('rsi_bear_threshold', 50)
+        self.allow_counter_trend_long = self.config.get('allow_counter_trend_long', False)
         
-        logger.info(f"✅ Trend Strategy initialized | sl_atr={self.sl_atr_x}x | tp1_atr={self.tp1_atr_x}x | tp1_min={self.tp1_min_pct*100:.1f}%")
+        logger.info(f"✅ Trend Strategy initialized | sl_atr={self.sl_atr_x}x | tp1_atr={self.tp1_atr_x}x | tp1_min={self.tp1_min_pct*100:.1f}% | RSI thresholds: {self.rsi_bull_threshold}/{self.rsi_bear_threshold}")
     
     def generate_signal(self, df: pd.DataFrame, current_idx: int = -1) -> Optional[TradeSignal]:
         """
@@ -635,8 +637,15 @@ class TrendStrategy:
         price = current_bar['close']
         
         # Determine bias
-        bullish_bias = price > ema_200 and vwap_slope_sigma > 0
-        bearish_bias = price < ema_200 and vwap_slope_sigma < 0
+        # FIXED: Relaxed bullish_bias to allow more LONG opportunities
+        # Old: bullish_bias = price > ema_200 and vwap_slope_sigma > 0 (too strict!)
+        # New: Allow LONG if price > EMA200 OR VWAP slope positive OR counter-trend enabled
+        if self.allow_counter_trend_long:
+            bullish_bias = price > ema_200 or vwap_slope_sigma > -0.1  # Allow weak bearish VWAP
+        else:
+            bullish_bias = price > ema_200 or vwap_slope_sigma > 0  # At least one bullish signal
+        
+        bearish_bias = price < ema_200 or vwap_slope_sigma < 0  # Mirror logic for SHORT
         
         # Check for LONG signal
         if bullish_bias:

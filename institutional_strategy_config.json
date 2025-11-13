@@ -83,7 +83,8 @@
         "bb_touch_or_sigma": -1,
         "stoch_rsi_level": 20,
         "stoch_within_bars": 3,
-        "rsi5m_min": 42,
+        "rsi5m_min": 40,
+        "rsi5m_max": 60,
         "vol_spike_max_x": 1.8
       },
       "sl_atr_x": {
@@ -113,14 +114,21 @@
       "tp1_atr_x": 2.5,
       "tp1_min_pct": 0.025,
       "trail": "Supertrend(10,3)",
-      "rsi_bull_threshold": 45,
-      "rsi_bear_threshold": 55
+      "rsi_bull_threshold": 50,
+      "rsi_bear_threshold": 50,
+      "allow_counter_trend_long": true
     }
   },
   "scheduling": {
     "funding_blackout_min": 2,
     "gate_check_interval_min": 30,
-    "scan_interval_seconds": 15
+    "scan_interval_seconds": 5,
+    "fast_scan_enabled": true,
+    "tier1_price_check_seconds": 2,
+    "tier2_quick_scan_seconds": 5,
+    "tier3_full_scan_seconds": 30,
+    "parallel_scan_workers": 20,
+    "cache_indicators": true
   },
   "features": {
     "use_orderflow": false,

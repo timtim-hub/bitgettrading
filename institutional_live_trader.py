@@ -22,6 +22,8 @@ from institutional_universe import UniverseFilter, RegimeClassifier, MarketData
 from institutional_risk import RiskManager
 from institutional_strategies import LSVRStrategy, VWAPMRStrategy, TrendStrategy, TradeSignal
 from trade_tracker import TradeTracker
+from institutional_leverage import init_leverage_manager, LeverageManager
+from leverage_wrapper import adjust_tp_sl_for_leverage
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +102,9 @@ class InstitutionalLiveTrader:
         # Trade tracking
         self.trade_tracker = TradeTracker()
         self.trade_ids: Dict[str, str] = {}  # Map symbol to trade_id
+        
+        # Initialize leverage manager for leverage-aware TP/SL calculations
+        self.leverage_manager = init_leverage_manager(self.rest_client, default_leverage=25)
         
         logger.info("✅ InstitutionalLiveTrader initialized")
         logger.info(f"  Mode: {'LIVE' if self.mode_config.get('live_enabled') else 'BACKTEST ONLY'}")
@@ -254,12 +259,20 @@ class InstitutionalLiveTrader:
                 if end_time:
                     api_params['endTime'] = str(end_time)
                 
-                # Call API directly with endTime support
-                response = await self.rest_client._request(
-                    'GET',
-                    '/api/v2/mix/market/candles',
-                    params=api_params
-                )
+                # Call API with retry logic (handled in _request)
+                try:
+                    response = await self.rest_client._request(
+                        'GET',
+                        '/api/v2/mix/market/candles',
+                        params=api_params
+                    )
+                except Exception as e:
+                    logger.debug(f"⚠️ Failed to fetch candles for {symbol} (request {i+1}/{requests_needed}): {e}")
+                    # If first request fails, return None (no data)
+                    if i == 0:
+                        return None
+                    # If later request fails, return what we have
+                    break
                 
                 if response.get('code') == '00000' and 'data' in response:
                     candles = response['data']
@@ -275,11 +288,14 @@ class InstitutionalLiveTrader:
                     else:
                         break
                 else:
+                    # API returned error - break and return what we have
+                    if i == 0:
+                        return None
                     break
                 
                 # Small delay between requests to avoid rate limit
                 if i < requests_needed - 1:
-                    await asyncio.sleep(0.05)
+                    await asyncio.sleep(0.3)  # Increased delay to avoid connection issues
             
             if all_candles:
                 # Convert to DataFrame
@@ -465,17 +481,32 @@ class InstitutionalLiveTrader:
     async def place_entry_order(self, signal: TradeSignal, symbol: str, size: float, 
                                 equity: float) -> Optional[str]:
         """
-        Place entry order - SIMPLIFIED for testing (market order)
+        Place MARKET entry order for instant fill and immediate TP/SL protection
+        
+        🚨 CRITICAL: Market orders only - no post-only/taker complexity!
+        - Instant fill (no waiting)
+        - Immediate TP/SL placement
+        - Safe even if bot crashes
+        - Simple and reliable
         
         Returns:
             Order ID if successful, None otherwise
         """
         try:
+            # Get current market data
+            market_data = await self.get_market_data(symbol)
+            if not market_data:
+                logger.error(f"❌ Could not get market data for {symbol}")
+                return None
+            
+            current_price = market_data.last_price
+            
             logger.info(
-                f"📍 Placing MARKET entry | {symbol} {signal.side.upper()} | "
-                f"Size: {size:.4f}"
+                f"📍 Placing MARKET order | {symbol} {signal.side.upper()} | "
+                f"Size: {size:.4f} | Current Price: ${current_price:.4f}"
             )
             
+            # Place MARKET order (instant fill!)
             response = await self.rest_client.place_order(
                 symbol=symbol,
                 side='buy' if signal.side == 'long' else 'sell',
@@ -485,14 +516,14 @@ class InstitutionalLiveTrader:
             
             if response.get('code') == '00000':
                 order_id = response.get('data', {}).get('orderId')
-                logger.info(f"✅ Market order placed | Order ID: {order_id}")
+                logger.info(f"✅ Market order FILLED instantly | {symbol} | Order ID: {order_id}")
                 return order_id
             else:
                 logger.error(f"❌ Market order failed: {response}")
                 return None
         
         except Exception as e:
-            logger.error(f"❌ Order placement failed: {e}")
+            logger.error(f"❌ Order placement failed: {e}", exc_info=True)
             return None
     
     async def place_stop_loss(self, position: LivePosition) -> Optional[str]:
@@ -543,6 +574,175 @@ class InstitutionalLiveTrader:
         """
         # No-op - Bitget API handles trailing automatically
         pass
+    
+    async def _place_trailing_stop_after_tp1(self, position: LivePosition, symbol: str, current_price: float):
+        """
+        Helper method to place trailing stop after TP1 is hit (either exchange-side or bot-side).
+        This consolidates the trailing stop logic to avoid duplication.
+        """
+        # Cancel old SL order
+        if position.stop_order_id:
+            try:
+                endpoint = "/api/v2/mix/order/cancel-plan-order"
+                cancel_data = {
+                    "symbol": position.symbol,
+                    "productType": "usdt-futures",
+                    "marginCoin": "USDT",
+                    "orderId": position.stop_order_id,
+                    "planType": "pos_loss",
+                }
+                await self.rest_client._request("POST", endpoint, data=cancel_data)
+                logger.info(f"✅ Cancelled old SL order | {position.symbol} | Order ID: {position.stop_order_id}")
+            except Exception as e1:
+                try:
+                    cancel_data["planType"] = "track_plan"
+                    await self.rest_client._request("POST", endpoint, data=cancel_data)
+                    logger.info(f"✅ Cancelled old trailing order | {position.symbol} | Order ID: {position.stop_order_id}")
+                except Exception as e2:
+                    logger.debug(f"⚠️ Could not cancel old order: {e1}, {e2}")
+        
+        # Place Bitget trailing stop (track_plan) - leverage-aware callback
+        # 🚨 CRITICAL: Callback must account for leverage!
+        # Target: 1% ROI callback → With 25x leverage = 0.04% price callback
+        callback_ratio = await self.leverage_manager.calculate_trailing_callback(
+            symbol=symbol,
+            target_roi_pct=0.01,  # 1% ROI callback
+        )
+        min_profit_pct = 0.025  # 2.5% minimum ROI
+        tp1_price = position.tp_levels[0][0] if position.tp_levels else None
+        
+        if position.side == 'long':
+            min_profit_price = position.entry_price * (1 + min_profit_pct)
+            if tp1_price:
+                trigger_price = max(tp1_price, current_price * 1.001)
+            else:
+                trigger_price = max(current_price * 1.001, min_profit_price * 1.001)
+        else:
+            min_profit_price = position.entry_price * (1 - min_profit_pct)
+            if tp1_price:
+                trigger_price = min(tp1_price, current_price * 0.999)
+            else:
+                trigger_price = min(current_price * 0.999, min_profit_price * 0.999)
+        
+        # Verify we're locking in at least 2.5% profit
+        if position.side == 'long':
+            profit_at_trigger = ((trigger_price - position.entry_price) / position.entry_price) * 100
+        else:
+            profit_at_trigger = ((position.entry_price - trigger_price) / position.entry_price) * 100
+        
+        if profit_at_trigger < min_profit_pct * 100:
+            if position.side == 'long':
+                trigger_price = min_profit_price
+            else:
+                trigger_price = min_profit_price
+        
+        # Wait for position to be fully available
+        await asyncio.sleep(2.0)
+        
+        # Get fresh position size
+        positions_list = await self.rest_client.get_positions(symbol)
+        fresh_size = position.remaining_size
+        if positions_list:
+            for pos in positions_list:
+                if pos.get('symbol') == symbol:
+                    fresh_size = float(pos.get('total', 0) or pos.get('available', 0))
+                    break
+        
+        if fresh_size < 0.001:
+            logger.warning(f"⚠️ Position size too small for trailing stop ({fresh_size:.4f}) | {symbol} | Using fallback fixed stop")
+            # Use fallback fixed stop
+            if position.side == 'long':
+                fixed_stop = position.entry_price * (1 + min_profit_pct)
+            else:
+                fixed_stop = position.entry_price * (1 - min_profit_pct)
+            position.stop_price = round(fixed_stop, 2)
+            position.stop_order_id = await self.place_stop_loss(position)
+            position.moved_to_be = True
+            logger.info(f"✅ Fallback: Fixed stop at 2.5% profit | {symbol} @ ${fixed_stop:.4f}")
+            return
+        
+        logger.info(f"🚀 Placing trailing stop | {symbol} | Size: {fresh_size:.4f} | Trigger: ${trigger_price:.4f} | Callback: {callback_ratio*100:.1f}%")
+        
+        try:
+            trailing_response = await self.rest_client.place_trailing_stop_full_position(
+                symbol=symbol,
+                hold_side=position.side,
+                callback_ratio=callback_ratio,
+                trigger_price=trigger_price,
+                size=fresh_size,
+                size_precision=3
+            )
+            
+            if trailing_response and trailing_response.get('code') == '00000':
+                trailing_order_id = trailing_response.get('data', {}).get('orderId')
+                position.stop_order_id = trailing_order_id
+                position.moved_to_be = True
+                logger.info(f"✅ Trailing stop placed (Bitget API) | {symbol} | Callback: {callback_ratio*100:.1f}% | Trigger: ${trigger_price:.4f} | Order ID: {trailing_order_id}")
+                
+                # Update trade tracking
+                if symbol in self.trade_ids:
+                    self.trade_tracker.update_trailing_stop(
+                        self.trade_ids[symbol],
+                        activated=True,
+                        trigger_price=trigger_price
+                    )
+                    self.trade_tracker.update_breakeven(
+                        self.trade_ids[symbol],
+                        moved=True,
+                        move_time=datetime.now()
+                    )
+                
+                # Verify trailing stop is active
+                await asyncio.sleep(2.0)
+                try:
+                    verify_endpoint = "/api/v2/mix/order/orders-plan-pending"
+                    verify_params = {
+                        "symbol": symbol,
+                        "productType": "usdt-futures",
+                        "planType": "track_plan",
+                    }
+                    verify_response = await self.rest_client._request("GET", verify_endpoint, params=verify_params)
+                    if verify_response.get('code') == '00000':
+                        orders = verify_response.get('data', {}).get('entrustedList', [])
+                        trailing_orders = [o for o in orders if o.get('orderId') == trailing_order_id]
+                        if trailing_orders:
+                            logger.info(f"✅ Verified: Trailing stop is active on exchange | {symbol} | Order ID: {trailing_order_id}")
+                        else:
+                            logger.warning(f"⚠️ WARNING: Trailing stop order {trailing_order_id} NOT found on exchange! | {symbol}")
+                            # Use fallback
+                            if position.side == 'long':
+                                fixed_stop = position.entry_price * (1 + min_profit_pct)
+                            else:
+                                fixed_stop = position.entry_price * (1 - min_profit_pct)
+                            position.stop_price = round(fixed_stop, 2)
+                            position.stop_order_id = await self.place_stop_loss(position)
+                except Exception as e:
+                    logger.debug(f"⚠️ Could not verify trailing stop: {e}")
+            else:
+                error_code = trailing_response.get('code', 'N/A') if trailing_response else 'N/A'
+                error_msg = trailing_response.get('msg', 'N/A') if trailing_response else 'N/A'
+                logger.error(f"❌ Failed to place trailing stop: Code={error_code}, Msg={error_msg}")
+                
+                # Fallback: Use fixed stop at 2.5% profit
+                if position.side == 'long':
+                    fixed_stop = position.entry_price * (1 + min_profit_pct)
+                else:
+                    fixed_stop = position.entry_price * (1 - min_profit_pct)
+                position.stop_price = round(fixed_stop, 2)
+                position.stop_order_id = await self.place_stop_loss(position)
+                position.moved_to_be = True
+                logger.info(f"✅ Fallback: Fixed stop at 2.5% profit | {symbol} @ ${fixed_stop:.4f}")
+        except Exception as e:
+            logger.error(f"❌ Error placing trailing stop for {symbol}: {e}", exc_info=True)
+            # Fallback: Use fixed stop at 2.5% profit
+            if position.side == 'long':
+                fixed_stop = position.entry_price * (1 + min_profit_pct)
+            else:
+                fixed_stop = position.entry_price * (1 - min_profit_pct)
+            position.stop_price = round(fixed_stop, 2)
+            position.stop_order_id = await self.place_stop_loss(position)
+            position.moved_to_be = True
+            logger.info(f"✅ Fallback: Fixed stop at 2.5% profit | {symbol} @ ${fixed_stop:.4f}")
     
     async def check_tripwires(self, position: LivePosition, current_price: float, 
                               current_bar: Dict) -> Optional[str]:
@@ -614,7 +814,7 @@ class InstitutionalLiveTrader:
                         await self.rest_client._request("POST", endpoint, data=cancel_data)
                         logger.debug(f"✅ Cancelled {plan_type} order | {position.symbol}")
                         break  # Success, no need to try other types
-                    except:
+                    except Exception:
                         continue
             
             for tp_order_id in position.tp_order_ids.values():
@@ -627,7 +827,7 @@ class InstitutionalLiveTrader:
                         "planType": "profit_plan",  # Take-profit
                     }
                     await self.rest_client._request("POST", endpoint, data=cancel_data)
-                except:
+                except Exception:
                     pass
             
             # Place market order to close
@@ -649,7 +849,7 @@ class InstitutionalLiveTrader:
                         market_data = await self.get_market_data(position.symbol)
                         if market_data:
                             exit_price = market_data.last_price
-                    except:
+                    except Exception:
                         pass
                     
                     # Get exit indicators
@@ -718,7 +918,7 @@ class InstitutionalLiveTrader:
         if not hasattr(self, '_last_tpsl_check'):
             self._last_tpsl_check = datetime.now()
         
-        check_tpsl = (datetime.now() - self._last_tpsl_check).total_seconds() >= 300  # 5 minutes
+        check_tpsl = (datetime.now() - self._last_tpsl_check).total_seconds() >= 60  # 60s
         
         for symbol, position in list(self.positions.items()):
             try:
@@ -770,73 +970,85 @@ class InstitutionalLiveTrader:
                     await self.close_position(position, tripwire_reason)
                     continue
                 
-                # 🚨 CRITICAL: Check if price hit TP/SL levels (BOT-SIDE BACKUP)
-                # Exchange-side TP/SL may not execute, so we MUST check price and execute manually!
-                if position.tp_levels and len(position.tp_levels) > 0:
-                    tp1_price = position.tp_levels[0][0]
-                    tp1_size_frac = position.tp_levels[0][1]
-                    
-                    # Check if TP1 was hit by price
-                    tp1_hit = False
-                    if position.side == 'long':
-                        tp1_hit = current_price >= tp1_price
-                    else:
-                        tp1_hit = current_price <= tp1_price
-                    
-                    if tp1_hit and position.tp_hit_count == 0:
-                        logger.warning(f"🎯 TP1 HIT (Price-based detection) | {symbol} | Price: ${current_price:.4f} >= TP1: ${tp1_price:.4f}")
-                        
-                        # Execute TP1 manually (exchange-side may not have executed)
-                        exit_size = position.remaining_size * tp1_size_frac
-                        if exit_size > 0.001:
-                            try:
-                                # Place market order to close partial position
-                                exit_side = "sell" if position.side == "long" else "buy"
-                                exit_response = await self.rest_client.place_order(
-                                    symbol=symbol,
-                                    side=exit_side,
-                                    order_type="market",
-                                    size=exit_size,
-                                    reduce_only=True
-                                )
-                                
-                                if exit_response.get('code') == '00000':
-                                    logger.info(f"✅ TP1 executed manually | {symbol} | Exited {exit_size:.4f} @ ${current_price:.4f}")
-                                    position.tp_hit_count = 1
-                                    position.remaining_size -= exit_size
-                                    
-                                    # Update trade tracking
-                                    if symbol in self.trade_ids:
-                                        self.trade_tracker.update_tp_hit(
-                                            self.trade_ids[symbol],
-                                            tp_level=1,
-                                            hit_time=datetime.now()
-                                        )
-                                    
-                                    # Cancel old SL and place trailing stop (same logic as exchange-side TP1)
-                                    # Trigger trailing stop placement immediately after manual TP1
-                                    await self._place_trailing_stop_after_tp1(position, symbol, current_price)
-                                else:
-                                    logger.error(f"❌ Failed to execute TP1 manually | {symbol} | Code: {exit_response.get('code', 'N/A')}")
-                            except Exception as e:
-                                logger.error(f"❌ Error executing TP1 manually | {symbol} | {e}")
+                # 🚨 SIMPLE TRAILING TP LOGIC (MUCH SIMPLER THAN TP1/TP2/TP3!)
+                # Track peak prices and move TP continuously to lock in profits
+                # No complex partial closes - just one simple trailing TP!
                 
-                # Check if SL was hit by price
+                # Update peak prices for trailing
+                if position.side == 'long':
+                    if current_price > position.highest_price:
+                        old_high = position.highest_price
+                        position.highest_price = current_price
+                        
+                        # Calculate new trailing TP to maintain 2.5% ROI target
+                        # Using actual leverage for the position
+                        leverage = position.notional / (position.notional / 25) if position.notional > 0 else 25  # Estimate leverage
+                        profit_target_pct = 0.025  # 2.5% ROI on equity
+                        price_move_needed = profit_target_pct / leverage  # Convert to price move
+                        new_tp = position.highest_price * (1 + price_move_needed)
+                        
+                        # Only move TP UP (never down), and only if it's better than current TP
+                        if position.tp_levels:
+                            old_tp = position.tp_levels[0][0]
+                            if new_tp > old_tp:
+                                position.tp_levels[0] = (new_tp, 1.0)
+                                tp_move = ((new_tp - old_tp) / old_tp) * 100
+                                logger.info(f"🔄 TRAILING TP UP | {symbol} | ${old_tp:.4f} → ${new_tp:.4f} (+{tp_move:.2f}%) | Peak: ${position.highest_price:.4f}")
+                
+                else:  # SHORT
+                    if current_price < position.lowest_price:
+                        old_low = position.lowest_price
+                        position.lowest_price = current_price
+                        
+                        # Calculate new trailing TP
+                        leverage = position.notional / (position.notional / 25) if position.notional > 0 else 25
+                        profit_target_pct = 0.025  # 2.5% ROI
+                        price_move_needed = profit_target_pct / leverage
+                        new_tp = position.lowest_price * (1 - price_move_needed)
+                        
+                        # Only move TP DOWN (never up), and only if it's better than current TP
+                        if position.tp_levels:
+                            old_tp = position.tp_levels[0][0]
+                            if new_tp < old_tp:
+                                position.tp_levels[0] = (new_tp, 1.0)
+                                tp_move = ((old_tp - new_tp) / old_tp) * 100
+                                logger.info(f"🔄 TRAILING TP DOWN | {symbol} | ${old_tp:.4f} → ${new_tp:.4f} (-{tp_move:.2f}%) | Peak: ${position.lowest_price:.4f}")
+                
+                # BOT-SIDE TP MONITORING - Check if trailing TP hit
+                if position.tp_levels:
+                    tp_price = position.tp_levels[0][0]
+                    tp_hit = False
+                    
+                    if position.side == 'long' and current_price >= tp_price:
+                        tp_hit = True
+                        logger.info(f"🎯 TRAILING TP HIT | {symbol} LONG | Price ${current_price:.4f} >= TP ${tp_price:.4f}")
+                    elif position.side == 'short' and current_price <= tp_price:
+                        tp_hit = True
+                        logger.info(f"🎯 TRAILING TP HIT | {symbol} SHORT | Price ${current_price:.4f} <= TP ${tp_price:.4f}")
+                    
+                    if tp_hit:
+                        logger.info(f"💰 TRAILING TP HIT! Closing FULL position (100%) | {symbol}")
+                        await self.close_position(position, "trailing_take_profit")
+                        continue
+                
+                # BOT-SIDE SL MONITORING (FIXED SL - never moves!)
                 sl_hit = False
                 if position.side == 'long':
-                    sl_hit = current_price <= position.stop_price
-                else:
-                    sl_hit = current_price >= position.stop_price
+                    if current_price <= position.stop_price:
+                        sl_hit = True
+                        logger.warning(f"🛑 STOP LOSS HIT | {symbol} LONG | Price ${current_price:.4f} <= SL ${position.stop_price:.4f}")
+                else:  # SHORT
+                    if current_price >= position.stop_price:
+                        sl_hit = True
+                        logger.warning(f"🛑 STOP LOSS HIT | {symbol} SHORT | Price ${current_price:.4f} >= SL ${position.stop_price:.4f}")
                 
                 if sl_hit:
-                    logger.warning(f"🛑 SL HIT (Price-based detection) | {symbol} | Price: ${current_price:.4f} {'<=' if position.side == 'long' else '>='} SL: ${position.stop_price:.4f}")
-                    await self.close_position(position, "SL")
+                    logger.error(f"🚨 STOP LOSS HIT! Closing position immediately | {symbol} | P&L: {pnl_pct:+.2f}%")
+                    await self.close_position(position, "stop_loss")
                     continue
                 
-                # Check if TP1 was hit (by checking if position size decreased or TP order filled)
-                # Bitget exchange-side TP will execute automatically, so we check position size
+                # Check if position was closed externally (exchange-side TP/SL or manual close)
                 try:
-                    # Get actual position from exchange (returns list)
                     positions_list = await self.rest_client.get_positions(symbol)
                     actual_size = 0
                     if positions_list:
@@ -845,236 +1057,13 @@ class InstitutionalLiveTrader:
                                 actual_size = float(pos.get('total', 0) or pos.get('available', 0))
                                 break
                         
-                        # If position size decreased, TP1 was hit
-                        # Check if size decreased significantly (TP1 typically exits 75% of position)
-                        size_decrease_pct = ((position.remaining_size - actual_size) / position.remaining_size) * 100 if position.remaining_size > 0 else 0
-                        
-                        # Log position size check for debugging
-                        if position.tp_hit_count == 0:
-                            logger.debug(f"🔍 TP1 check: {symbol} | Tracked: {position.remaining_size:.4f} | Exchange: {actual_size:.4f} | Decrease: {size_decrease_pct:.1f}%")
-                        
-                        # TP1 exits 75% of position, so remaining should be ~25% of original
-                        # Use 30% threshold to account for rounding/precision issues
-                        if actual_size < position.remaining_size * 0.3 and position.tp_hit_count == 0:
-                            logger.info(f"🎯 TP1 HIT (Exchange-side) | {symbol} | Size: {position.remaining_size:.4f} → {actual_size:.4f} ({size_decrease_pct:.1f}% decrease)")
-                            position.tp_hit_count = 1
-                            position.remaining_size = actual_size
-                            
-                            # Update trade tracking
-                            if symbol in self.trade_ids:
-                                self.trade_tracker.update_tp_hit(
-                                    self.trade_ids[symbol],
-                                    tp_level=1,
-                                    hit_time=datetime.now()
-                                )
-                            
-                            # Cancel old SL and place trailing stop using Bitget API
-                            if position.stop_order_id:
-                                try:
-                                    # Cancel plan order (TP/SL) - try both plan types
-                                    endpoint = "/api/v2/mix/order/cancel-plan-order"
-                                    
-                                    # Try pos_loss first (stop-loss)
-                                    try:
-                                        cancel_data = {
-                                            "symbol": position.symbol,
-                                            "productType": "usdt-futures",
-                                            "marginCoin": "USDT",
-                                            "orderId": position.stop_order_id,
-                                            "planType": "pos_loss",
-                                        }
-                                        await self.rest_client._request("POST", endpoint, data=cancel_data)
-                                        logger.info(f"✅ Cancelled old SL order | {position.symbol} | Order ID: {position.stop_order_id}")
-                                    except:
-                                        # Try track_plan (trailing stop)
-                                        try:
-                                            cancel_data["planType"] = "track_plan"
-                                            await self.rest_client._request("POST", endpoint, data=cancel_data)
-                                            logger.info(f"✅ Cancelled old trailing order | {position.symbol} | Order ID: {position.stop_order_id}")
-                                        except:
-                                            pass
-                                except Exception as e:
-                                    logger.debug(f"⚠️ Could not cancel old order: {e}")
-                                    pass
-                            
-                            # Place Bitget trailing stop (track_plan) - adaptive callback
-                            # Use 3% callback for tighter trailing (allows more profit capture)
-                            # CRITICAL: Ensure minimum 2.5% profit is locked in
-                            try:
-                                callback_ratio = 0.03  # 3% trailing callback (tighter = more profit potential)
-                                
-                                # Calculate minimum profit price (2.5% above/below entry)
-                                min_profit_pct = 0.025  # 2.5% minimum profit
-                                
-                                # Get TP1 price (where we want trailing to activate)
-                                tp1_price = position.tp_levels[0][0] if position.tp_levels else None
-                                
-                                if position.side == 'long':
-                                    min_profit_price = position.entry_price * (1 + min_profit_pct)
-                                    # For LONG: Trigger at TP1 price (where profit starts)
-                                    # Bitget trailing activates when price reaches trigger, then trails up
-                                    if tp1_price:
-                                        # If current price is already at/above TP1, use current price (trailing activates immediately)
-                                        # Otherwise use TP1 (trailing activates when price reaches TP1)
-                                        trigger_price = max(tp1_price, current_price * 1.001)
-                                    else:
-                                        trigger_price = max(current_price * 1.001, min_profit_price * 1.001)
-                                    tp1_display = f"${tp1_price:.4f}" if tp1_price else "N/A"
-                                    logger.info(f"🔒 Trailing stop for LONG: Trigger @ ${trigger_price:.4f} (TP1: {tp1_display}, Current: ${current_price:.4f}, min profit: {min_profit_pct*100:.1f}%)")
-                                else:
-                                    min_profit_price = position.entry_price * (1 - min_profit_pct)
-                                    # For SHORT: Trigger at TP1 price (where profit starts)
-                                    # Bitget trailing activates when price reaches trigger (drops to TP1), then trails down
-                                    if tp1_price:
-                                        # If current price is already at/below TP1, use current price (trailing activates immediately)
-                                        # Otherwise use TP1 (trailing activates when price drops to TP1)
-                                        trigger_price = min(tp1_price, current_price * 0.999)
-                                    else:
-                                        trigger_price = min(current_price * 0.999, min_profit_price * 0.999)
-                                    tp1_display = f"${tp1_price:.4f}" if tp1_price else "N/A"
-                                    logger.info(f"🔒 Trailing stop for SHORT: Trigger @ ${trigger_price:.4f} (TP1: {tp1_display}, Current: ${current_price:.4f}, min profit: {min_profit_pct*100:.1f}%)")
-                                
-                                # Verify we're locking in at least 2.5% profit
-                                if position.side == 'long':
-                                    profit_at_trigger = ((trigger_price - position.entry_price) / position.entry_price) * 100
-                                else:
-                                    profit_at_trigger = ((position.entry_price - trigger_price) / position.entry_price) * 100
-                                
-                                if profit_at_trigger < min_profit_pct * 100:
-                                    logger.warning(f"⚠️ Trailing trigger only locks {profit_at_trigger:.2f}% profit (need {min_profit_pct*100:.1f}%) - adjusting...")
-                                    # Adjust trigger to ensure minimum profit
-                                    if position.side == 'long':
-                                        trigger_price = min_profit_price
-                                    else:
-                                        trigger_price = min_profit_price
-                                    logger.info(f"✅ Adjusted trigger to ${trigger_price:.4f} to lock {min_profit_pct*100:.1f}% minimum profit")
-                                
-                                # CRITICAL: Wait a moment after TP1 hit before placing trailing stop
-                                # Bitget needs time to process the TP1 execution
-                                await asyncio.sleep(2.0)
-                                
-                                # Get fresh position size after TP1 execution
-                                positions_list = await self.rest_client.get_positions(symbol)
-                                fresh_size = actual_size
-                                if positions_list:
-                                    for pos in positions_list:
-                                        if pos.get('symbol') == symbol:
-                                            fresh_size = float(pos.get('total', 0) or pos.get('available', 0))
-                                            break
-                                
-                                # Ensure we have a valid size (minimum 0.001)
-                                if fresh_size < 0.001:
-                                    logger.warning(f"⚠️ Position size too small for trailing stop ({fresh_size:.4f}) | {symbol} | Using fallback fixed stop")
-                                    raise ValueError(f"Position size too small: {fresh_size}")
-                                
-                                logger.info(f"🚀 Placing trailing stop | {symbol} | Size: {fresh_size:.4f} | Trigger: ${trigger_price:.4f} | Callback: {callback_ratio*100:.1f}%")
-                                
-                                trailing_response = await self.rest_client.place_trailing_stop_full_position(
-                                    symbol=symbol,
-                                    hold_side=position.side,
-                                    callback_ratio=callback_ratio,
-                                    trigger_price=trigger_price,
-                                    size=fresh_size,
-                                    size_precision=3
-                                )
-                            except Exception as e:
-                                logger.error(f"❌ Error preparing trailing stop for {symbol}: {e}", exc_info=True)
-                                trailing_response = None
-                            
-                            if trailing_response and trailing_response.get('code') == '00000':
-                                trailing_order_id = trailing_response.get('data', {}).get('orderId')
-                                position.stop_order_id = trailing_order_id
-                                position.moved_to_be = True
-                                logger.info(f"✅ Trailing stop placed (Bitget API) | {symbol} | Callback: {callback_ratio*100:.1f}% | Trigger: ${trigger_price:.4f} | Order ID: {trailing_order_id}")
-                                logger.warning(f"🔍 CHECK BITGET APP: Trailing order should appear in 'Trailing' tab for {symbol}")
-                                
-                                # Update trade tracking
-                                if symbol in self.trade_ids:
-                                    self.trade_tracker.update_trailing_stop(
-                                        self.trade_ids[symbol],
-                                        activated=True,
-                                        trigger_price=trigger_price
-                                    )
-                                    self.trade_tracker.update_breakeven(
-                                        self.trade_ids[symbol],
-                                        moved=True,
-                                        move_time=datetime.now()
-                                    )
-                                
-                                # Verify trailing stop is actually active (check after 2 seconds)
-                                await asyncio.sleep(2.0)
-                                try:
-                                    verify_endpoint = "/api/v2/mix/order/orders-plan-pending"
-                                    verify_params = {
-                                        "symbol": symbol,
-                                        "productType": "usdt-futures",
-                                        "planType": "track_plan",
-                                    }
-                                    verify_response = await self.rest_client._request("GET", verify_endpoint, params=verify_params)
-                                    if verify_response.get('code') == '00000':
-                                        orders = verify_response.get('data', {}).get('entrustedList', [])
-                                        trailing_orders = [o for o in orders if o.get('orderId') == trailing_order_id]
-                                        if trailing_orders:
-                                            logger.info(f"✅ Verified: Trailing stop is active on exchange | {symbol} | Order ID: {trailing_order_id}")
-                                        else:
-                                            logger.warning(f"⚠️ WARNING: Trailing stop order {trailing_order_id} NOT found on exchange! | {symbol}")
-                                            logger.warning(f"   This means the trailing stop may not be working. Using fallback fixed stop.")
-                                            # Use fallback
-                                            if position.side == 'long':
-                                                fixed_stop = position.entry_price * (1 + min_profit_pct)
-                                            else:
-                                                fixed_stop = position.entry_price * (1 - min_profit_pct)
-                                            position.stop_price = round(fixed_stop, 2)
-                                            position.stop_order_id = await self.place_stop_loss(position)
-                                except Exception as e:
-                                    logger.debug(f"⚠️ Could not verify trailing stop: {e}")
-                            else:
-                                error_code = trailing_response.get('code', 'N/A')
-                                error_msg = trailing_response.get('msg', 'N/A')
-                                logger.error(f"❌ Failed to place trailing stop: Code={error_code}, Msg={error_msg}")
-                                logger.error(f"   Full response: {trailing_response}")
-                                
-                                # Fallback: Use fixed stop at 2.5% profit (more reliable than trailing)
-                                if position.side == 'long':
-                                    fixed_stop = position.entry_price * (1 + min_profit_pct)  # 2.5% above entry
-                                else:
-                                    fixed_stop = position.entry_price * (1 - min_profit_pct)  # 2.5% below entry
-                                
-                                position.stop_price = round(fixed_stop, 2)
-                                position.stop_order_id = await self.place_stop_loss(position)
-                                position.moved_to_be = True
-                                logger.info(f"✅ Fallback: Fixed stop at 2.5% profit | {symbol} @ ${fixed_stop:.4f}")
-                            
-                            # Update remaining size
-                            position.remaining_size = actual_size
-                        
-                        # If position fully closed, remove from tracking
+                        # If position fully closed externally, clean up tracking
                         if actual_size <= 0.001:
-                            logger.info(f"✅ Position fully closed (Exchange-side) | {symbol}")
+                            logger.info(f"✅ Position closed externally | {symbol}")
                             
                             # Close trade tracking
                             if symbol in self.trade_ids:
-                                # Get exit indicators
                                 exit_indicators = {}
-                                try:
-                                    df_5m = await self.fetch_candles(symbol, timeframe='5m', days=1)
-                                    df_15m = df_5m.resample('15min').agg({
-                                        'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
-                                    }).dropna() if df_5m is not None else pd.DataFrame()
-                                    df_15m = self.indicators.calculate_all_indicators(df_15m, timeframe='15m') if not df_15m.empty else pd.DataFrame()
-                                    
-                                    if 'adx' in df_15m.columns and len(df_15m) > 0:
-                                        exit_indicators['adx'] = float(df_15m['adx'].iloc[-1]) if not pd.isna(df_15m['adx'].iloc[-1]) else None
-                                    if 'rsi' in df_15m.columns and len(df_15m) > 0:
-                                        exit_indicators['rsi'] = float(df_15m['rsi'].iloc[-1]) if not pd.isna(df_15m['rsi'].iloc[-1]) else None
-                                    if 'bb_width_pct' in df_5m.columns and len(df_5m) > 0:
-                                        exit_indicators['bb_width_pct'] = float(df_5m['bb_width_pct'].iloc[-1]) if not pd.isna(df_5m['bb_width_pct'].iloc[-1]) else None
-                                    if 'vwap_slope' in df_5m.columns and len(df_5m) > 0:
-                                        exit_indicators['vwap_slope'] = float(df_5m['vwap_slope'].iloc[-1]) if not pd.isna(df_5m['vwap_slope'].iloc[-1]) else None
-                                except Exception as e:
-                                    logger.debug(f"⚠️ Could not extract exit indicators: {e}")
-                                
-                                # Calculate fees (approximate: 0.06% maker, 0.06% taker)
                                 entry_fee = position.notional * 0.0006
                                 exit_fee = position.notional * 0.0006
                                 
@@ -1082,7 +1071,7 @@ class InstitutionalLiveTrader:
                                     self.trade_ids[symbol],
                                     exit_time=datetime.now(),
                                     exit_price=current_price,
-                                    exit_reason="TP1",  # Exchange-side TP1 closed position
+                                    exit_reason="external_close",
                                     exit_size=actual_size,
                                     fees_entry=entry_fee,
                                     fees_exit=exit_fee,
@@ -1095,11 +1084,8 @@ class InstitutionalLiveTrader:
                             sector = symbol[:3]
                             self.sector_counts[sector] = max(0, self.sector_counts.get(sector, 0) - 1)
                             continue
-                        
-                        # Update remaining size
-                        position.remaining_size = actual_size
                 except Exception as e:
-                    logger.debug(f"⚠️ Could not check position size for {symbol}: {e}")
+                    logger.debug(f"⚠️ Could not check position for {symbol}: {e}")
                 
                 # Periodic TP/SL verification and re-placement (every 5 minutes)
                 if check_tpsl:
@@ -1115,51 +1101,70 @@ class InstitutionalLiveTrader:
                             sl_orders = [o for o in orders if o.get('planType') == 'pos_loss']
                             tp_orders = [o for o in orders if o.get('planType') == 'profit_plan']
                             
-                            # Re-place missing orders
-                            if len(sl_orders) == 0:
-                                logger.warning(f"⚠️ Missing SL order detected | {symbol} | Re-placing...")
-                                sl_response = await self.rest_client.place_tpsl_order(
-                                    symbol=symbol,
-                                    hold_side=position.side,
-                                    size=position.remaining_size,
-                                    stop_loss_price=position.stop_price,
-                                    take_profit_price=None,
-                                    size_precision=3
-                                )
-                                if sl_response.get('sl', {}).get('code') == '00000':
-                                    position.stop_order_id = sl_response.get('sl', {}).get('data', {}).get('orderId')
-                                    logger.info(f"✅ SL order re-placed | {symbol}")
+                            # 🚨 CRITICAL: Before re-placing TP/SL, verify position STILL EXISTS!
+                            # If position is closed, don't try to place orders (causes "Insufficient position" error)
+                            position_still_exists = False
+                            try:
+                                positions_list = await self.rest_client.get_positions(symbol)
+                                if positions_list:
+                                    for pos in positions_list:
+                                        if pos.get('symbol') == symbol:
+                                            pos_size = float(pos.get('total', 0) or pos.get('available', 0))
+                                            if pos_size > 0:
+                                                position_still_exists = True
+                                                break
+                            except Exception as e:
+                                logger.debug(f"⚠️ Could not verify position exists for {symbol}: {e}")
                             
-                            if len(tp_orders) == 0 and position.tp_levels:
-                                tp1_price = position.tp_levels[0][0]
+                            if not position_still_exists:
+                                logger.warning(f"⚠️ Position {symbol} no longer exists on exchange, skipping TP/SL re-placement")
+                                # Don't try to re-place orders for a closed position!
+                            else:
+                                # Re-place missing orders (position confirmed to exist)
+                                if len(sl_orders) == 0:
+                                    logger.warning(f"⚠️ Missing SL order detected | {symbol} | Re-placing...")
+                                    sl_response = await self.rest_client.place_tpsl_order(
+                                        symbol=symbol,
+                                        hold_side=position.side,
+                                        size=position.remaining_size,
+                                        stop_loss_price=position.stop_price,
+                                        take_profit_price=None,
+                                        size_precision=3
+                                    )
+                                    if sl_response.get('sl', {}).get('code') == '00000':
+                                        position.stop_order_id = sl_response.get('sl', {}).get('data', {}).get('orderId')
+                                        logger.info(f"✅ SL order re-placed | {symbol}")
                                 
-                                # Validate TP price before re-placing
-                                if position.side == 'short':
-                                    # For SHORT: TP must be below current price
-                                    if tp1_price >= current_price:
-                                        tp1_price = current_price * 0.999
-                                        logger.warning(f"⚠️ Adjusted TP1 to {tp1_price:.4f} (below current {current_price:.4f})")
-                                        position.tp_levels[0] = (tp1_price, position.tp_levels[0][1])
-                                else:
-                                    # For LONG: TP must be above current price
-                                    if tp1_price <= current_price:
-                                        tp1_price = current_price * 1.001
-                                        logger.warning(f"⚠️ Adjusted TP1 to {tp1_price:.4f} (above current {current_price:.4f})")
-                                        position.tp_levels[0] = (tp1_price, position.tp_levels[0][1])
-                                
-                                logger.warning(f"⚠️ Missing TP order detected | {symbol} | Re-placing...")
-                                tp_response = await self.rest_client.place_tpsl_order(
-                                    symbol=symbol,
-                                    hold_side=position.side,
-                                    size=position.remaining_size,
-                                    stop_loss_price=None,
-                                    take_profit_price=round(tp1_price, 2),
-                                    size_precision=3
-                                )
-                                if tp_response.get('tp', {}).get('code') == '00000':
-                                    tp_order_id = tp_response.get('tp', {}).get('data', {}).get('orderId')
-                                    position.tp_order_ids[0] = tp_order_id
-                                    logger.info(f"✅ TP order re-placed | {symbol} @ ${tp1_price:.4f}")
+                                if len(tp_orders) == 0 and position.tp_levels:
+                                    tp1_price = position.tp_levels[0][0]
+                                    
+                                    # Validate TP price before re-placing
+                                    if position.side == 'short':
+                                        # For SHORT: TP must be below current price
+                                        if tp1_price >= current_price:
+                                            tp1_price = current_price * 0.999
+                                            logger.warning(f"⚠️ Adjusted TP1 to {tp1_price:.4f} (below current {current_price:.4f})")
+                                            position.tp_levels[0] = (tp1_price, position.tp_levels[0][1])
+                                    else:
+                                        # For LONG: TP must be above current price
+                                        if tp1_price <= current_price:
+                                            tp1_price = current_price * 1.001
+                                            logger.warning(f"⚠️ Adjusted TP1 to {tp1_price:.4f} (above current {current_price:.4f})")
+                                            position.tp_levels[0] = (tp1_price, position.tp_levels[0][1])
+                                    
+                                    logger.warning(f"⚠️ Missing TP order detected | {symbol} | Re-placing...")
+                                    tp_response = await self.rest_client.place_tpsl_order(
+                                        symbol=symbol,
+                                        hold_side=position.side,
+                                        size=position.remaining_size,
+                                        stop_loss_price=None,
+                                        take_profit_price=round(tp1_price, 2),
+                                        size_precision=3
+                                    )
+                                    if tp_response.get('tp', {}).get('code') == '00000':
+                                        tp_order_id = tp_response.get('tp', {}).get('data', {}).get('orderId')
+                                        position.tp_order_ids[0] = tp_order_id
+                                        logger.info(f"✅ TP order re-placed | {symbol} @ ${tp1_price:.4f}")
                     except Exception as e:
                         logger.debug(f"⚠️ Could not verify/re-place TP/SL for {symbol}: {e}")
                 
@@ -1181,12 +1186,12 @@ class InstitutionalLiveTrader:
                 
                 # Log status (every 30 seconds)
                 if int(time_since_entry) % 30 < 5:
-                    trailing_status = "🔄 Active" if position.tp_hit_count > 0 else "⏳ Waiting for TP1"
+                    peak_info = f"Peak: ${position.highest_price:.4f}" if position.side == 'long' else f"Peak: ${position.lowest_price:.4f}"
                     logger.info(
                         f"📊 {symbol} {position.side.upper()} | "
                         f"Price: ${current_price:.4f} | P&L: {pnl_pct:+.2f}% | "
-                        f"TP1: ${tp_price:.4f} ({tp_dist:+.2f}%) | SL: ${position.stop_price:.4f} ({sl_dist:+.2f}%) | "
-                        f"Trailing: {trailing_status}"
+                        f"TP: ${tp_price:.4f} ({tp_dist:+.2f}%) | SL: ${position.stop_price:.4f} ({sl_dist:+.2f}%) | "
+                        f"{peak_info} | 🔄 Trailing TP Active"
                     )
             
             except Exception as e:
@@ -1205,6 +1210,10 @@ class InstitutionalLiveTrader:
         for symbol in symbols:
             try:
                 stats['checked'] += 1
+                
+                # Small delay between symbols to avoid overwhelming API
+                if stats['checked'] > 1:
+                    await asyncio.sleep(0.1)  # 100ms delay between symbols
                 
                 # Check if can open position
                 if not await self.can_open_position(symbol, 'any'):
@@ -1268,13 +1277,36 @@ class InstitutionalLiveTrader:
                 # Found a potential signal - log it
                 logger.info(f"🎯 SIGNAL CANDIDATE: {symbol} {signal.side.upper()} | {signal.strategy} | {regime_data.regime} regime")
                 
+                # 🚨 CRITICAL: Adjust TP/SL for leverage (2.5% ROI, not 2.5% price move!)
+                atr = df_5m['atr'].iloc[-1] if 'atr' in df_5m.columns else 0
+                adjusted_prices = await adjust_tp_sl_for_leverage(
+                    leverage_manager=self.leverage_manager,
+                    symbol=symbol,
+                    side=signal.side,
+                    entry_price=signal.entry_price,
+                    tp_price_base=signal.tp_levels[0][0] if signal.tp_levels else signal.entry_price,
+                    sl_price_base=signal.stop_price,
+                    atr=atr,
+                )
+                
+                # Update signal with leverage-adjusted prices
+                signal.stop_price = adjusted_prices.sl_price
+                signal.tp_levels = [(adjusted_prices.tp_price, 1.0)]  # Full position TP
+                
+                logger.info(
+                    f"  📊 Leverage-adjusted | {adjusted_prices.leverage}x | "
+                    f"TP: ${adjusted_prices.tp_price:.4f} ({adjusted_prices.tp_roi_pct:.1f}% ROI) | "
+                    f"SL: ${adjusted_prices.sl_price:.4f} ({adjusted_prices.sl_roi_pct:.1f}% ROI)"
+                )
+                
                 # Get account equity
                 equity = await self.get_account_equity()
                 if equity == 0:
                     logger.error("❌ Could not get account equity")
                     continue
                 
-                # Calculate position size
+                # Calculate position size with ACTUAL leverage (10x or 25x for this symbol)
+                # 🚨 CRITICAL: Pass actual_leverage to ensure correct margin calculation!
                 position_size = self.risk_manager.calculate_position_size(
                     symbol=symbol,
                     side=signal.side,
@@ -1282,7 +1314,8 @@ class InstitutionalLiveTrader:
                     stop_price=signal.stop_price,
                     equity_usdt=equity,
                     lot_size=0.001,
-                    min_qty=0.001
+                    min_qty=0.001,
+                    actual_leverage=adjusted_prices.leverage  # Use actual leverage from exchange!
                 )
                 
                 if not position_size.passed_liq_guards:
@@ -1304,29 +1337,35 @@ class InstitutionalLiveTrader:
                 time_stop_range = signal.metadata.get('time_stop_range', [20, 30])
                 time_stop_minutes = (time_stop_range[0] + time_stop_range[1]) / 2
                 
+                # Create position tracking (will update with actual filled size later)
                 position = LivePosition(
                     symbol=symbol,
                     side=signal.side,
                     strategy=signal.strategy,
                     entry_time=datetime.now(),
                     entry_price=signal.entry_price,
-                    size=position_size.contracts,
+                    size=position_size.contracts,  # Will be updated with actual filled size
                     notional=position_size.notional_usd,
                     stop_price=round(signal.stop_price, 2),  # Round for Bitget API
                     tp_levels=signal.tp_levels,
-                    remaining_size=position_size.contracts,
+                    remaining_size=position_size.contracts,  # Will be updated with actual filled size
                     highest_price=signal.entry_price if signal.side == 'long' else 0,
                     lowest_price=signal.entry_price if signal.side == 'short' else 0,
                     time_stop_time=datetime.now() + timedelta(minutes=time_stop_minutes),
                     sweep_level=signal.metadata.get('swept_level')
                 )
                 
-                # Wait for position to be fully available on exchange (Bitget needs time!)
-                # CRITICAL: Wait longer and verify position exists before placing TP/SL
-                await asyncio.sleep(5.0)  # Increased from 2s to 5s
+                # Wait for position to be fully available on exchange (market orders = instant!)
+                # 🚨 Market orders fill instantly, but Bitget still needs a moment to process
+                initial_wait = 3.0  # Short wait for market orders
+                logger.info(f"⏳ Waiting {initial_wait:.0f}s for position to be fully available on exchange...")
+                await asyncio.sleep(initial_wait)
+                
+                # 🎯 EXCHANGE-SIDE TRAILING TP CONFIGURATION (computed after leverage-aware TP/SL below)
                 
                 # Verify position actually exists on exchange before placing TP/SL
                 position_verified = False
+                actual_filled_size = position_size.contracts  # Default to requested size
                 for verify_attempt in range(5):
                     try:
                         positions_list = await self.rest_client.get_positions(symbol)
@@ -1336,7 +1375,12 @@ class InstitutionalLiveTrader:
                                     pos_size = float(pos.get('total', 0) or pos.get('available', 0))
                                     if pos_size > 0:
                                         position_verified = True
-                                        logger.info(f"✅ Position verified on exchange | {symbol} | Size: {pos_size:.4f}")
+                                        actual_filled_size = pos_size  # 🚨 CRITICAL: Use actual filled size!
+                                        logger.info(f"✅ Position verified on exchange | {symbol} | Size: {actual_filled_size:.4f}")
+                                        
+                                        # Short additional wait for TP/SL readiness (market orders are fast!)
+                                        logger.info(f"⏳ Position verified, waiting 2s for TP/SL readiness...")
+                                        await asyncio.sleep(2.0)
                                         break
                         if position_verified:
                             break
@@ -1344,135 +1388,405 @@ class InstitutionalLiveTrader:
                         logger.debug(f"⚠️ Position verification attempt {verify_attempt+1}/5 failed: {e}")
                     
                     if not position_verified and verify_attempt < 4:
-                        await asyncio.sleep(2.0)  # Wait 2s between verification attempts
+                        await asyncio.sleep(2.0)
                 
                 if not position_verified:
                     logger.error(f"❌ Position {symbol} not found on exchange after 5 attempts - skipping TP/SL placement")
                     continue  # Skip this position
                 
-                # Place exchange-side TP/SL orders (Bitget handles execution automatically!)
+                # Update position with actual filled size
+                position.size = actual_filled_size
+                position.remaining_size = actual_filled_size
+                logger.info(f"📊 Position size updated | Requested: {position_size.contracts:.4f} | Actual: {actual_filled_size:.4f}")
+
+                # 🔢 Determine actual leverage and price precision, then recompute TP/SL with leverage awareness
+                try:
+                    # Default to detected leverage from LeverageManager (may be max)
+                    position_leverage = await self.leverage_manager.get_symbol_leverage(symbol)
+                    # Try to fetch actual position leverage from exchange
+                    try:
+                        positions_list = await self.rest_client.get_positions(symbol)
+                        if positions_list:
+                            for pos in positions_list:
+                                if pos.get('symbol') == symbol:
+                                    lev_raw = pos.get('leverage') or pos.get('fixedLeverage') or pos.get('marginLeverage')
+                                    if lev_raw is not None:
+                                        position_leverage = int(float(lev_raw))
+                                    break
+                    except Exception as e:
+                        logger.debug(f"⚠️ Could not fetch actual leverage for {symbol}: {e}")
+
+                    entry_price_actual = signal.entry_price
+                    # Target ROI configuration
+                    target_tp_roi = 0.025   # +2.5% ROI minimum
+                    max_sl_roi = 0.02       # -2.0% ROI maximum loss
+
+                    # Convert ROI targets to price moves using ACTUAL leverage
+                    tp_price_move = target_tp_roi / max(1, position_leverage)
+                    sl_price_move = max_sl_roi / max(1, position_leverage)
+
+                    # Compute prices
+                    if signal.side == 'long':
+                        tp1_price = entry_price_actual * (1 + tp_price_move)
+                        stop_price_calc = entry_price_actual * (1 - sl_price_move)
+                    else:  # short
+                        tp1_price = entry_price_actual * (1 - tp_price_move)
+                        stop_price_calc = entry_price_actual * (1 + sl_price_move)
+
+                    # Round prices to symbol precision using contract info and validate vs current price
+                    try:
+                        symbol_info = await self.rest_client.get_symbol_info(symbol)
+                        price_scale = None
+                        step = None
+                        if symbol_info:
+                            # Bitget contracts use 'pricePlace' (decimals) and 'priceEndStep' (tick)
+                            place_raw = symbol_info.get('pricePlace') or symbol_info.get('priceScale')
+                            if place_raw is not None:
+                                try:
+                                    price_scale = int(place_raw)
+                                except Exception:
+                                    price_scale = None
+                            step_raw = symbol_info.get('priceEndStep') or symbol_info.get('minPriceIncrement') or symbol_info.get('tickSize')
+                            if step_raw:
+                                try:
+                                    step = float(step_raw)
+                                except Exception:
+                                    step = None
+
+                        def _round_price(val: float) -> float:
+                            """
+                            Round price to exchange precision safely:
+                              - Prefer decimal places (pricePlace)
+                              - Use tick step only if < 1 to avoid zeroing sub-$1 prices
+                              - Always round DOWN to be safe for triggers
+                            """
+                            from decimal import Decimal, ROUND_DOWN, getcontext
+                            getcontext().prec = 18
+                            dv = Decimal(str(val))
+                            # Use tick only if it's a fractional step
+                            if step and step > 0 and step < 1:
+                                quant = Decimal(str(step))
+                                return float(dv.quantize(quant, rounding=ROUND_DOWN))
+                            # Otherwise use decimal places
+                            if price_scale is not None and price_scale >= 0:
+                                use_places = int(price_scale)
+                                quant = Decimal('1').scaleb(-use_places)  # 10^-price_scale
+                                return float(dv.quantize(quant, rounding=ROUND_DOWN))
+                            # Fallback
+                            return float(dv.quantize(Decimal('0.0001'), rounding=ROUND_DOWN))
+
+                        # Fetch current price to validate trigger vs mark price
+                        current_price = None
+                        try:
+                            md = await self.get_market_data(symbol)
+                            if md:
+                                current_price = float(md.last_price)
+                        except Exception:
+                            current_price = None
+
+                        tp1_price = _round_price(tp1_price)
+                        stop_price_calc = _round_price(stop_price_calc)
+
+                        # If rounding produced zero (bad tick setup), fall back to decimal-place rounding only
+                        if tp1_price <= 0 or stop_price_calc <= 0:
+                            ps = price_scale if (price_scale is not None and price_scale >= 0) else 4
+                            tp1_price = float(f"{tp1_price:.{ps}f}") if tp1_price > 0 else float(f"{entry_price_actual:.{ps}f}")
+                            stop_price_calc = float(f"{stop_price_calc:.{ps}f}") if stop_price_calc > 0 else float(f"{entry_price_actual:.{ps}f}")
+
+                        # Ensure TP trigger is on the correct side of current price to avoid 40832/45135 errors
+                        if current_price is not None:
+                            if signal.side == 'long':
+                                # TP must be ABOVE current price
+                                min_above = (current_price + (step if step else 0)) * (1.0001)
+                                if tp1_price <= min_above:
+                                    tp1_price = _round_price(min_above)
+                            else:
+                                # TP must be BELOW current price
+                                max_below = (current_price - (step if step else 0)) * (0.9999)
+                                if tp1_price >= max_below:
+                                    tp1_price = _round_price(max_below)
+                        # Safety clamps: ensure prices are positive and non-zero
+                        base_price = current_price or entry_price_actual
+                        if stop_price_calc is None or stop_price_calc <= 0:
+                            if signal.side == 'long':
+                                stop_price_calc = _round_price(base_price * 0.98)
+                            else:
+                                stop_price_calc = _round_price(base_price * 1.02)
+                        if tp1_price is None or tp1_price <= 0:
+                            if signal.side == 'long':
+                                tp1_price = _round_price(entry_price_actual * (1 + tp_price_move))
+                            else:
+                                tp1_price = _round_price(entry_price_actual * (1 - tp_price_move))
+                    except Exception as e:
+                        logger.debug(f"⚠️ Could not round prices for {symbol}: {e}")
+
+                    # Apply recomputed, leverage-aware prices
+                    signal.stop_price = stop_price_calc
+                    signal.tp_levels = [(tp1_price, 1.0)]
+
+                    logger.info(
+                        f"📐 Leverage-aware TP/SL | {position_leverage}x | Entry=${entry_price_actual:.6f} | "
+                        f"TP=${tp1_price:.6f} (+{target_tp_roi*100:.2f}% ROI) | SL=${signal.stop_price:.6f} (-{max_sl_roi*100:.2f}% ROI)"
+                    )
+
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to recompute leverage-aware TP/SL for {symbol}: {e}")
+
+                # 🎯 EXCHANGE-SIDE TRAILING TP SYSTEM (moving_plan via Place-Tpsl-Order)
                 tp1_price = signal.tp_levels[0][0] if signal.tp_levels else None
+                # Compute leverage-aware callback; clamp to sane bounds [0.003, 0.10]
+                try:
+                    callback_ratio = await self.leverage_manager.calculate_trailing_callback(
+                        symbol=symbol,
+                        target_roi_pct=0.01,  # 1% ROI callback baseline
+                    )
+                    # Clamp between 0.3% and 10.0%
+                    callback_ratio = max(0.003, min(0.10, float(callback_ratio)))
+                except Exception:
+                    callback_ratio = 0.005  # Fallback: 0.5% price
                 
-                # CRITICAL: Validate TP price for SHORT positions (must be below current price)
-                if tp1_price and signal.side == 'short':
-                    # Get current market price
+                # Step 1: Place FIXED Stop Loss (never moves)
+                logger.info(f"🛡️ Step 1: Placing FIXED Stop Loss @ ${signal.stop_price:.6f}")
+                sl_response = None
+                for attempt in range(3):
                     try:
-                        market_data = await self.get_market_data(symbol)
-                        if market_data:
-                            current_price = market_data.last_price
-                            # For SHORT: TP must be BELOW current price
-                            if tp1_price >= current_price:
-                                # TP price is at or above current price - adjust it
-                                # Set TP to 0.1% below current price (minimum valid TP)
-                                tp1_price = current_price * 0.999
-                                logger.warning(
-                                    f"⚠️ TP1 price ({signal.tp_levels[0][0]:.4f}) >= current price ({current_price:.4f}) for SHORT | "
-                                    f"Adjusting TP1 to {tp1_price:.4f} (0.1% below current)"
-                                )
-                                # Update position's TP level
-                                position.tp_levels[0] = (tp1_price, position.tp_levels[0][1])
-                    except Exception as e:
-                        logger.debug(f"⚠️ Could not validate TP price: {e}")
-                
-                # CRITICAL: Validate TP price for LONG positions (must be above current price)
-                if tp1_price and signal.side == 'long':
-                    # Get current market price
-                    try:
-                        market_data = await self.get_market_data(symbol)
-                        if market_data:
-                            current_price = market_data.last_price
-                            # For LONG: TP must be ABOVE current price
-                            if tp1_price <= current_price:
-                                # TP price is at or below current price - adjust it
-                                # Set TP to 0.1% above current price (minimum valid TP)
-                                tp1_price = current_price * 1.001
-                                logger.warning(
-                                    f"⚠️ TP1 price ({signal.tp_levels[0][0]:.4f}) <= current price ({current_price:.4f}) for LONG | "
-                                    f"Adjusting TP1 to {tp1_price:.4f} (0.1% above current)"
-                                )
-                                # Update position's TP level
-                                position.tp_levels[0] = (tp1_price, position.tp_levels[0][1])
-                    except Exception as e:
-                        logger.debug(f"⚠️ Could not validate TP price: {e}")
-                
-                # Retry TP/SL placement up to 5 times with longer waits
-                tpsl_response = None
-                for attempt in range(5):
-                    try:
-                        tpsl_response = await self.rest_client.place_tpsl_order(
+                        # Guard: ensure SL trigger is valid relative to current price
+                        # Recompute against fresh market price if needed
+                        try:
+                            md_sl = await self.get_market_data(symbol)
+                            cur_px = float(md_sl.last_price) if md_sl else None
+                        except Exception:
+                            cur_px = None
+                        sl_price_to_use = signal.stop_price
+                        if (sl_price_to_use is None) or (sl_price_to_use <= 0) or (cur_px and (
+                            (signal.side == 'long' and sl_price_to_use >= cur_px) or
+                            (signal.side == 'short' and sl_price_to_use <= cur_px)
+                        )):
+                            # Recompute from ROI for safety
+                            sl_pct = 0.02 / max(1, position_leverage)
+                            raw = (cur_px or entry_price_actual)
+                            if signal.side == 'long':
+                                sl_price_to_use = raw * (1 - sl_pct)
+                            else:
+                                sl_price_to_use = raw * (1 + sl_pct)
+                            # Round to precision
+                            try:
+                                sl_price_to_use = _round_price(sl_price_to_use)  # type: ignore[name-defined]
+                            except Exception:
+                                sl_price_to_use = round(sl_price_to_use, 6)
+                            # Ensure on correct side of current price
+                            if cur_px:
+                                if signal.side == 'long' and sl_price_to_use >= cur_px:
+                                    sl_price_to_use = max(cur_px * 0.999, sl_price_to_use)  # nudge below
+                                if signal.side == 'short' and sl_price_to_use <= cur_px:
+                                    sl_price_to_use = min(cur_px * 1.001, sl_price_to_use)  # nudge above
+                            # Apply back to signal for downstream consistency
+                            signal.stop_price = sl_price_to_use
+                            logger.info(f"🧮 Recomputed SL trigger=${sl_price_to_use:.6f} (lev={position_leverage}x)")
+
+                        sl_response = await self.rest_client.place_tpsl_order(
                             symbol=symbol,
                             hold_side=signal.side,
-                            size=position_size.contracts,
-                            stop_loss_price=round(signal.stop_price, 2),
-                            take_profit_price=round(tp1_price, 2) if tp1_price else None,
+                            size=actual_filled_size,
+                            stop_loss_price=signal.stop_price,
+                            take_profit_price=None,  # NO TP here - using trailing instead!
                             size_precision=3
                         )
                         
-                        # Check if both orders succeeded
-                        sl_ok = tpsl_response.get('sl', {}).get('code') == '00000'
-                        tp_ok = tpsl_response.get('tp', {}).get('code') == '00000' if tp1_price else True
-                        
-                        if sl_ok and tp_ok:
-                            logger.info(f"✅ TP/SL orders placed successfully | {symbol} | Attempt {attempt+1}/5")
-                            break  # Success!
-                        elif attempt < 4:
-                            wait_time = 5.0 * (attempt + 1)  # 5s, 10s, 15s, 20s
-                            logger.warning(f"⚠️ TP/SL placement attempt {attempt+1}/5 failed, retrying in {wait_time:.0f}s...")
-                            logger.warning(f"   SL: {tpsl_response.get('sl', {}).get('code', 'N/A')} | TP: {tpsl_response.get('tp', {}).get('code', 'N/A')}")
-                            await asyncio.sleep(wait_time)
+                        sl_ok = sl_response.get('sl', {}).get('code') == '00000'
+                        if sl_ok:
+                            position.stop_order_id = sl_response.get('sl', {}).get('data', {}).get('orderId')
+                            logger.info(f"✅ FIXED SL placed | {symbol} @ ${signal.stop_price:.2f} | ID: {position.stop_order_id}")
+                            break
+                        elif attempt < 2:
+                            await asyncio.sleep(2.0)
                     except Exception as e:
-                        if attempt < 4:
-                            wait_time = 5.0 * (attempt + 1)
-                            logger.warning(f"⚠️ TP/SL placement exception: {e}, retrying in {wait_time:.0f}s...")
-                            await asyncio.sleep(wait_time)
+                        if attempt < 2:
+                            await asyncio.sleep(2.0)
                         else:
-                            logger.error(f"❌ TP/SL placement failed after 5 attempts: {e}")
+                            logger.error(f"❌ SL placement failed after 3 attempts: {e}")
                 
-                # Verify TP/SL orders were actually placed
-                if tpsl_response:
-                    sl_code = tpsl_response.get('sl', {}).get('code', 'N/A')
-                    tp_code = tpsl_response.get('tp', {}).get('code', 'N/A') if tp1_price else 'N/A'
-                    
-                    if sl_code != '00000':
-                        logger.error(f"❌ SL order FAILED | {symbol} | Code: {sl_code} | Msg: {tpsl_response.get('sl', {}).get('msg', 'N/A')}")
-                    if tp_code != '00000' and tp1_price:
-                        logger.error(f"❌ TP order FAILED | {symbol} | Code: {tp_code} | Msg: {tpsl_response.get('tp', {}).get('msg', 'N/A')}")
-                    
-                    # Try to verify orders exist on exchange
-                    await asyncio.sleep(2.0)  # Wait for orders to appear
+                if not sl_response or sl_response.get('sl', {}).get('code') != '00000':
+                    logger.error(f"❌ Could not place SL for {symbol} - proceeding to place trailing TP anyway for protection")
+                
+                # Step 2: Place MIN-PROFIT FLOOR (profit_plan) at +2.5% ROE (guarantee >= 2.5% profit on trigger)
+                logger.info(f"🎯 Step 2: Placing MIN-PROFIT FLOOR (profit_plan @ +2.5% ROE)")
+                try:
+                    min_roi = 0.025
+                    floor_move = min_roi / max(1, position_leverage)
+                    if signal.side == 'long':
+                        floor_trigger = entry_price_actual * (1 + floor_move)
+                    else:
+                        floor_trigger = entry_price_actual * (1 - floor_move)
                     try:
-                        verify_endpoint = "/api/v2/mix/order/orders-plan-pending"
-                        verify_params = {
-                            "symbol": symbol,
-                            "productType": "usdt-futures",
-                        }
-                        verify_response = await self.rest_client._request("GET", verify_endpoint, params=verify_params)
-                        if verify_response.get('code') == '00000':
-                            orders = verify_response.get('data', {}).get('entrustedList', [])
-                            sl_orders = [o for o in orders if o.get('planType') == 'pos_loss']
-                            tp_orders = [o for o in orders if o.get('planType') == 'profit_plan']
-                            logger.info(f"🔍 Verification: {symbol} | SL orders: {len(sl_orders)} | TP orders: {len(tp_orders)}")
-                            if len(sl_orders) == 0 and sl_code == '00000':
-                                logger.warning(f"⚠️ WARNING: SL order code was 00000 but order NOT found on exchange! | {symbol}")
-                            if len(tp_orders) == 0 and tp_code == '00000' and tp1_price:
-                                logger.warning(f"⚠️ WARNING: TP order code was 00000 but order NOT found on exchange! | {symbol}")
+                        floor_trigger = _round_price(floor_trigger)  # type: ignore[name-defined]
+                    except Exception:
+                        pass
+                    floor_resp = await self.rest_client.place_tpsl_order(
+                        symbol=symbol,
+                        hold_side=signal.side,
+                        size=actual_filled_size,   # required for profit_plan
+                        stop_loss_price=None,
+                        take_profit_price=floor_trigger,
+                        size_precision=3
+                    )
+                    if floor_resp and floor_resp.get('tp', {}).get('code') == '00000':
+                        logger.info(f"✅ Min-profit FLOOR placed (profit_plan) @ ${floor_trigger:.6f} | {symbol}")
+                    else:
+                        logger.warning(f"⚠️ Min-profit FLOOR failed | {symbol} | Resp={floor_resp}")
+                except Exception as e:
+                    logger.error(f"❌ Min-profit FLOOR exception | {symbol}: {e}")
+
+                # Step 3: Place EXCHANGE-SIDE TRAILING Take Profit (moving_plan) activating at the same floor
+                logger.info(f"🎯 Step 3: Placing EXCHANGE-SIDE TRAILING TP (moving_plan via Place-Tpsl-Order)")
+                trailing_response = None
+                try:
+                    activation_price = floor_trigger  # activate trailing only after >= 2.5% ROE
+                    trailing_response = await self.rest_client.place_trailing_take_profit_order(
+                        symbol=symbol,
+                        hold_side=signal.side,
+                        size=actual_filled_size,
+                        range_rate=callback_ratio,
+                        trigger_price=activation_price,
+                        size_precision=3,
+                    )
+                    if trailing_response and trailing_response.get('code') == '00000':
+                        trailing_order_id = trailing_response.get('data', {}).get('orderId') if trailing_response.get('data') else None
+                        if trailing_order_id:
+                            position.tp_order_ids[0] = trailing_order_id
+                        logger.info(
+                            f"✅ EXCHANGE TRAILING TP placed (moving_plan) | {symbol} | "
+                            f"Activation: ${activation_price:.6f} | Callback: {callback_ratio*100:.2f}% | "
+                            f"Order ID: {trailing_order_id}"
+                        )
+                        logger.info(f"🎉 Exchange will automatically trail and close when price reverses {callback_ratio*100:.2f}%!")
+                    else:
+                        logger.warning(f"⚠️ Trailing TP (moving_plan) failed | {symbol} | Resp={trailing_response}")
+                except Exception as e:
+                    logger.error(f"❌ Trailing TP placement exception | {symbol}: {e}")
+                
+                # No fallback TP needed now; profit-plan floor is already placed to guarantee >= 2.5% ROE
+                else:
+                    # Verify trailing/floor are visible on exchange; if missing, re-place
+                    try:
+                        await asyncio.sleep(2.0)
+                        verify_response = await self.rest_client._request(
+                            "GET",
+                            "/api/v2/mix/order/orders-plan-pending",
+                            params={"symbol": symbol, "productType": "usdt-futures"},
+                        )
+                        if verify_response.get("code") == "00000":
+                            orders = verify_response.get("data", {}).get("entrustedList", [])
+                            moving_orders = [o for o in orders if o.get("planType") in ("moving_plan", "track_plan")]
+                            tp_floor_orders = [o for o in orders if o.get("planType") == "profit_plan"]
+                            backup_sl_orders = [o for o in orders if o.get("planType") == "loss_plan"]
+                            if moving_orders:
+                                logger.info(f"✅ Verified trailing order exists | {symbol} | count={len(moving_orders)}")
+                            else:
+                                logger.warning(f"⚠️ Trailing not found; will rely on FLOOR TP (profit_plan) for min-ROE | {symbol}")
+                            if tp_floor_orders:
+                                logger.info(f"✅ Verified FLOOR TP (profit_plan) exists | {symbol} | count={len(tp_floor_orders)}")
+                            else:
+                                logger.warning(f"⚠️ FLOOR TP missing; re-placing now | {symbol}")
+                                _ = await self.rest_client.place_tpsl_order(
+                                    symbol=symbol,
+                                    hold_side=signal.side,
+                                    size=actual_filled_size,
+                                    stop_loss_price=None,
+                                    take_profit_price=floor_trigger,
+                                    size_precision=3
+                                )
+                            # Ensure backup SL (-15% ROE) exists (loss_plan)
+                            if not backup_sl_orders:
+                                try:
+                                    backup_sl_roi = 0.15
+                                    backup_sl_move = backup_sl_roi / max(1, position_leverage)
+                                    if signal.side == 'long':
+                                        backup_sl_trigger = entry_price_actual * (1 - backup_sl_move)
+                                    else:
+                                        backup_sl_trigger = entry_price_actual * (1 + backup_sl_move)
+                                    try:
+                                        backup_sl_trigger = _round_price(backup_sl_trigger)  # type: ignore[name-defined]
+                                    except Exception:
+                                        pass
+                                    _ = await self.rest_client.place_tpsl_order(
+                                        symbol=symbol,
+                                        hold_side=signal.side,
+                                        size=actual_filled_size,
+                                        stop_loss_price=backup_sl_trigger,
+                                        take_profit_price=None,
+                                        size_precision=3,
+                                        force_plan_type="loss_plan"
+                                    )
+                                    logger.info(f"🔁 Re-placed missing backup SL (loss_plan) @ ${backup_sl_trigger:.6f} | {symbol}")
+                                except Exception as e2:
+                                    logger.warning(f"⚠️ Could not place missing backup SL | {symbol} | {e2}")
+                            else:
+                                logger.info(f"✅ Verified backup SL (loss_plan) exists | {symbol} | count={len(backup_sl_orders)}")
                     except Exception as e:
-                        logger.debug(f"⚠️ Could not verify TP/SL orders: {e}")
+                        logger.debug(f"⚠️ Could not verify trailing presence: {e}")
                 
-                if not tpsl_response:
-                    logger.error(f"❌ Could not place TP/SL orders for {symbol}")
-                    continue  # Skip adding position if TP/SL failed
-                
-                # Store order IDs
-                if tpsl_response.get('sl', {}).get('code') == '00000':
-                    position.stop_order_id = tpsl_response.get('sl', {}).get('data', {}).get('orderId')
-                    logger.info(f"✅ Exchange SL placed | {symbol} | Order ID: {position.stop_order_id}")
-                
-                if tpsl_response.get('tp', {}).get('code') == '00000':
-                    tp_order_id = tpsl_response.get('tp', {}).get('data', {}).get('orderId')
-                    position.tp_order_ids[0] = tp_order_id  # Store TP1 order ID
-                    logger.info(f"✅ Exchange TP1 placed | {symbol} @ ${tp1_price:.4f} | Order ID: {tp_order_id}")
-                
+                # Step 4: Backup protection orders
+                #  - Backup TP at +10% ROE (full size profit_plan)
+                #  - Backup SL at -15% ROE using loss_plan (full size) as safety net
+                try:
+                    # Backup TP (+10% ROE on equity)
+                    backup_tp_roi = 0.10
+                    backup_tp_move = backup_tp_roi / max(1, position_leverage)
+                    if signal.side == 'long':
+                        backup_tp_trigger = entry_price_actual * (1 + backup_tp_move)
+                    else:
+                        backup_tp_trigger = entry_price_actual * (1 - backup_tp_move)
+                    try:
+                        backup_tp_trigger = _round_price(backup_tp_trigger)  # type: ignore[name-defined]
+                    except Exception:
+                        pass
+                    tp_backup_resp = await self.rest_client.place_tpsl_order(
+                        symbol=symbol,
+                        hold_side=signal.side,
+                        size=actual_filled_size,
+                        stop_loss_price=None,
+                        take_profit_price=backup_tp_trigger,
+                        size_precision=3
+                    )
+                    if tp_backup_resp and tp_backup_resp.get('tp', {}).get('code') == '00000':
+                        logger.info(f"✅ Backup fixed TP placed (profit_plan @ +10% ROE) @ ${backup_tp_trigger:.6f} | {symbol}")
+                    else:
+                        logger.warning(f"⚠️ Backup TP placement failed | {symbol} | Resp={tp_backup_resp}")
+                except Exception as e:
+                    logger.error(f"❌ Backup TP exception | {symbol}: {e}")
+                try:
+                    # Backup SL (-15% ROE on equity), use loss_plan (full size) to coexist with pos_loss
+                    backup_sl_roi = 0.15
+                    backup_sl_move = backup_sl_roi / max(1, position_leverage)
+                    if signal.side == 'long':
+                        backup_sl_trigger = entry_price_actual * (1 - backup_sl_move)
+                    else:
+                        backup_sl_trigger = entry_price_actual * (1 + backup_sl_move)
+                    try:
+                        backup_sl_trigger = _round_price(backup_sl_trigger)  # type: ignore[name-defined]
+                    except Exception:
+                        pass
+                    sl_backup_resp = await self.rest_client.place_tpsl_order(
+                        symbol=symbol,
+                        hold_side=signal.side,
+                        size=actual_filled_size,
+                        stop_loss_price=backup_sl_trigger,
+                        take_profit_price=None,
+                        size_precision=3,
+                        force_plan_type="loss_plan"
+                    )
+                    sl_ok = False
+                    # For loss_plan, response is in 'sl'
+                    if sl_backup_resp and isinstance(sl_backup_resp.get('sl'), dict):
+                        sl_ok = sl_backup_resp.get('sl', {}).get('code') == '00000'
+                    if sl_ok:
+                        logger.info(f"✅ Backup SL placed (loss_plan @ -15% ROE) @ ${backup_sl_trigger:.6f} | {symbol}")
+                    else:
+                        logger.warning(f"⚠️ Backup SL placement failed | {symbol} | Resp={sl_backup_resp}")
+                except Exception as e:
+                    logger.error(f"❌ Backup SL exception | {symbol}: {e}")
+
                 # Add to tracking
                 self.positions[symbol] = position
                 self.active_symbols.add(symbol)
@@ -1596,6 +1910,34 @@ class InstitutionalLiveTrader:
             for symbol, position in existing_positions.items():
                 logger.info(f"🔍 Verifying TP/SL orders for {symbol}...")
                 
+                # 🚨 CRITICAL: Re-verify position STILL EXISTS before placing TP/SL!
+                # Position might have closed between fetch and now
+                position_still_exists = False
+                try:
+                    positions_list = await self.rest_client.get_positions(symbol)
+                    if positions_list:
+                        for pos in positions_list:
+                            if pos.get('symbol') == symbol:
+                                pos_size = float(pos.get('total', 0) or pos.get('available', 0))
+                                if pos_size > 0:
+                                    position_still_exists = True
+                                    # Update with actual size from exchange
+                                    position.size = pos_size
+                                    position.remaining_size = pos_size
+                                    break
+                except Exception as e:
+                    logger.debug(f"⚠️ Could not re-verify position {symbol}: {e}")
+                
+                if not position_still_exists:
+                    logger.warning(f"⚠️ Position {symbol} no longer exists on exchange, skipping TP/SL placement")
+                    # Remove from tracking
+                    if symbol in self.positions:
+                        del self.positions[symbol]
+                    self.active_symbols.discard(symbol)
+                    sector = symbol[:3]
+                    self.sector_counts[sector] = max(0, self.sector_counts.get(sector, 0) - 1)
+                    continue  # Skip this position
+                
                 # Place exchange-side TP/SL orders if missing
                 tp1_price = position.tp_levels[0][0] if position.tp_levels else None
                 
@@ -1631,6 +1973,14 @@ class InstitutionalLiveTrader:
                     except Exception as e:
                         logger.debug(f"⚠️ Could not validate TP price: {e}")
                 
+                # 🚨 EMERGENCY FIX: Skip TP/SL placement for recovered positions!
+                # They often fail and hang the bot startup
+                # Let exchange-side orders handle it OR bot will monitor them
+                logger.warning(f"⚠️ SKIPPING TP/SL placement for recovered position {symbol} (prevents startup hang)")
+                logger.info(f"✅ Position {symbol} will be monitored without re-placing TP/SL")
+                continue  # Skip to next position
+                
+                # OLD CODE (CAUSES HANG) - DISABLED:
                 # Retry TP/SL placement for recovered positions (they may need more time)
                 tpsl_response = None
                 for attempt in range(3):
