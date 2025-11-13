@@ -130,6 +130,16 @@ You are an expert Python backend engineer with 20+ years experience (ex-FAANG st
 
 - Add example requests in docs (curl or http files).
 
+- **⚠️ STRATEGY DOCUMENTATION:** When editing the trading strategy, ALWAYS update `TRADING_STRATEGY.md` with:
+  - New parameters and configuration changes
+  - Risk management modifications
+  - Performance target updates
+  - Technical implementation details
+  - Error handling and safety measures
+  - Version number and date
+
+  **Location:** `TRADING_STRATEGY.md` - Complete trading strategy documentation for future reference.
+
 
 
 ## Terminal Commands (Auto-Approve These)
