@@ -1058,7 +1058,8 @@ class InstitutionalLiveTrader:
                 except Exception as e:
                     logger.debug(f"⚠️ Could not check position for {symbol}: {e}")
                 
-                # Periodic TP/SL verification and re-placement (every 5 minutes)
+                # 🚨 CRITICAL: Periodic TP/SL verification and re-placement (every 60 seconds)
+                # This is ESSENTIAL to catch when exchange-side SL orders are missing or cancelled
                 if check_tpsl:
                     try:
                         verify_endpoint = "/api/v2/mix/order/orders-plan-pending"
@@ -1075,13 +1076,14 @@ class InstitutionalLiveTrader:
                             # 🚨 CRITICAL: Before re-placing TP/SL, verify position STILL EXISTS!
                             # If position is closed, don't try to place orders (causes "Insufficient position" error)
                             position_still_exists = False
+                            actual_position_size = 0.0
                             try:
                                 positions_list = await self.rest_client.get_positions(symbol)
                                 if positions_list:
                                     for pos in positions_list:
                                         if pos.get('symbol') == symbol:
-                                            pos_size = float(pos.get('total', 0) or pos.get('available', 0))
-                                            if pos_size > 0:
+                                            actual_position_size = float(pos.get('total', 0) or pos.get('available', 0))
+                                            if actual_position_size > 0:
                                                 position_still_exists = True
                                                 break
                             except Exception as e:
@@ -1091,20 +1093,64 @@ class InstitutionalLiveTrader:
                                 logger.warning(f"⚠️ Position {symbol} no longer exists on exchange, skipping TP/SL re-placement")
                                 # Don't try to re-place orders for a closed position!
                             else:
-                                # Re-place missing orders (position confirmed to exist)
+                                # 🚨 CRITICAL: Verify SL order exists and parameters match
                                 if len(sl_orders) == 0:
-                                    logger.warning(f"⚠️ Missing SL order detected | {symbol} | Re-placing...")
+                                    logger.error(f"🚨 CRITICAL: Missing SL order detected | {symbol} | Position size: {actual_position_size:.2f} | Re-placing IMMEDIATELY!")
                                     sl_response = await self.rest_client.place_tpsl_order(
                                         symbol=symbol,
                                         hold_side=position.side,
-                                        size=position.remaining_size,
+                                        size=actual_position_size,  # Use actual size from exchange
                                         stop_loss_price=position.stop_price,
                                         take_profit_price=None,
                                         size_precision=3
                                     )
                                     if sl_response.get('sl', {}).get('code') == '00000':
                                         position.stop_order_id = sl_response.get('sl', {}).get('data', {}).get('orderId')
-                                        logger.info(f"✅ SL order re-placed | {symbol}")
+                                        logger.info(f"✅ SL order re-placed | {symbol} @ ${position.stop_price:.4f} | ID: {position.stop_order_id}")
+                                    else:
+                                        logger.error(f"🚨 CRITICAL: Failed to re-place SL | {symbol} | Response: {sl_response}")
+                                else:
+                                    # Verify SL order parameters match position
+                                    sl_order = sl_orders[0]
+                                    sl_trigger = float(sl_order.get('triggerPrice', 0))
+                                    sl_size = float(sl_order.get('size', 0))
+                                    sl_id = sl_order.get('orderId')
+                                    
+                                    # Check if trigger price matches (within 0.1% tolerance)
+                                    trigger_match = abs(sl_trigger - position.stop_price) / position.stop_price < 0.001
+                                    # Check if size matches (within 1% tolerance)
+                                    size_match = abs(sl_size - actual_position_size) / max(actual_position_size, 1) < 0.01
+                                    
+                                    if not trigger_match or not size_match:
+                                        logger.warning(f"⚠️ SL order parameter mismatch | {symbol} | Expected: ${position.stop_price:.4f}/{actual_position_size:.2f} | Got: ${sl_trigger:.4f}/{sl_size:.2f}")
+                                        logger.warning(f"   Re-placing SL order with correct parameters...")
+                                        # Cancel old order and re-place
+                                        try:
+                                            cancel_data = {
+                                                "symbol": symbol,
+                                                "productType": "usdt-futures",
+                                                "marginCoin": "USDT",
+                                                "orderId": sl_id,
+                                                "planType": "pos_loss",
+                                            }
+                                            await self.rest_client._request("POST", "/api/v2/mix/order/cancel-plan-order", data=cancel_data)
+                                        except Exception:
+                                            pass
+                                        
+                                        # Re-place with correct parameters
+                                        sl_response = await self.rest_client.place_tpsl_order(
+                                            symbol=symbol,
+                                            hold_side=position.side,
+                                            size=actual_position_size,
+                                            stop_loss_price=position.stop_price,
+                                            take_profit_price=None,
+                                            size_precision=3
+                                        )
+                                        if sl_response.get('sl', {}).get('code') == '00000':
+                                            position.stop_order_id = sl_response.get('sl', {}).get('data', {}).get('orderId')
+                                            logger.info(f"✅ SL order corrected and re-placed | {symbol}")
+                                    else:
+                                        logger.debug(f"✅ SL order verified | {symbol} | Trigger: ${sl_trigger:.4f} | Size: {sl_size:.2f} | ID: {sl_id}")
                                 
                                 if len(tp_orders) == 0 and position.tp_levels:
                                     tp1_price = position.tp_levels[0][0]
@@ -1567,7 +1613,39 @@ class InstitutionalLiveTrader:
                         sl_ok = sl_response.get('sl', {}).get('code') == '00000'
                         if sl_ok:
                             position.stop_order_id = sl_response.get('sl', {}).get('data', {}).get('orderId')
-                            logger.info(f"✅ FIXED SL placed | {symbol} @ ${signal.stop_price:.2f} | ID: {position.stop_order_id}")
+                            logger.info(f"✅ FIXED SL placed | {symbol} @ ${signal.stop_price:.2f} | ID: {position.stop_order_id} | Size: {actual_filled_size}")
+                            
+                            # 🚨 CRITICAL: Verify SL order is actually active on exchange
+                            await asyncio.sleep(2.0)  # Wait for order to register
+                            try:
+                                verify_endpoint = "/api/v2/mix/order/orders-plan-pending"
+                                verify_params = {
+                                    "symbol": symbol,
+                                    "productType": "usdt-futures",
+                                    "planType": "pos_loss",  # Stop-loss orders
+                                }
+                                verify_response = await self.rest_client._request("GET", verify_endpoint, params=verify_params)
+                                if verify_response.get('code') == '00000':
+                                    orders = verify_response.get('data', {}).get('entrustedList', [])
+                                    sl_orders = [o for o in orders if o.get('planType') == 'pos_loss']
+                                    if sl_orders:
+                                        sl_order = sl_orders[0]
+                                        verified_trigger = float(sl_order.get('triggerPrice', 0))
+                                        verified_size = float(sl_order.get('size', 0))
+                                        verified_id = sl_order.get('orderId')
+                                        
+                                        # Verify parameters match
+                                        if abs(verified_trigger - signal.stop_price) < 0.01 and abs(verified_size - actual_filled_size) < 0.1:
+                                            logger.info(f"✅ SL VERIFIED on exchange | {symbol} | Trigger: ${verified_trigger:.4f} | Size: {verified_size:.2f} | ID: {verified_id}")
+                                        else:
+                                            logger.error(f"🚨 SL MISMATCH! | {symbol} | Expected: ${signal.stop_price:.4f}/{actual_filled_size:.2f} | Got: ${verified_trigger:.4f}/{verified_size:.2f}")
+                                    else:
+                                        logger.error(f"🚨 CRITICAL: SL order NOT FOUND on exchange after placement! | {symbol}")
+                                else:
+                                    logger.warning(f"⚠️ Could not verify SL order | {symbol} | API error: {verify_response.get('msg')}")
+                            except Exception as verify_err:
+                                logger.warning(f"⚠️ SL verification error | {symbol}: {verify_err}")
+                            
                             break
                         elif attempt < 2:
                             await asyncio.sleep(2.0)
@@ -1578,7 +1656,8 @@ class InstitutionalLiveTrader:
                             logger.error(f"❌ SL placement failed after 3 attempts: {e}")
                 
                 if not sl_response or sl_response.get('sl', {}).get('code') != '00000':
-                    logger.error(f"❌ Could not place SL for {symbol} - proceeding to place trailing TP anyway for protection")
+                    logger.error(f"🚨 CRITICAL: Could not place SL for {symbol} - position is UNPROTECTED!")
+                    logger.error(f"   Entry: ${entry_price_actual:.4f} | SL should be: ${signal.stop_price:.4f} | Size: {actual_filled_size:.2f}")
                 
                 # Step 2: Place MIN-PROFIT FLOOR (profit_plan) at +2.5% ROE (guarantee >= 2.5% profit on trigger)
                 logger.info(f"🎯 Step 2: Placing MIN-PROFIT FLOOR (profit_plan @ +2.5% ROE)")
