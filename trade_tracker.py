@@ -367,10 +367,13 @@ class TradeTracker:
         
         pnl_pct = (price_change / trade.entry_price) * 100
         pnl_usd = price_change * exit_size * trade.entry_price  # Approximate
-        pnl_pct_capital = pnl_pct * trade.leverage
-        
+
         # Net P&L (after fees)
         net_pnl = pnl_usd - fees_entry - fees_exit
+
+        # ROE = Return on Equity = (Net Profit / Capital Invested) * 100
+        # This gives the actual percentage return on the capital invested
+        pnl_pct_capital = (net_pnl / trade.capital) * 100 if trade.capital > 0 else 0
         
         # Drawdown from peak
         drawdown = 0.0
