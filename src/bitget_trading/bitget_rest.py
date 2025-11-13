@@ -1189,25 +1189,34 @@ class BitgetRestClient:
                 if cur_px:
                     trig_tp = float(tp_data["triggerPrice"])
                     tick = _tick_size()
+                    adjusted = False
                     if api_hold_side == "buy":
                         # LONG TP must be ABOVE current price
                         if trig_tp <= cur_px:
-                            trig_tp = cur_px + tick
+                            # Use 0.1% buffer above current price for safety
+                            trig_tp = cur_px * 1.001
+                            adjusted = True
                     else:
                         # SHORT TP must be BELOW current price
                         if trig_tp >= cur_px:
-                            trig_tp = cur_px - tick
-                    trig_tp = _round_price(trig_tp) or trig_tp
-                    tp_data["triggerPrice"] = str(trig_tp)
-                    logger.info(
-                        f"🔧 [TP VALIDATION ADJUST] {symbol} | planType=profit_plan | New TP trigger={trig_tp}"
-                    )
-            except Exception:
-                pass
+                            # Use 0.1% buffer below current price for safety
+                            trig_tp = cur_px * 0.999
+                            adjusted = True
+                    if adjusted:
+                        trig_tp = _round_price(trig_tp) or trig_tp
+                        tp_data["triggerPrice"] = str(trig_tp)
+                        logger.warning(
+                            f"🔧 [TP VALIDATION ADJUST] {symbol} | planType=profit_plan | "
+                            f"Original={take_profit_price} → Adjusted={trig_tp} (cur_px={cur_px}, holdSide={api_hold_side})"
+                        )
+                else:
+                    logger.warning(f"⚠️ Could not fetch current price for TP validation: {symbol}")
+            except Exception as e:
+                logger.warning(f"⚠️ TP validation error for {symbol}: {e}")
             logger.info(
                 f"📋 [TAKE-PROFIT ORDER] {symbol} | "
                 f"planType=profit_plan | size={rounded_size} | "
-                f"holdSide={api_hold_side}, triggerPrice={take_profit_price}"
+                f"holdSide={api_hold_side}, triggerPrice={tp_data['triggerPrice']}"
             )
             # Retry logic for TP placement
             max_retries = 3
@@ -1386,21 +1395,31 @@ class BitgetRestClient:
             cur_px = await _get_current_price()
             if cur_px:
                 tick = _tick_size()
+                original_trigger = trigger_price
+                adjusted = False
                 # For trailing activation:
                 # - LONG ('buy'): activation must be >= current price (nudge above)
                 # - SHORT ('sell'): activation must be <= current price (nudge below)
                 if api_hold_side == "buy":
                     if trigger_price <= cur_px:
-                        trigger_price = cur_px + tick
+                        # Use 0.1% buffer above current price
+                        trigger_price = cur_px * 1.001
+                        adjusted = True
                 else:
                     if trigger_price >= cur_px:
-                        trigger_price = cur_px - tick
-                trigger_price = _round_price_local(trigger_price)
-                logger.info(
-                    f"🔧 [TRAILING TRIGGER ADJUST] {symbol} | side={api_hold_side} | activation={trigger_price} (cur={cur_px})"
-                )
-        except Exception:
-            pass
+                        # Use 0.1% buffer below current price
+                        trigger_price = cur_px * 0.999
+                        adjusted = True
+                if adjusted:
+                    trigger_price = _round_price_local(trigger_price)
+                    logger.warning(
+                        f"🔧 [TRAILING TRIGGER ADJUST] {symbol} | side={api_hold_side} | "
+                        f"Original={original_trigger} → Adjusted={trigger_price} (cur={cur_px})"
+                    )
+            else:
+                logger.warning(f"⚠️ Could not fetch current price for trailing TP validation: {symbol}")
+        except Exception as e:
+            logger.warning(f"⚠️ Trailing TP validation error for {symbol}: {e}")
 
         # 🚨 CRITICAL: Size parameter IS REQUIRED by Bitget API (error 40019 if omitted)!
         # "Gesamter TP/SL" vs "Teilweise TP/SL" display in app is determined by:
