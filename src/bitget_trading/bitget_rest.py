@@ -748,6 +748,89 @@ class BitgetRestClient:
             logger.error("cancel_tpsl_error", symbol=symbol, error=str(e))
             return {"code": "error", "msg": str(e)}
 
+    async def _get_current_market_price(self, symbol: str) -> float | None:
+        """Fetch current market price from ticker API."""
+        try:
+            t = await self.get_ticker(symbol, product_type="USDT-FUTURES")
+            if t.get("code") != "00000":
+                return None
+            data_list = t.get("data") or []
+            if not data_list or not isinstance(data_list, list):
+                return None
+            ticker = data_list[0] if data_list else {}
+            for k in ("markPrice", "markPr", "lastPr", "last", "bestAsk", "bestBid"):
+                v = ticker.get(k)
+                if v is not None:
+                    try:
+                        return float(v)
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+        return None
+
+    def _round_to_precision(self, val: float | None, places: int | None) -> float | None:
+        """Round price to exchange precision."""
+        if val is None:
+            return None
+        p = int(places) if places is not None else 4
+        try:
+            return round(float(val), p)
+        except Exception:
+            return round(float(val), 4)
+
+    def _validate_trigger_price(
+        self, trigger: float, current_price: float, hold_side: str, price_places: int | None
+    ) -> float:
+        """Validate and adjust trigger price to be on correct side of current price."""
+        api_side = "buy" if hold_side == "long" else "sell"
+        if api_side == "buy":
+            # LONG: TP must be ABOVE, SL must be BELOW
+            if trigger <= current_price:
+                trigger = current_price * 1.001
+        else:
+            # SHORT: TP must be BELOW, SL must be ABOVE
+            if trigger >= current_price:
+                trigger = current_price * 0.999
+        return self._round_to_precision(trigger, price_places) or trigger
+
+    async def _post_plan_with_retry(
+        self, endpoint: str, data: dict[str, str], symbol: str, order_type: str, max_retries: int = 3
+    ) -> dict[str, Any]:
+        """Post plan order with unified retry logic."""
+        import re
+        for attempt in range(max_retries):
+            try:
+                data["triggerType"] = "mark_price"
+                response = await self._request("POST", endpoint, data=data)
+                if response.get("code") == "00000":
+                    return response
+                # Handle price validation errors
+                error_msg = str(response.get("msg", ""))
+                if any(c in error_msg for c in ("45135", "40832", "40915")):
+                    cur_px = await self._get_current_market_price(symbol)
+                    if cur_px:
+                        hold = data.get("holdSide")
+                        trig = float(data.get("triggerPrice", "0"))
+                        if hold == "buy" and trig <= cur_px:
+                            trig = cur_px * 1.001
+                        elif hold == "sell" and trig >= cur_px:
+                            trig = cur_px * 0.999
+                        data["triggerPrice"] = str(trig)
+                        response = await self._request("POST", endpoint, data=data)
+                        if response.get("code") == "00000":
+                            return response
+                # Fallback to market_price
+                if attempt == 0:
+                    data["triggerType"] = "market_price"
+                    continue
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1.0)
+                    continue
+                raise
+        return {"code": "error", "msg": "Max retries exceeded"}
+
     async def place_tpsl_order(
         self,
         symbol: str,
@@ -820,88 +903,12 @@ class BitgetRestClient:
                 size_precision = len(size_str.split('.')[1]) if '.' in size_str else 0
         rounded_size = round(size, size_precision)
 
-        # Round trigger prices to price precision if available
-        def _round_price(val: float | None) -> float | None:
-            if val is None:
-                return None
-            places = int(price_places) if price_places is not None else 4
-            try:
-                return round(float(val), places)
-            except Exception:
-                return round(float(val), 4)
-        stop_loss_price = _round_price(stop_loss_price)
-        take_profit_price = _round_price(take_profit_price)
+        # Round trigger prices using helper method
+        stop_loss_price = self._round_to_precision(stop_loss_price, price_places)
+        take_profit_price = self._round_to_precision(take_profit_price, price_places)
 
-        # Helper to derive a tick size if priceEndStep unavailable
-        def _tick_size() -> float:
-            if price_end_step and price_end_step > 0:
-                return float(price_end_step)
-            places = int(price_places) if price_places is not None else 4
-            return 10 ** (-places)
-
-        # Helper to fetch a robust current price (prefer mark)
-        async def _get_current_price() -> float | None:
-            try:
-                t = await self.get_ticker(symbol, product_type="USDT-FUTURES")
-                logger.debug(f"🔍 [PRICE FETCH] {symbol} | Ticker response code: {t.get('code')}")
-                if t.get("code") == "00000":
-                    # 🚨 CRITICAL: data is a LIST, not a dict!
-                    data_list = t.get("data") or []
-                    if not data_list or not isinstance(data_list, list):
-                        logger.warning(f"⚠️ [PRICE FETCH] {symbol} | Data is not a list: {type(data_list)}")
-                        return None
-                    
-                    ticker = data_list[0] if data_list else {}
-                    logger.debug(f"🔍 [PRICE FETCH] {symbol} | Ticker keys: {list(ticker.keys()) if ticker else 'empty'}")
-                    
-                    # Try common keys in order of preference (mark price first, then last price)
-                    for k in (
-                        "markPrice",  # Mark price (preferred for futures)
-                        "markPr",     # Alternative mark price key
-                        "lastPr",     # Last traded price
-                        "last",       # Alternative last price key
-                        "bestAsk",    # Best ask price
-                        "bestBid",    # Best bid price
-                        "close",      # Close price
-                        "price",      # Generic price key
-                    ):
-                        v = ticker.get(k)
-                        if v is None:
-                            continue
-                        try:
-                            price = float(v)
-                            logger.debug(f"✅ [PRICE FETCH] {symbol} | Found price via key '{k}': {price}")
-                            return price
-                        except Exception:
-                            try:
-                                # Some fields may be nested strings
-                                price = float(str(v))
-                                logger.debug(f"✅ [PRICE FETCH] {symbol} | Found price via key '{k}' (string): {price}")
-                                return price
-                            except Exception:
-                                continue
-                    logger.warning(f"⚠️ [PRICE FETCH] {symbol} | No valid price field found in ticker: {ticker}")
-                else:
-                    logger.warning(f"⚠️ [PRICE FETCH] {symbol} | Ticker API error: {t.get('code')} - {t.get('msg')}")
-            except Exception as e:
-                logger.error(f"❌ [PRICE FETCH] {symbol} | Exception: {e}", exc_info=True)
-            return None
-
-        # 🚨 EXTENSIVE LOGGING: Log all input parameters
-        logger.info(
-            f"🔍 [TP/SL START] {symbol} | "
-            f"hold_side: {hold_side} | size: {size} → rounded: {rounded_size} (precision: {size_precision}) | "
-            f"SL price: {stop_loss_price} | TP price: {take_profit_price} | "
-            f"product_type: {product_type}"
-        )
-
-        # 🚨 CRITICAL FIX: Convert "long"/"short" to "buy"/"sell" for one-way mode
-        # According to Bitget API docs, holdSide should be "buy" for long, "sell" for short in one-way mode
         api_hold_side = "buy" if hold_side == "long" else "sell"
-
-        logger.info(
-            f"🔧 [TP/SL CONVERSION] {symbol} | hold_side: {hold_side} → API holdSide: {api_hold_side}"
-        )
+        logger.info(f"🔍 [TP/SL] {symbol} | {hold_side} | size={rounded_size} | SL={stop_loss_price} | TP={take_profit_price}")
 
         # Helper to post plan order with fallback triggerType and size precision
         async def _post_plan(
