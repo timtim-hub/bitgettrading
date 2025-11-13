@@ -1185,7 +1185,9 @@ class BitgetRestClient:
             }
             # Pre-send validation: ensure TP trigger is on correct side of current price
             try:
+                logger.debug(f"🔍 [TP VALIDATION START] {symbol} | Fetching current price...")
                 cur_px = await _get_current_price()
+                logger.debug(f"🔍 [TP VALIDATION] {symbol} | Current price: {cur_px}")
                 if cur_px:
                     trig_tp = float(tp_data["triggerPrice"])
                     tick = _tick_size()
@@ -1196,23 +1198,33 @@ class BitgetRestClient:
                             # Use 0.1% buffer above current price for safety
                             trig_tp = cur_px * 1.001
                             adjusted = True
+                            logger.warning(
+                                f"🔧 [TP VALIDATION ADJUST] {symbol} | LONG | "
+                                f"Original={take_profit_price} <= cur={cur_px} → Adjusted={trig_tp}"
+                            )
                     else:
                         # SHORT TP must be BELOW current price
                         if trig_tp >= cur_px:
                             # Use 0.1% buffer below current price for safety
                             trig_tp = cur_px * 0.999
                             adjusted = True
+                            logger.warning(
+                                f"🔧 [TP VALIDATION ADJUST] {symbol} | SHORT | "
+                                f"Original={take_profit_price} >= cur={cur_px} → Adjusted={trig_tp}"
+                            )
                     if adjusted:
                         trig_tp = _round_price(trig_tp) or trig_tp
                         tp_data["triggerPrice"] = str(trig_tp)
                         logger.warning(
-                            f"🔧 [TP VALIDATION ADJUST] {symbol} | planType=profit_plan | "
-                            f"Original={take_profit_price} → Adjusted={trig_tp} (cur_px={cur_px}, holdSide={api_hold_side})"
+                            f"✅ [TP VALIDATION ADJUST] {symbol} | planType=profit_plan | "
+                            f"Final trigger={trig_tp} (cur_px={cur_px}, holdSide={api_hold_side})"
                         )
+                    else:
+                        logger.debug(f"✅ [TP VALIDATION OK] {symbol} | trigger={trig_tp} is valid vs cur={cur_px}")
                 else:
-                    logger.warning(f"⚠️ Could not fetch current price for TP validation: {symbol}")
+                    logger.error(f"❌ Could not fetch current price for TP validation: {symbol} - validation skipped!")
             except Exception as e:
-                logger.warning(f"⚠️ TP validation error for {symbol}: {e}")
+                logger.error(f"❌ TP validation error for {symbol}: {e}", exc_info=True)
             logger.info(
                 f"📋 [TAKE-PROFIT ORDER] {symbol} | "
                 f"planType=profit_plan | size={rounded_size} | "
