@@ -896,6 +896,18 @@ class BitgetRestClient:
                 f"📤 [TP/SL REQUEST] {symbol} | {order_type} | " f"Data: {data}"
             )
 
+            # Helper: extract reference price from Bitget error message
+            def _extract_ref_price(err: str) -> float | None:
+                try:
+                    import re as _re2
+                    # Examples: "mark price: 345.93", "current price","current market price"
+                    m = _re2.search(r"(?:mark|current(?:\\s+market)?)\\s+price[:：]\\s*([0-9]+(?:\\.[0-9]+)?)", err, flags=_re2.IGNORECASE)
+                    if m:
+                        return float(m.group(1))
+                except Exception:
+                    return None
+                return None
+
             # First try mark_price (safer)
             data["triggerType"] = "mark_price"
             try:
@@ -913,7 +925,7 @@ class BitgetRestClient:
                 # If take profit validation error, nudge trigger to valid side vs current price
                 if any(code in error_msg for code in ("45135", "40832", "40915")):
                     try:
-                        cur_px = await _get_current_price()
+                        cur_px = _extract_ref_price(error_msg) or await _get_current_price()
                         if cur_px:
                             hold = data.get("holdSide")  # 'buy' for long, 'sell' for short
                             trig = float(data.get("triggerPrice", "0"))
@@ -1493,10 +1505,53 @@ class BitgetRestClient:
                         else:
                             return response  # Return failed response after all retries
             except Exception as e:
+                error_msg = str(e)
                 logger.warning(
                     f"⚠️ [TRAILING TAKE PROFIT EXCEPTION] {symbol} | Attempt {attempt + 1}/{max_retries} | "
-                    f"Exception: {e} | Type: {type(e).__name__}"
+                    f"Exception: {error_msg} | Type: {type(e).__name__}"
                 )
+                # If trigger side violation (43034/43035), auto-adjust using error text or ticker
+                if any(code in error_msg for code in ("43034", "43035")):
+                    try:
+                        import re as _re2
+                        m = _re2.search(r"(?:mark|current(?:\\s+market)?)\\s+price[:：]\\s*([0-9]+(?:\\.[0-9]+)?)", error_msg, flags=_re2.IGNORECASE)
+                        ref_px = float(m.group(1)) if m else None
+                    except Exception:
+                        ref_px = None
+                    if ref_px is None:
+                        try:
+                            t = await self.get_ticker(symbol, product_type="USDT-FUTURES")
+                            if t.get("code") == "00000":
+                                d = t.get("data") or {}
+                                for k in ("markPr","markPrice","lastPr","last","close"):
+                                    v = d.get(k)
+                                    if v is not None:
+                                        try:
+                                            ref_px = float(v)
+                                            break
+                                        except Exception:
+                                            continue
+                        except Exception:
+                            ref_px = None
+                    if ref_px:
+                        # adjust trigger according to side:
+                        tick = 10 ** (-(price_places if price_places is not None else 4))
+                        if api_hold_side == "buy":
+                            # activation must be >= current
+                            if trigger_price < ref_px:
+                                trigger_price = ref_px + tick
+                        else:
+                            # activation must be <= current
+                            if trigger_price > ref_px:
+                                trigger_price = ref_px - tick
+                        trigger_price = _round_price_local(trigger_price)
+                        data["triggerPrice"] = str(trigger_price)
+                        logger.info(
+                            f"🔧 [TRAILING TRIGGER AUTO-ADJUST] {symbol} | new activation={trigger_price} (ref={ref_px})"
+                        )
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(0.8)
+                            continue
                 if attempt < max_retries - 1:
                     await asyncio.sleep(2.0)  # Wait before retry
                     continue
