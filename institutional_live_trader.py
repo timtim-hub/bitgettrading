@@ -1024,20 +1024,24 @@ class InstitutionalLiveTrader:
                                 tp_move = ((old_tp - new_tp) / old_tp) * 100
                                 logger.info(f"🔄 TRAILING TP DOWN | {symbol} | ${old_tp:.4f} → ${new_tp:.4f} (-{tp_move:.2f}%) | Peak: ${position.lowest_price:.4f}")
                 
-                # BOT-SIDE TP MONITORING - Check if trailing TP hit
+                # 🚨 BOT-SIDE TP MONITORING - Check if trailing TP hit (MUST catch before exchange executes!)
+                # This is PRIMARY protection - we want to close via market order, not wait for exchange TP
                 if position.tp_levels:
                     tp_price = position.tp_levels[0][0]
                     tp_hit = False
                     
-                    if position.side == 'long' and current_price >= tp_price:
-                        tp_hit = True
-                        logger.info(f"🎯 TRAILING TP HIT | {symbol} LONG | Price ${current_price:.4f} >= TP ${tp_price:.4f}")
-                    elif position.side == 'short' and current_price <= tp_price:
-                        tp_hit = True
-                        logger.info(f"🎯 TRAILING TP HIT | {symbol} SHORT | Price ${current_price:.4f} <= TP ${tp_price:.4f}")
+                    # Use a small buffer (0.01%) to catch TP hits slightly early
+                    if position.side == 'long':
+                        if current_price >= tp_price * 0.9999:  # 0.01% buffer
+                            tp_hit = True
+                            logger.info(f"🎯 TRAILING TP HIT | {symbol} LONG | Price ${current_price:.4f} >= TP ${tp_price:.4f}")
+                    else:  # SHORT
+                        if current_price <= tp_price * 1.0001:  # 0.01% buffer
+                            tp_hit = True
+                            logger.info(f"🎯 TRAILING TP HIT | {symbol} SHORT | Price ${current_price:.4f} <= TP ${tp_price:.4f}")
                     
                     if tp_hit:
-                        logger.info(f"💰 TRAILING TP HIT! Closing FULL position (100%) | {symbol}")
+                        logger.info(f"💰 TRAILING TP HIT! Closing FULL position (100%) via MARKET ORDER | {symbol}")
                         await self.close_position(position, "trailing_take_profit")
                         continue
                 
