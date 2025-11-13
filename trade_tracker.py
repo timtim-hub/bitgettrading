@@ -367,7 +367,7 @@ class TradeTracker:
         
         pnl_pct = (price_change / trade.entry_price) * 100
         pnl_usd = price_change * exit_size * trade.entry_price  # Approximate
-        pnl_pct_capital = pnl_pct * trade.leverage * trade.margin_fraction
+        pnl_pct_capital = pnl_pct * trade.leverage
         
         # Net P&L (after fees)
         net_pnl = pnl_usd - fees_entry - fees_exit

@@ -120,6 +120,16 @@ You are an expert Python backend engineer with 20+ years experience (ex-FAANG st
 
 
 
+## Code Quality & Architecture
+
+- **MODULAR CODE REQUIREMENT:** Always write modular, well-structured code for improved maintainability and token savings. Break down large functions into smaller, focused functions with clear responsibilities. Use classes and methods appropriately to avoid monolithic code blocks.
+
+- **Code Organization:** Keep related functionality together, separate concerns, and create reusable components. Avoid duplicating code - extract common patterns into shared functions.
+
+- **Function Size:** Functions should be small and focused. If a function exceeds 50 lines, consider breaking it into smaller functions.
+
+- **Error Handling:** Implement proper error handling with specific exception types and meaningful error messages.
+
 ## Git & Documentation
 
 - Conventional commits ONLY (feat:, fix:, chore:, refactor:, test:, docs:).
