@@ -843,8 +843,10 @@ class BitgetRestClient:
         async def _get_current_price() -> float | None:
             try:
                 t = await self.get_ticker(symbol, product_type="USDT-FUTURES")
+                logger.debug(f"🔍 [PRICE FETCH] {symbol} | Ticker response: {t}")
                 if t.get("code") == "00000":
                     data = t.get("data") or {}
+                    logger.debug(f"🔍 [PRICE FETCH] {symbol} | Data keys: {list(data.keys()) if data else 'empty'}")
                     # Try common keys in order of preference
                     for k in (
                         "markPr",
@@ -860,15 +862,21 @@ class BitgetRestClient:
                         if v is None:
                             continue
                         try:
-                            return float(v)
+                            price = float(v)
+                            logger.debug(f"✅ [PRICE FETCH] {symbol} | Found price via key '{k}': {price}")
+                            return price
                         except Exception:
                             try:
                                 # Some fields may be nested strings
-                                return float(str(v))
+                                price = float(str(v))
+                                logger.debug(f"✅ [PRICE FETCH] {symbol} | Found price via key '{k}' (string): {price}")
+                                return price
                             except Exception:
                                 continue
-            except Exception:
-                return None
+                else:
+                    logger.warning(f"⚠️ [PRICE FETCH] {symbol} | Ticker API error: {t.get('code')} - {t.get('msg')}")
+            except Exception as e:
+                logger.error(f"❌ [PRICE FETCH] {symbol} | Exception: {e}", exc_info=True)
             return None
 
         # 🚨 EXTENSIVE LOGGING: Log all input parameters
